@@ -1,29 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Card, Button, Upload, Steps, Tag, Space, List, Typography, Radio, Spin, message,
-  Popconfirm, Select, Alert, Empty, Progress, Tooltip,
+  Card, Button, Upload, Steps, Tag, Space, List, Typography, Spin, message,
+  Empty,
 } from 'antd'
 import {
-  InboxOutlined, FileTextOutlined, ThunderboltOutlined,
-  CheckCircleOutlined, CloseCircleOutlined, ArrowLeftOutlined, DownloadOutlined,
-  LoadingOutlined,
+  InboxOutlined, ArrowLeftOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
   getResults, setErrorStatus, acceptAll, exportDoc,
 } from '../services/api'
+import ReviewReader from '../components/ReviewReader'
 
-const { Title, Text, Paragraph } = Typography
+const { Title, Text } = Typography
 const { Dragger } = Upload
 
-const TYPE_OPTIONS = [
-  { value: 'typo', label: '错别字' },
-  { value: 'grammar', label: '语法' },
-  { value: 'punctuation', label: '标点' },
-  { value: 'format', label: '格式' },
-]
-const TYPE_LABEL = Object.fromEntries(TYPE_OPTIONS.map(t => [t.value, t.label]))
 const WINDOW = 30
 
 export default function ProjectDetail() {
@@ -71,9 +63,10 @@ export default function ProjectDetail() {
   const loadModels = async () => {
     try {
       const data = await getModels()
-      setModels(data)
-      if (data?.length && !data.find(m => m.model_id === selectedModel)) {
-        setSelectedModel(data[0].model_id)
+      const proofreadModels = data.filter(m => !m.agentic)
+      setModels(proofreadModels)
+      if (proofreadModels.length && !proofreadModels.find(m => m.model_id === selectedModel)) {
+        setSelectedModel(proofreadModels[0].model_id)
       }
     } catch {}
   }
@@ -210,11 +203,7 @@ export default function ProjectDetail() {
   const total = project?.paragraph_count || 0
   const upto = project?.proofread_upto || results?.proofread_upto || 0
   const chapters = results?.chapters || []
-  const errors = results?.errors || []
-  const paras = results?.paragraphs || []
 
-  const totalBatches = Math.max(1, Math.ceil(total / WINDOW))
-  const nextBatch = Math.min(totalBatches, Math.floor(upto / WINDOW) + 1)
   const windowStart = upto
   const windowEnd = Math.min(upto + WINDOW, total)
   const inProgress = proofreading || project?.status === 'proofreading'
@@ -222,16 +211,6 @@ export default function ProjectDetail() {
   const bannerText = mode === 'continue' && runningBatch
     ? `正在校对第 ${runningBatch} 批（第 ${windowStart + 1}–${windowEnd} 段）…`
     : '正在校对，请稍候…'
-
-  const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
-  const groups = useMemo(() => {
-    const g = {}
-    errors.forEach(e => { (g[e.paragraph_index] ||= []).push(e) })
-    return Object.keys(g).map(Number).sort((a, b) => a - b).map(idx => ({ idx, items: g[idx] }))
-  }, [errors])
-
-  const acceptedCount = errors.filter(e => e.user_status === 'accepted').length
-  const resolvedCount = errors.filter(e => e.user_status !== 'pending').length
 
   if (loading && !project) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />
 
@@ -272,7 +251,6 @@ export default function ProjectDetail() {
             <p className="ant-upload-text">点击或拖拽 .docx 文件到此处上传</p>
           </Dragger>
         )}
-
         {total > 0 && (
           <div style={{ display: 'flex', gap: 16 }}>
             <div style={{ width: 260, flexShrink: 0 }}>
@@ -302,208 +280,39 @@ export default function ProjectDetail() {
               )}
             </div>
 
-            <div style={{ flex: 1, background: '#fff', padding: 16, borderRadius: 8 }}>
-              <Title level={5}>校对控制</Title>
-
-              <Progress
-                percent={percent}
-                status={inProgress ? 'active' : (upto >= total ? 'success' : 'normal')}
-                style={{ marginBottom: 8 }}
-              />
-
-              {inProgress ? (
-                <Alert
-                  type="info"
-                  showIcon
-                  icon={<LoadingOutlined spin />}
-                  style={{ marginBottom: 16 }}
-                  message={bannerText}
-                />
-              ) : upto < total ? (
-                <Alert
-                  type="info"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                  message={`已校对 ${upto}/${total} 段（第 ${nextBatch}/${totalBatches} 批）`}
-                />
-              ) : (
-                <Alert
-                  type="success"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                  message="已校对至文末"
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {results && (
+                <ReviewReader
+                  results={results}
+                  project={project}
+                  inProgress={inProgress}
+                  onSetStatus={handleSetStatus}
+                  onAcceptAll={handleAcceptAll}
+                  onExport={handleExport}
+                  chapters={chapters}
+                  selectedChapter={selectedChapter}
+                  onStartProofread={handleProofread}
+                  mode={mode}
+                  onModeChange={setMode}
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                  models={models}
+                  selectedTypes={selectedTypes}
+                  onTypesChange={setSelectedTypes}
+                  percent={percent}
+                  proofreading={proofreading}
+                  total={total}
+                  upto={upto}
+                  bannerText={bannerText}
+                  projectError={project?.last_error}
+                  onRetry={handleProofread}
+                  onChapterChange={setSelectedChapter}
                 />
               )}
-
-              {project?.last_error && !inProgress && (
-                <Alert
-                  type="warning"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                  message="上次校对失败"
-                  description={project.last_error}
-                  action={<Button size="small" onClick={handleProofread}>重试</Button>}
-                />
-              )}
-
-              <Space wrap>
-                <Text>模式：</Text>
-                <Radio.Group value={mode} disabled={inProgress} onChange={(e) => setMode(e.target.value)} optionType="button" buttonStyle="solid">
-                  <Radio value="continue">继续校对（下一批30段）</Radio>
-                  <Radio value="chapter">章节校对</Radio>
-                </Radio.Group>
-              </Space>
-
-              {mode === 'chapter' && (
-                <Space wrap style={{ marginTop: 12 }}>
-                  <Text>章节：</Text>
-                  <Select
-                    style={{ width: 240 }}
-                    placeholder="选择章节"
-                    value={selectedChapter}
-                    disabled={inProgress}
-                    onChange={setSelectedChapter}
-                    options={chapters.map(ch => ({ value: ch.id, label: ch.title || `第 ${ch.title_paragraph_idx} 段` }))}
-                  />
-                </Space>
-              )}
-
-              <Space wrap style={{ marginTop: 12 }}>
-                <Text>检查类型：</Text>
-                <Select
-                  mode="multiple"
-                  style={{ minWidth: 240 }}
-                  value={selectedTypes}
-                  disabled={inProgress}
-                  onChange={setSelectedTypes}
-                  options={TYPE_OPTIONS}
-                />
-              </Space>
-
-              {results?.proofread_types && (
-                <div style={{ marginTop: 12 }}>
-                  <Text type="secondary">
-                    继承已选类型：{results.proofread_types.map(t => TYPE_LABEL[t] || t).join('、')}
-                  </Text>
-                </div>
-              )}
-
-              <Space wrap style={{ marginTop: 16 }}>
-                <Text>模型：</Text>
-                <Select
-                  style={{ width: 220 }}
-                  value={selectedModel}
-                  disabled={inProgress}
-                  onChange={setSelectedModel}
-                  options={models.map(m => ({ value: m.model_id, label: m.name }))}
-                />
-                <Button
-                  type="primary"
-                  icon={<ThunderboltOutlined />}
-                  loading={proofreading}
-                  onClick={handleProofread}
-                  disabled={inProgress || (mode === 'continue' && upto >= total) || (mode === 'chapter' && !selectedChapter)}
-                >
-                  {mode === 'continue' && upto >= total ? '已校对至文末' : '开始校对'}
-                </Button>
-              </Space>
             </div>
           </div>
         )}
       </Card>
-
-      {results && groups.length > 0 && (
-        <Card
-          title={
-            <Space>
-              <Text>校对结果</Text>
-              <Tag color="blue">{errors.length} 条问题</Tag>
-              <Tag color="green">已采纳 {acceptedCount}</Tag>
-              <Tag color="orange">待确认 {errors.length - resolvedCount}</Tag>
-            </Space>
-          }
-          extra={
-            <Space>
-              <Button onClick={handleAcceptAll} disabled={errors.length === 0 || inProgress}>
-                  采纳全部
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<DownloadOutlined />}
-                  loading={exporting}
-                  disabled={inProgress}
-                  onClick={handleExport}
-                >
-                导出校稿版
-              </Button>
-            </Space>
-          }
-        >
-          <List
-            dataSource={groups}
-            renderItem={(group) => {
-              const para = paraMap[group.idx]
-              const resolved = group.items.every(e => e.user_status !== 'pending')
-              return (
-                <List.Item>
-                  <div style={{ width: '100%' }}>
-                    <Space style={{ marginBottom: 4 }}>
-                      <Tag color="default">第 {group.idx} 段</Tag>
-                      {resolved && <Tag color="green">已确认</Tag>}
-                    </Space>
-                    <Paragraph style={{ marginBottom: 8 }}>
-                      <Text>{para?.text}</Text>
-                      {para?.revised_text && <Text type="success">（已修订）</Text>}
-                    </Paragraph>
-                    <List
-                      size="small"
-                      dataSource={group.items}
-                      renderItem={(err) => (
-                        <List.Item
-                          actions={
-                            err.user_status === 'pending' ? [
-                              <Button type="link" icon={<CheckCircleOutlined />} onClick={() => handleSetStatus(err.id, 'accepted')}>采纳</Button>,
-                              <Button type="link" danger icon={<CloseCircleOutlined />} onClick={() => handleSetStatus(err.id, 'rejected')}>拒绝</Button>,
-                            ] : [
-                              <Tag color={err.user_status === 'accepted' ? 'green' : 'red'}>
-                                {err.user_status === 'accepted' ? '已采纳' : '已拒绝'}
-                              </Tag>,
-                            ]
-                          }
-                        >
-                          <List.Item.Meta
-                            title={
-                              <Space>
-                                <Tag color={err.severity === 'high' ? 'red' : err.severity === 'medium' ? 'orange' : 'blue'}>
-                                  {TYPE_LABEL[err.type] || err.type}
-                                </Tag>
-                                <Text>{err.description}</Text>
-                              </Space>
-                            }
-                            description={
-                              <div>
-                                <Text type="danger" delete>{err.original_text}</Text>
-                                <Text style={{ margin: '0 8px' }}>→</Text>
-                                <Text type="success">{err.suggested_text}</Text>
-                              </div>
-                            }
-                          />
-                        </List.Item>
-                      )}
-                    />
-                  </div>
-                </List.Item>
-              )
-            }}
-          />
-        </Card>
-      )}
-
-      {results && groups.length === 0 && (
-        <Card>
-          <Empty description="尚未发现错误，或还没有校对结果" />
-        </Card>
-      )}
     </div>
   )
 }

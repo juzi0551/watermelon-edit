@@ -38,7 +38,7 @@ PROVIDERS = {
         "litellm_prefix": "openai",
         "api_base": "https://api.kimi.com/coding/v1",
         "models": [
-            {"id": "kimi-for-coding", "name": "Kimi For Coding", "temperature": 1},
+            {"id": "kimi-for-coding", "name": "Kimi For Coding（编程）", "temperature": 1, "agentic": True},
         ],
     },
 }
@@ -153,5 +153,18 @@ def list_models() -> list[dict]:
                 "name": m["name"],
                 "provider": pid,
                 "deprecated": m.get("deprecated", False),
+                "agentic": m.get("agentic", False),
             })
     return out
+
+
+def is_agentic_model(model_id: str) -> bool:
+    """判断是否为 agentic 编程模型（如 Kimi Code）。这类模型会自行调用工具，
+    不适合单轮 JSON 抽取的校对任务，使用会导致 499 / 超时。"""
+    pid = _provider_of(model_id)
+    if not pid:
+        return False
+    for m in PROVIDERS[pid]["models"]:
+        if m["id"] == model_id:
+            return bool(m.get("agentic", False))
+    return False
