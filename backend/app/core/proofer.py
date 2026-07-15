@@ -42,6 +42,12 @@ def build_proofread_prompt(window_paragraphs: list[tuple], selected_types: list[
 3. locator 和 replacement 是同一段文本的「原文版」和「修正版」。replacement 与 locator 之间的差异，必须恰好是本次修正的内容，不能有任何字符的增删改落在 locator/replacement 范围之外。
 4. 同一段有多个错误时，各 locator 之间不能重叠互斥，彼此要保持足够间距。
 5. description 用简短的诊断说明（5-10 字）。
+6. 跨段引号检查（重要）：
+   a. 观察相邻段落的引号（" ' 「 」 『 』）是否配对。如果前段有左引号开头、后段没有左引号，则后段缺少左引号。
+   b. 按中文规范：引文跨段时，每段开头应有左引号，仅在末段末尾有右引号。
+   c. 缺引号时，以该段前 5-10 个字为 locator，replacement 在 locator 前补上对应的引号字符。
+   d. 引号不配对（左多右少、右多左少）时，在缺引号的段落报告错误。
+   e. 上述修正 type 均用 "punctuation"。
 
 若某类无错误，对应数组返回空。只返回 JSON，不要其他内容。
 

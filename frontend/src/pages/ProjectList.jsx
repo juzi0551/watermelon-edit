@@ -21,6 +21,9 @@ export default function ProjectList() {
   }
 
   useEffect(() => { load() }, [])
+  useEffect(() => {
+    document.title = '小说校稿工具'
+  }, [])
 
   const handleDelete = async (id) => {
     await deleteProject(id)
@@ -88,6 +91,17 @@ export default function ProjectList() {
       render: (status) => {
         const s = statusMap[status] || { color: 'default', text: status }
         return <Tag color={s.color}>{s.text}</Tag>
+      },
+    },
+    {
+      title: '校稿进度',
+      key: 'progress',
+      render: (_, record) => {
+        const total = record.paragraph_count || 0
+        const upto = record.proofread_upto || 0
+        if (!total) return '-'
+        const pct = Math.round((upto / total) * 100)
+        return `${upto}/${total} (${pct}%)`
       },
     },
     {

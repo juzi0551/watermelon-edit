@@ -87,6 +87,15 @@ export default function ProjectDetail() {
     loadModels()
   }, [projectId])
 
+  // titlebar: 项目名 + 校稿进度
+  useEffect(() => {
+    const p = project
+    const upto = p?.proofread_upto ?? results?.proofread_upto ?? 0
+    const total = p?.paragraph_count ?? 0
+    const suffix = ` (${upto}/${total})`
+    document.title = (p?.name || '小说校稿工具') + suffix
+  }, [project, results])
+
   // persist proofread config across refreshes
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
   useEffect(() => { localStorage.setItem('proofread_types', JSON.stringify(selectedTypes)) }, [selectedTypes])

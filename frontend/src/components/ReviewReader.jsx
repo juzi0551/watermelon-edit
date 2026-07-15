@@ -483,32 +483,37 @@ export default function ReviewReader({
               <span style={{ color: '#faad14', fontWeight: 500, fontSize: 13 }}>
                 ⚠ 上次校对失败：{projectError}
               </span>
-            ) : allDone ? (
-              <span style={{ color: '#52c41a', fontWeight: 500, fontSize: 14 }}>
-                ✓ 校对完成
-              </span>
             ) : null}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Button
+                type="primary"
+                size="large"
+                icon={<ThunderboltOutlined />}
+                loading={proofreading}
+                onClick={onStartProofread}
+                disabled={inProgress}
+                style={{ height: 44, paddingInline: 32, fontSize: 16 }}
+              >
+                {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
+              </Button>
+              <Button
+                type="text"
+                size="small"
+                onClick={() => setShowOptions(s => !s)}
+                style={{ color: '#888', fontSize: 12 }}
+              >
+                {showOptions ? '收起选项 ▲' : '更多选项 ▼'}
+              </Button>
+            </div>
 
             <ControlsRow
               showOptions={showOptions}
-              onToggleOptions={() => setShowOptions(s => !s)}
               selectedModel={selectedModel} onModelChange={onModelChange}
               models={models}
               selectedTypes={selectedTypes} onTypesChange={onTypesChange}
               inProgress={inProgress}
             />
-
-            <Button
-              type="primary"
-              size="large"
-              icon={<ThunderboltOutlined />}
-              loading={proofreading}
-              onClick={onStartProofread}
-              disabled={inProgress}
-              style={{ height: 44, paddingInline: 32, fontSize: 16 }}
-            >
-              {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
-            </Button>
           </>
         )}
       </div>
@@ -517,52 +522,39 @@ export default function ReviewReader({
 }
 
 function ControlsRow({
-  showOptions, onToggleOptions,
+  showOptions,
   selectedModel, onModelChange, models,
   selectedTypes, onTypesChange,
   inProgress,
 }) {
+  if (!showOptions) return null
   return (
     <Space wrap size="small" style={{ justifyContent: 'center' }}>
-      <Button
-        type="text"
+      <Select
+        style={{ width: 160 }}
+        value={selectedModel}
+        disabled={inProgress}
+        onChange={onModelChange}
+        options={models.map(m => ({ value: m.model_id, label: m.name }))}
         size="small"
-        onClick={onToggleOptions}
-        style={{ color: '#888', fontSize: 12 }}
-      >
-        {showOptions ? '收起选项 ▲' : '更多选项 ▼'}
-      </Button>
-
-      {showOptions && (
-        <>
-          <Select
-            style={{ width: 160 }}
-            value={selectedModel}
-            disabled={inProgress}
-            onChange={onModelChange}
-            options={models.map(m => ({ value: m.model_id, label: m.name }))}
-            size="small"
-          />
-
-          <Select
-            mode="multiple"
-            style={{ minWidth: 180 }}
-            value={selectedTypes}
-            disabled={inProgress}
-            onChange={onTypesChange}
-            options={TYPE_OPTIONS}
-            size="small"
-            tagRender={(props) => {
-              const { label, closable, onClose } = props
-              return (
-                <Tag closable={closable} onClose={onClose} style={{ margin: 0, fontSize: 11 }}>
-                  {label}
-                </Tag>
-              )
-            }}
-          />
-        </>
-      )}
+      />
+      <Select
+        mode="multiple"
+        style={{ minWidth: 180 }}
+        value={selectedTypes}
+        disabled={inProgress}
+        onChange={onTypesChange}
+        options={TYPE_OPTIONS}
+        size="small"
+        tagRender={(props) => {
+          const { label, closable, onClose } = props
+          return (
+            <Tag closable={closable} onClose={onClose} style={{ margin: 0, fontSize: 11 }}>
+              {label}
+            </Tag>
+          )
+        }}
+      />
     </Space>
   )
 }

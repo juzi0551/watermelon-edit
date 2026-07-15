@@ -8,6 +8,7 @@ from app.core.database import (
     update_project_document, delete_project,
     create_document, get_current_document, get_document_versions,
     insert_paragraphs, get_paragraph_count, get_chapters,
+    get_document_progress,
 )
 
 router = APIRouter()
@@ -24,9 +25,14 @@ async def api_list_projects():
             chapters = get_chapters(doc["id"])
             p["chapter_count"] = len(chapters)
             p["filename"] = doc["filename"]
+            p["paragraph_count"] = get_paragraph_count(doc["id"])
+            progress = get_document_progress(doc["id"])
+            p["proofread_upto"] = progress["proofread_upto"]
         else:
             p["chapter_count"] = 0
             p["filename"] = None
+            p["paragraph_count"] = 0
+            p["proofread_upto"] = 0
     return {"projects": projects}
 
 
