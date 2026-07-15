@@ -5,8 +5,7 @@ import {
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
-  DownloadOutlined, UnorderedListOutlined, ThunderboltOutlined,
-  LoadingOutlined,
+  ThunderboltOutlined, LoadingOutlined,
 } from '@ant-design/icons'
 
 const { Text } = Typography
@@ -156,7 +155,8 @@ function ErrorList({ errors, selectedId, onSelect }) {
 }
 
 export default function ReviewReader({
-  results, project, inProgress, onSetStatus, onAcceptAll, onExport,
+  results, project, inProgress, onSetStatus, onAcceptAll,
+  panelOpen, onTogglePanel,
   chapters = [], selectedChapter = null, onStartProofread,
   selectedModel, onModelChange,
   models = [],
@@ -185,7 +185,6 @@ export default function ReviewReader({
   const rejected = useMemo(() => flatErrors.filter(e => e.user_status === 'rejected'), [flatErrors])
 
   const [selectedId, setSelectedId] = useState(null)
-  const [panelOpen, setPanelOpen] = useState(false)
   const [panelTab, setPanelTab] = useState('pending')
   const [customEdit, setCustomEdit] = useState('')
   const [showOptions, setShowOptions] = useState(false)
@@ -193,10 +192,10 @@ export default function ReviewReader({
   const contentRef = useRef(null)
 
   useEffect(() => {
-    if (!selectedId || !flatErrors.find(e => e.id === selectedId)) {
-      setSelectedId(pending[0]?.id || null)
+    if (pending.length > 0 && !selectedId) {
+      setSelectedId(pending[0].id)
     }
-  }, [flatErrors, pending, selectedId])
+  }, [pending, selectedId])
 
   useEffect(() => {
     if (!selectedId || !flowRef.current) return
@@ -295,39 +294,10 @@ export default function ReviewReader({
             transition: 'margin-right 0.2s',
           }}
         >
-          <Card
-            title={
-              <Space>
-                <span>校对审阅</span>
-                <Tag color="blue">{errors.length} 条问题</Tag>
-                <Tag color="green">已采纳 {accepted.length}</Tag>
-                <Tag color="orange">待确认 {pending.length}</Tag>
-              </Space>
-            }
-            extra={
-              <Space>
-                <Button
-                  icon={<UnorderedListOutlined />}
-                  onClick={() => setPanelOpen(v => !v)}
-                  type={panelOpen ? 'primary' : 'default'}
-                >
-                  问题列表{pending.length ? `（${pending.length}）` : ''}
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<DownloadOutlined />}
-                  disabled={inProgress}
-                  onClick={onExport}
-                >
-                  导出校稿版
-                </Button>
-              </Space>
-            }
-          >
             <div
               ref={flowRef}
               style={{
-                padding: '16px 24px',
+                padding: '0 24px',
                 maxHeight: '70vh',
                 overflowY: 'auto',
               }}
@@ -384,8 +354,7 @@ export default function ReviewReader({
                 )
               })}
             </div>
-          </Card>
-        </div>
+          </div>
 
         {/* squeeze panel */}
         <div

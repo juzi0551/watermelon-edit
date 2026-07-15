@@ -39,9 +39,9 @@ def build_proofread_prompt(window_paragraphs: list[tuple], selected_types: list[
 规则：
 1. locator 必须直接从原文逐字复制，不得做任何修改。
 2. locator 至少要包含 5 个字符（或整个出错词，取较长者），确保它在段落内唯一出现。
-3. 同一段有多个错误时，各 locator 之间不能重叠互斥，彼此要保持足够间距。
-4. description 用简短的诊断说明（5-10 字）。
-5. 特别注意成对标点符号（如双引号“”、单引号‘’、书名号《》、括号（）等）是否成对出现、前后匹配，以及嵌套是否正确。
+3. locator 和 replacement 是同一段文本的「原文版」和「修正版」。replacement 与 locator 之间的差异，必须恰好是本次修正的内容，不能有任何字符的增删改落在 locator/replacement 范围之外。
+4. 同一段有多个错误时，各 locator 之间不能重叠互斥，彼此要保持足够间距。
+5. description 用简短的诊断说明（5-10 字）。
 
 若某类无错误，对应数组返回空。只返回 JSON，不要其他内容。
 

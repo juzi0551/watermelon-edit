@@ -5,7 +5,7 @@ import {
   Empty,
 } from 'antd'
 import {
-  InboxOutlined, ArrowLeftOutlined,
+  InboxOutlined, ArrowLeftOutlined, DownloadOutlined, UnorderedListOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
@@ -38,6 +38,7 @@ export default function ProjectDetail() {
     }
   )
   const [exporting, setExporting] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
 
@@ -53,6 +54,9 @@ export default function ProjectDetail() {
         setProject(data)
         setRunningBatch(null)
       }
+      // 不管项目状态是什么，都尝试加载结果。
+      // 段落数据在上传解析时就已存入 DB，校对期间也能展示正文。
+      loadResults()
     } catch (e) {
       setError(e.response?.data?.detail || e.message || '加载失败')
     } finally {
@@ -86,12 +90,6 @@ export default function ProjectDetail() {
   // persist proofread config across refreshes
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
   useEffect(() => { localStorage.setItem('proofread_types', JSON.stringify(selectedTypes)) }, [selectedTypes])
-
-  useEffect(() => {
-    if (project?.status === 'reviewing' || project?.status === 'completed') {
-      loadResults()
-    }
-  }, [project?.status])
 
   const handleUpload = async (file) => {
     setLoading(true)
@@ -231,11 +229,36 @@ export default function ProjectDetail() {
 
   return (
     <div>
-      <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} style={{ marginBottom: 16 }}>
-        返回项目列表
-      </Button>
-
-      <Card title={project?.name || '加载中...'} style={{ marginBottom: 16 }}>
+      <Card
+        title={
+          <Space>
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
+            <span style={{ fontWeight: 600, fontSize: 16 }}>{project?.name || '加载中...'}</span>
+          </Space>
+        }
+        extra={
+          results && (
+            <Space>
+              <Button
+                icon={<UnorderedListOutlined />}
+                onClick={() => setPanelOpen(v => !v)}
+                type={panelOpen ? 'primary' : 'default'}
+              >
+                问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
+              </Button>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                disabled={inProgress}
+                onClick={handleExport}
+              >
+                导出校稿版
+              </Button>
+            </Space>
+          )
+        }
+        style={{ marginBottom: 16 }}
+      >
 
         {(!project?.paragraph_count || project.paragraph_count === 0) && (
           <Dragger
@@ -285,7 +308,8 @@ export default function ProjectDetail() {
                     inProgress={inProgress}
                     onSetStatus={handleSetStatus}
                     onAcceptAll={handleAcceptAll}
-                    onExport={handleExport}
+                    panelOpen={panelOpen}
+                    onTogglePanel={() => setPanelOpen(v => !v)}
                     chapters={chapters}
                     selectedChapter={selectedChapter}
                     onStartProofread={handleProofread}
