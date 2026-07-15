@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Card, Button, Upload, Steps, Tag, Space, List, Typography, Spin, message,
+  Card, Button, Upload, Tag, Space, List, Typography, Spin, message,
   Empty,
 } from 'antd'
 import {
@@ -24,12 +24,19 @@ export default function ProjectDetail() {
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(false)
   const [models, setModels] = useState([])
-  const [selectedModel, setSelectedModel] = useState('deepseek-v4-flash')
+  const [selectedModel, setSelectedModel] = useState(
+    () => localStorage.getItem('proofread_model') || 'deepseek-v4-flash'
+  )
   const [results, setResults] = useState(null)
   const [proofreading, setProofreading] = useState(false)
   const [mode, setMode] = useState('continue')
   const [selectedChapter, setSelectedChapter] = useState(null)
-  const [selectedTypes, setSelectedTypes] = useState(['typo', 'grammar', 'punctuation', 'format'])
+  const [selectedTypes, setSelectedTypes] = useState(
+    () => {
+      try { return JSON.parse(localStorage.getItem('proofread_types') || ''); } catch {}
+      return ['typo', 'grammar', 'punctuation', 'format']
+    }
+  )
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
@@ -75,6 +82,10 @@ export default function ProjectDetail() {
     loadProject()
     loadModels()
   }, [projectId])
+
+  // persist proofread config across refreshes
+  useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
+  useEffect(() => { localStorage.setItem('proofread_types', JSON.stringify(selectedTypes)) }, [selectedTypes])
 
   useEffect(() => {
     if (project?.status === 'reviewing' || project?.status === 'completed') {
@@ -163,8 +174,8 @@ export default function ProjectDetail() {
     } catch {}
   }
 
-  const handleSetStatus = async (errorId, status) => {
-    await setErrorStatus(projectId, errorId, status)
+  const handleSetStatus = async (errorId, status, customText) => {
+    await setErrorStatus(projectId, errorId, status, customText)
     loadResults()
   }
 
@@ -196,10 +207,6 @@ export default function ProjectDetail() {
     }
   }
 
-  const stepIndex = {
-    new: 0, uploaded: 1, parsed: 1, proofreading: 1, reviewing: 2, completed: 3,
-  }[project?.status] || 0
-
   const total = project?.paragraph_count || 0
   const upto = project?.proofread_upto || results?.proofread_upto || 0
   const chapters = results?.chapters || []
@@ -229,16 +236,6 @@ export default function ProjectDetail() {
       </Button>
 
       <Card title={project?.name || '加载中...'} style={{ marginBottom: 16 }}>
-        <Steps
-          current={stepIndex}
-          items={[
-            { title: '上传文档' },
-            { title: 'AI 校对（含解析）' },
-            { title: '审核结果' },
-            { title: '导出' },
-          ]}
-          style={{ marginBottom: 24 }}
-        />
 
         {(!project?.paragraph_count || project.paragraph_count === 0) && (
           <Dragger
@@ -282,32 +279,30 @@ export default function ProjectDetail() {
 
             <div style={{ flex: 1, minWidth: 0 }}>
               {results && (
-                <ReviewReader
-                  results={results}
-                  project={project}
-                  inProgress={inProgress}
-                  onSetStatus={handleSetStatus}
-                  onAcceptAll={handleAcceptAll}
-                  onExport={handleExport}
-                  chapters={chapters}
-                  selectedChapter={selectedChapter}
-                  onStartProofread={handleProofread}
-                  mode={mode}
-                  onModeChange={setMode}
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                  models={models}
-                  selectedTypes={selectedTypes}
-                  onTypesChange={setSelectedTypes}
-                  percent={percent}
-                  proofreading={proofreading}
-                  total={total}
-                  upto={upto}
-                  bannerText={bannerText}
-                  projectError={project?.last_error}
-                  onRetry={handleProofread}
-                  onChapterChange={setSelectedChapter}
-                />
+                  <ReviewReader
+                    results={results}
+                    project={project}
+                    inProgress={inProgress}
+                    onSetStatus={handleSetStatus}
+                    onAcceptAll={handleAcceptAll}
+                    onExport={handleExport}
+                    chapters={chapters}
+                    selectedChapter={selectedChapter}
+                    onStartProofread={handleProofread}
+                    selectedModel={selectedModel}
+                    onModelChange={setSelectedModel}
+                    models={models}
+                    selectedTypes={selectedTypes}
+                    onTypesChange={setSelectedTypes}
+                    percent={percent}
+                    proofreading={proofreading}
+                    total={total}
+                    upto={upto}
+                    bannerText={bannerText}
+                    projectError={project?.last_error}
+                    onRetry={handleProofread}
+                    onChapterChange={setSelectedChapter}
+                  />
               )}
             </div>
           </div>

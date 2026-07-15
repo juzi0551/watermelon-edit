@@ -32,9 +32,16 @@ def build_proofread_prompt(window_paragraphs: list[tuple], selected_types: list[
     {{"level": 2, "title": "第一节 启程", "title_paragraph_idx": 5, "parent_idx": 0, "start_idx": 3, "end_idx": 5}}
   ],
   "errors": [
-    {{"type": "typo", "paragraph_index": 1, "original_text": "成才", "suggested_text": "成材", "severity": "medium", "description": "近义混淆"}}
+    {{"type": "typo", "paragraph_index": 1, "locator": "成才", "replacement": "成材", "severity": "medium", "description": "同音错字"}}
   ]
 }}
+
+规则：
+1. locator 必须直接从原文逐字复制，不得做任何修改。
+2. locator 至少要包含 5 个字符（或整个出错词，取较长者），确保它在段落内唯一出现。
+3. 同一段有多个错误时，各 locator 之间不能重叠互斥，彼此要保持足够间距。
+4. description 用简短的诊断说明（5-10 字）。
+5. 特别注意成对标点符号（如双引号“”、单引号‘’、书名号《》、括号（）等）是否成对出现、前后匹配，以及嵌套是否正确。
 
 若某类无错误，对应数组返回空。只返回 JSON，不要其他内容。
 
@@ -144,11 +151,14 @@ def _normalize_errors(raw_list: list, allowed_types: set) -> list[dict]:
         idx = _to_int(e.get("paragraph_index", 0))
         if idx is None:
             continue
+        # accept new (locator/replacement) and old (original_text/suggested_text) formats
+        original_text = e.get("locator") or e.get("original_text") or ""
+        suggested_text = e.get("replacement") or e.get("suggested_text") or ""
         out.append({
             "type": t,
             "paragraph_index": idx,
-            "original_text": e.get("original_text", ""),
-            "suggested_text": e.get("suggested_text", ""),
+            "original_text": original_text,
+            "suggested_text": suggested_text,
             "severity": sev,
             "description": e.get("description", ""),
         })

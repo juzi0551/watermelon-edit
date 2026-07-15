@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
-  Select, Radio, Progress,
+  Select, Radio, Progress, Input,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
   DownloadOutlined, UnorderedListOutlined, ThunderboltOutlined,
-  LoadingOutlined, SettingOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons'
 
 const { Text } = Typography
@@ -22,6 +22,45 @@ const TYPE_OPTIONS = [
   { value: 'punctuation', label: '标点' },
   { value: 'format', label: '格式' },
 ]
+
+function computeInlineDiff(original, suggested) {
+  let prefixLen = 0
+  while (prefixLen < original.length && prefixLen < suggested.length &&
+         original[prefixLen] === suggested[prefixLen]) {
+    prefixLen++
+  }
+  let suffixLen = 0
+  while (suffixLen < original.length - prefixLen &&
+         suffixLen < suggested.length - prefixLen &&
+         original[original.length - 1 - suffixLen] === suggested[suggested.length - 1 - suffixLen]) {
+    suffixLen++
+  }
+  return {
+    prefix: original.slice(0, prefixLen),
+    removed: original.slice(prefixLen, original.length - suffixLen),
+    added: suggested.slice(prefixLen, suggested.length - suffixLen),
+    suffix: original.slice(original.length - suffixLen),
+  }
+}
+
+function DiffView({ original, suggested }) {
+  const { prefix, removed, added, suffix } = useMemo(
+    () => computeInlineDiff(original, suggested),
+    [original, suggested],
+  )
+  return (
+    <span style={{ fontSize: 14, lineHeight: 1.6 }}>
+      <span>{prefix}</span>
+      {removed && (
+        <span style={{ color: '#ff4d4f', textDecoration: 'line-through' }}>{removed}</span>
+      )}
+      {added && (
+        <span style={{ color: '#52c41a', fontWeight: 600 }}>{added}</span>
+      )}
+      <span>{suffix}</span>
+    </span>
+  )
+}
 
 function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   if (!text) return null
@@ -39,35 +78,40 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
     if (f.idx > cursor) segs.push(<span key={`t${cursor}`}>{text.slice(cursor, f.idx)}</span>)
     const e = f.error
     const isSel = e.id === selectedId
-    const resolved = e.user_status !== 'pending'
+    const accepted = e.user_status === 'accepted'
+    const rejected = e.user_status === 'rejected'
+    const pending = e.user_status === 'pending'
+    const displayText = accepted ? e.suggested_text : e.original_text
     segs.push(
       <span
         key={e.id}
         onClick={() => onSelect(e.id)}
+        title={accepted ? `原: ${e.original_text}` : undefined}
         style={{
           cursor: 'pointer',
           padding: '0 2px',
           borderRadius: 2,
           backgroundColor: isSel ? '#fff1b8' : 'transparent',
-          borderBottom: resolved
-            ? (e.user_status === 'accepted' ? '1px solid #52c41a' : '1px solid #d9d9d9')
-            : (isSel ? '2px solid #faad14' : '1px dotted #faad14'),
-          textDecoration: resolved ? 'line-through' : 'none',
-          color: resolved ? '#bbb' : undefined,
+          borderBottom: accepted
+            ? '1px dashed #888'
+            : pending
+              ? (isSel ? '2px solid #faad14' : '1px dotted #faad14')
+              : 'none',
         }}
-      >{e.original_text}</span>,
+      >{displayText}</span>,
     )
     cursor = f.end
   })
   if (cursor < text.length) segs.push(<span key="t-end">{text.slice(cursor)}</span>)
   chips.forEach(e => {
+    const accepted = e.user_status === 'accepted'
     segs.push(
       <Tag
         key={`chip-${e.id}`}
-        color={SEVERITY_COLOR[e.severity] || 'blue'}
+        color={accepted ? 'green' : (SEVERITY_COLOR[e.severity] || 'blue')}
         style={{ cursor: 'pointer', margin: '0 4px' }}
         onClick={() => onSelect(e.id)}
-      >{e.original_text}</Tag>,
+      >{accepted ? e.suggested_text : e.original_text}</Tag>,
     )
   })
   return <>{segs}</>
@@ -114,7 +158,6 @@ function ErrorList({ errors, selectedId, onSelect }) {
 export default function ReviewReader({
   results, project, inProgress, onSetStatus, onAcceptAll, onExport,
   chapters = [], selectedChapter = null, onStartProofread,
-  mode = 'continue', onModeChange,
   selectedModel, onModelChange,
   models = [],
   selectedTypes = ['typo', 'grammar', 'punctuation', 'format'], onTypesChange,
@@ -144,6 +187,8 @@ export default function ReviewReader({
   const [selectedId, setSelectedId] = useState(null)
   const [panelOpen, setPanelOpen] = useState(false)
   const [panelTab, setPanelTab] = useState('pending')
+  const [customEdit, setCustomEdit] = useState('')
+  const [showOptions, setShowOptions] = useState(false)
   const flowRef = useRef(null)
   const contentRef = useRef(null)
 
@@ -180,6 +225,12 @@ export default function ReviewReader({
   const allDone = pending.length === 0 && flatErrors.length > 0
   const selIsPending = selectedError?.user_status === 'pending'
 
+  useEffect(() => {
+    if (selectedError && selIsPending) {
+      setCustomEdit(selectedError.suggested_text)
+    }
+  }, [selectedError?.id, selIsPending])
+
   const prevPendingCount = useRef(pending.length)
   useEffect(() => {
     if (pending.length === 0 && prevPendingCount.current > 0 && flowRef.current && flatErrors.length > 0) {
@@ -192,7 +243,9 @@ export default function ReviewReader({
 
   const handleStatus = async (status) => {
     if (!selectedId) return
-    await onSetStatus(selectedId, status)
+    const custom = status === 'accepted' && customEdit !== selectedError?.suggested_text
+      ? customEdit : undefined
+    await onSetStatus(selectedId, status, custom)
     const idx = pending.findIndex(e => e.id === selectedId)
     if (idx >= 0 && idx + 1 < pending.length) {
       setSelectedId(pending[idx + 1].id)
@@ -230,8 +283,6 @@ export default function ReviewReader({
     gap: 12,
     flexWrap: 'wrap',
   }
-
-  const numSectionItems = [pending, accepted, rejected].filter(a => a.length > 0).length
 
   return (
     <>
@@ -323,11 +374,10 @@ export default function ReviewReader({
                         <div style={{ marginBottom: 4, color: '#666', fontSize: 14 }}>
                           {selectedError.description}
                         </div>
-                        <div>
-                          <Text delete type="danger">{selectedError.original_text}</Text>
-                          <span style={{ margin: '0 8px' }}>→</span>
-                          <Text type="success">{selectedError.suggested_text}</Text>
-                        </div>
+                        <DiffView
+                          original={selectedError.original_text}
+                          suggested={selectedError.suggested_text}
+                        />
                       </div>
                     )}
                   </div>
@@ -422,35 +472,33 @@ export default function ReviewReader({
           <>
             {selectedError && selIsPending ? (
               <>
-                <span
-                  style={{
-                    color: '#888',
-                    fontSize: 13,
-                    maxWidth: 300,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {selectedError.description}
-                </span>
-                <span style={{ color: '#ddd' }}>|</span>
+                <Input
+                  value={customEdit}
+                  onChange={(e) => setCustomEdit(e.target.value)}
+                  style={{ width: 360, fontSize: 14 }}
+                  size="large"
+                  placeholder="修改结果…"
+                />
                 <Button
                   type="primary"
+                  size="large"
                   icon={<CheckCircleOutlined />}
                   onClick={() => handleStatus('accepted')}
                   disabled={inProgress}
+                  style={{ height: 40, paddingInline: 24 }}
                 >
                   采纳
                 </Button>
                 <Button
+                  size="large"
                   icon={<CloseCircleOutlined />}
                   onClick={() => handleStatus('rejected')}
                   disabled={inProgress}
+                  style={{ height: 40, paddingInline: 24 }}
                 >
                   拒绝
                 </Button>
-                <Tag color="blue" style={{ marginLeft: 4 }}>
+                <Tag color="blue" style={{ marginLeft: 4, fontSize: 14, padding: '2px 8px' }}>
                   {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
                 </Tag>
               </>
@@ -467,34 +515,30 @@ export default function ReviewReader({
                 ⚠ 上次校对失败：{projectError}
               </span>
             ) : allDone ? (
-              <span style={{ color: '#52c41a', fontWeight: 500 }}>
-                ✓ 校对完成（已处理 {accepted.length + rejected.length} 条）
+              <span style={{ color: '#52c41a', fontWeight: 500, fontSize: 14 }}>
+                ✓ 校对完成
               </span>
             ) : null}
 
             <ControlsRow
-              mode={mode} onModeChange={onModeChange}
+              showOptions={showOptions}
+              onToggleOptions={() => setShowOptions(s => !s)}
               selectedModel={selectedModel} onModelChange={onModelChange}
               models={models}
               selectedTypes={selectedTypes} onTypesChange={onTypesChange}
-              chapters={chapters} selectedChapter={selectedChapter}
-              onChapterChange={onChapterChange}
               inProgress={inProgress}
             />
 
             <Button
               type="primary"
+              size="large"
               icon={<ThunderboltOutlined />}
               loading={proofreading}
               onClick={onStartProofread}
-              disabled={inProgress || (mode === 'continue' && upto >= total) || (mode === 'chapter' && !selectedChapter)}
-              size="small"
+              disabled={inProgress}
+              style={{ height: 44, paddingInline: 32, fontSize: 16 }}
             >
-              {allDone
-                ? '继续校对'
-                : mode === 'continue' && upto >= total
-                  ? '已校完'
-                  : projectError ? '重试' : '开始校对'}
+              {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
             </Button>
           </>
         )}
@@ -504,67 +548,52 @@ export default function ReviewReader({
 }
 
 function ControlsRow({
-  mode, onModeChange,
+  showOptions, onToggleOptions,
   selectedModel, onModelChange, models,
   selectedTypes, onTypesChange,
-  chapters, selectedChapter, onChapterChange,
   inProgress,
 }) {
   return (
     <Space wrap size="small" style={{ justifyContent: 'center' }}>
-      <Radio.Group
-        value={mode}
-        disabled={inProgress}
-        onChange={(e) => onModeChange?.(e.target.value)}
-        optionType="button"
-        buttonStyle="solid"
+      <Button
+        type="text"
         size="small"
+        onClick={onToggleOptions}
+        style={{ color: '#888', fontSize: 12 }}
       >
-        <Radio value="continue">继续</Radio>
-        <Radio value="chapter">章节校对</Radio>
-      </Radio.Group>
+        {showOptions ? '收起选项 ▲' : '更多选项 ▼'}
+      </Button>
 
-      <Select
-        style={{ width: 160 }}
-        value={selectedModel}
-        disabled={inProgress}
-        onChange={onModelChange}
-        options={models.map(m => ({ value: m.model_id, label: m.name }))}
-        size="small"
-      />
+      {showOptions && (
+        <>
+          <Select
+            style={{ width: 160 }}
+            value={selectedModel}
+            disabled={inProgress}
+            onChange={onModelChange}
+            options={models.map(m => ({ value: m.model_id, label: m.name }))}
+            size="small"
+          />
 
-      {mode === 'chapter' && chapters.length > 0 && (
-        <Select
-          style={{ width: 160 }}
-          placeholder="选择章节"
-          value={selectedChapter}
-          disabled={inProgress}
-          onChange={onChapterChange}
-          options={chapters.map(ch => ({
-            value: ch.id,
-            label: ch.title || `第 ${ch.title_paragraph_idx} 段`,
-          }))}
-          size="small"
-        />
+          <Select
+            mode="multiple"
+            style={{ minWidth: 180 }}
+            value={selectedTypes}
+            disabled={inProgress}
+            onChange={onTypesChange}
+            options={TYPE_OPTIONS}
+            size="small"
+            tagRender={(props) => {
+              const { label, closable, onClose } = props
+              return (
+                <Tag closable={closable} onClose={onClose} style={{ margin: 0, fontSize: 11 }}>
+                  {label}
+                </Tag>
+              )
+            }}
+          />
+        </>
       )}
-
-      <Select
-        mode="multiple"
-        style={{ minWidth: 180 }}
-        value={selectedTypes}
-        disabled={inProgress}
-        onChange={onTypesChange}
-        options={TYPE_OPTIONS}
-        size="small"
-        tagRender={(props) => {
-          const { label, closable, onClose } = props
-          return (
-            <Tag closable={closable} onClose={onClose} style={{ margin: 0, fontSize: 12 }}>
-              {label}
-            </Tag>
-          )
-        }}
-      />
     </Space>
   )
 }

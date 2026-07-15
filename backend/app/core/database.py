@@ -456,6 +456,12 @@ def update_error_status(error_id: int, status: str):
         conn.execute("UPDATE errors SET user_status = ? WHERE id = ?", (status, error_id))
 
 
+def update_error_suggested(error_id: int, suggested: str):
+    """更新某条错误的 suggested_text（用户手动编辑）。"""
+    with get_conn() as conn:
+        conn.execute("UPDATE errors SET suggested_text = ? WHERE id = ?", (suggested, error_id))
+
+
 def get_accepted_errors(document_id: str) -> list[dict]:
     """获取用户已采纳的错误（用于应用修改）。"""
     with get_conn() as conn:

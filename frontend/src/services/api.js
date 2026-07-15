@@ -86,8 +86,11 @@ export async function getResults(projectId) {
 
 // ==================== Error Actions ====================
 
-export async function setErrorStatus(projectId, errorId, status) {
-  const { data } = await api.post(`/projects/${projectId}/errors/${errorId}/status`, { status })
+export async function setErrorStatus(projectId, errorId, status, customText) {
+  const { data } = await api.post(`/projects/${projectId}/errors/${errorId}/status`, {
+    status,
+    custom_text: customText || null,
+  })
   return data
 }
 

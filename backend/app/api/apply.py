@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from docx import Document as DocxDocument
 from app.core.database import (
     get_current_document, get_errors, get_error,
-    update_error_status, update_project_status,
+    update_error_status, update_error_suggested, update_project_status,
     get_paragraph_by_idx, update_paragraph_revised, get_revised_paragraphs,
 )
 
@@ -33,12 +33,15 @@ def _recompute_paragraph(document_id: str, paragraph_idx: int):
 
 class StatusBody(BaseModel):
     status: str  # accepted | rejected | pending
+    custom_text: str | None = None
 
 
 @router.post("/projects/{project_id}/errors/{error_id}/status")
 async def set_error_status(project_id: str, error_id: int, body: StatusBody):
     if body.status not in ("accepted", "rejected", "pending"):
         return {"error": "非法状态"}
+    if body.custom_text and body.status == "accepted":
+        update_error_suggested(error_id, body.custom_text)
     update_error_status(error_id, body.status)
     e = get_error(error_id)
     if e:
