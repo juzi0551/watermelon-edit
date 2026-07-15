@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js
+node_modules/
+frontend/dist/
+frontend/build/
+
+# Backend static (built by frontend, not committed)
+backend/static/
+backend/uploads/
+
+# PyInstaller
+*.spec
+build/
+dist/
+
+# Logs
+*.log
+
+# Secrets & runtime data (NEVER commit)
+backend/app/data/
+*.db
+*.docx
+*.doc
+
+# Tool / backup dirs
+.omo/
+.playwright-mcp/
+bak/
