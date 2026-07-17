@@ -1,6 +1,5 @@
 """
 SQLite 数据库模块
-数据库文件位置：backend/data/novel_proofreader.db
 
 表结构：
 - projects: 项目（一个小说 = 一个项目）

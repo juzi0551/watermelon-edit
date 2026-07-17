@@ -96,7 +96,7 @@ export default function ProjectDetail() {
     const upto = p?.proofread_upto ?? results?.proofread_upto ?? 0
     const total = p?.paragraph_count ?? 0
     const suffix = ` (${upto}/${total})`
-    document.title = (p?.name || '小说校稿工具') + suffix
+    document.title = (p?.name || 'Watermelon Edit') + suffix
   }, [project, results])
 
   // persist proofread config across refreshes

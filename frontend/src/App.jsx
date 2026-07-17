@@ -15,7 +15,7 @@ function AppHeader() {
   return (
     <Header style={{ background: '#374151', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Link to="/" style={{ textDecoration: 'none' }}>
-        <Text strong style={{ color: '#fff', fontSize: 18 }}>小说校稿工具</Text>
+        <Text strong style={{ color: '#fff', fontSize: 18 }}>Watermelon Edit</Text>
       </Link>
       <Space>
         <LLMDebug />
@@ -43,7 +43,7 @@ function AppLayout() {
         </Routes>
       </Content>
       <Footer style={{ textAlign: 'center' }}>
-        <Text type="secondary">小说校稿工具 v0.1.0 · 基于 DeepSeek / Kimi 等大模型</Text>
+          <Text type="secondary">Watermelon Edit v0.1.0 · 基于 DeepSeek / Kimi 等大模型</Text>
       </Footer>
     </Layout>
   )

@@ -1,5 +1,5 @@
 ---
-name: 西瓜少年 — 小说校稿工具
+name: Watermelon Edit — 小说校稿工具
 description: 基于大模型的小说 docx 校对工具。Ant Design 为基础，自定义 token 覆盖于交互反馈和文本 diff 场景。
 
 colors:

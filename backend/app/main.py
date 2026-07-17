@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="小说校稿工具",
+    title="Watermelon Edit",
     version="0.1.0",
     lifespan=lifespan,
 )

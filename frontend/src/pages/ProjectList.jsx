@@ -22,7 +22,7 @@ export default function ProjectList() {
 
   useEffect(() => { load() }, [])
   useEffect(() => {
-    document.title = '小说校稿工具'
+    document.title = 'Watermelon Edit'
   }, [])
 
   const handleDelete = async (id) => {
