@@ -163,7 +163,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             new_upto = get_document_progress(doc_id)["proofread_upto"]
             set_proofread_progress(doc_id, new_upto)
             update_project_status(project_id, "reviewing")
-            set_document_error(doc_id, "模型调用失败，请检查「设置」页的 API Key 与网络后重试")
+            set_document_error(doc_id, str(e))
         except Exception:
             pass
         logger.warning("校对中断(模型错误) doc=%s: %s", doc_id, e)
@@ -173,6 +173,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             new_upto = get_document_progress(doc_id)["proofread_upto"]
             set_proofread_progress(doc_id, new_upto)
             update_project_status(project_id, "reviewing")
+            set_document_error(doc_id, f"校对异常：{e}")
         except Exception:
             pass
     finally:

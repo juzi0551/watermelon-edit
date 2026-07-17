@@ -90,14 +90,9 @@ export default function ProjectDetail() {
     loadModels()
   }, [projectId])
 
-  // titlebar: 项目名 + 校稿进度
   useEffect(() => {
-    const p = project
-    const upto = p?.proofread_upto ?? results?.proofread_upto ?? 0
-    const total = p?.paragraph_count ?? 0
-    const suffix = ` (${upto}/${total})`
-    document.title = (p?.name || 'Watermelon Edit') + suffix
-  }, [project, results])
+    document.title = project?.name || 'Watermelon Edit'
+  }, [project])
 
   // persist proofread config across refreshes
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
@@ -174,7 +169,9 @@ export default function ProjectDetail() {
     loadProject()
     try {
       const d = await getProject(projectId)
-      if (mode === 'continue' && runBatch) {
+      if (d.last_error) {
+        message.error(`校对失败：${d.last_error}`)
+      } else if (mode === 'continue' && runBatch) {
         message.success(`第 ${runBatch} 批校对完成（已校对至 ${d.proofread_upto || 0}/${d.paragraph_count || 0} 段）`)
       } else if (mode === 'chapter') {
         message.success('章节校对完成')
@@ -246,6 +243,16 @@ export default function ProjectDetail() {
           <Space>
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
             <span style={{ fontWeight: 600, fontSize: 18 }}>{project?.name || '加载中...'}</span>
+            {total > 0 && (
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {upto}/{total} 段
+              </Text>
+            )}
+            {project?.last_error && (
+              <Tag color="warning" style={{ fontSize: 12, marginLeft: 8 }}>
+                ⚠ {project.last_error}
+              </Tag>
+            )}
           </Space>
         }
         extra={

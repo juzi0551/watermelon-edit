@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
-  Select, Radio, Progress, Input, Badge,
+  Select, Radio, Progress, Input, Badge, Popover,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
@@ -86,39 +86,71 @@ function DiffView({ original, suggested }) {
   )
 }
 
-function ErrorDetailCard({ error, style: extStyle }) {
+function ErrorDetailCard({ error, style: extStyle, onAccept, onReject }) {
+  const pending = error.user_status === 'pending'
   return (
     <div
       style={{
         position: 'fixed',
         zIndex: 1100,
         width: 380,
-        padding: '10px 14px',
+        padding: '14px 16px 12px',
         background: color.bgCard,
         borderRadius: radius.md,
         borderLeft: `3px solid ${color.warning}`,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
         ...extStyle,
       }}
     >
-      <Space style={{ marginBottom: 4 }} wrap>
-        <Tag>{TYPE_LABEL[error.type] || error.type}</Tag>
-        <Tag color={SEVERITY_COLOR[error.severity]}>
+      <div style={{ marginBottom: 10 }}>
+        <DiffView
+          original={error.original_text}
+          suggested={error.suggested_text}
+        />
+      </div>
+      <div style={{
+        marginBottom: 8,
+        color: color.textSecondary,
+        fontSize: fontSize.bodySm,
+        lineHeight: 1.6,
+        padding: '6px 10px',
+        background: color.bgPage,
+        borderRadius: radius.sm,
+      }}>
+        {error.description}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        <Tag style={{ margin: 0, fontSize: 11, lineHeight: '20px' }}>{TYPE_LABEL[error.type] || error.type}</Tag>
+        <Tag color={SEVERITY_COLOR[error.severity]} style={{ margin: 0, fontSize: 11, lineHeight: '20px' }}>
           {SEVERITY_LABEL[error.severity]}危
         </Tag>
-        {error.user_status !== 'pending' && (
-          <Tag color={error.user_status === 'accepted' ? 'green' : 'red'}>
+        {!pending && (
+          <Tag color={error.user_status === 'accepted' ? 'green' : 'red'} style={{ margin: 0, fontSize: 11, lineHeight: '20px' }}>
             {error.user_status === 'accepted' ? '已采纳' : '已拒绝'}
           </Tag>
         )}
-      </Space>
-      <div style={{ marginBottom: 4, color: color.textSecondary, fontSize: fontSize.bodySm }}>
-        {error.description}
+        {pending && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <Button
+              type="primary"
+              size="small"
+              shape="round"
+              onClick={(e) => { e.stopPropagation(); onAccept?.() }}
+              style={{ height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px' }}
+            >
+              采纳
+            </Button>
+            <Button
+              size="small"
+              shape="round"
+              onClick={(e) => { e.stopPropagation(); onReject?.() }}
+              style={{ height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px', borderColor: color.border }}
+            >
+              拒绝
+            </Button>
+          </div>
+        )}
       </div>
-      <DiffView
-        original={error.original_text}
-        suggested={error.suggested_text}
-      />
     </div>
   )
 }
@@ -280,6 +312,7 @@ export default function ReviewReader({
   const [fontSizeOffset, setFontSizeOffset] = useState(() => {
     try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
   })
+  const [flashSide, setFlashSide] = useState(null) // 'accept' | 'reject' | null
   const flowRef = useRef(null)
   const contentRef = useRef(null)
   const resultsRef = useRef(results)
@@ -378,6 +411,8 @@ export default function ReviewReader({
   }, [selectedId])
   useEffect(() => {
     if (!selectedId || !flowRef.current) return
+    // 如果是刚恢复了阅读位置，跳过自动滚动到选中错误，避免覆盖 scrollTop
+    if (positionSavedRef.current) { positionSavedRef.current = false; return }
     const err = flatErrors.find(e => e.id === selectedId)
     if (!err) return
     const el = flowRef.current.querySelector(`[data-para="${err.paragraph_index}"]`)
@@ -433,6 +468,36 @@ export default function ReviewReader({
       setSelectedId(null)
     }
   }
+
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = document.activeElement?.tagName
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable
+
+      // Space → 开始/继续校对
+      if (e.key === ' ') {
+        if (inInput) return
+        if (inProgress || proofreading) return
+        if (flatErrors.length > 0 && pending.length > 0) return
+        e.preventDefault()
+        onStartProofread?.()
+        return
+      }
+
+      // 左右箭头 → 采纳/拒绝
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      if (inInput) return
+      const err = flatErrors.find(er => er.id === selectedIdRef.current)
+      if (!err || err.user_status !== 'pending') return
+      e.preventDefault()
+      const side = e.key === 'ArrowLeft' ? 'accepted' : 'rejected'
+      setFlashSide(side)
+      setTimeout(() => setFlashSide(null), 200)
+      handleStatus(side)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [flatErrors, handleStatus, inProgress, proofreading, pending, onStartProofread])
 
   const hasResults = results && paras.length > 0
   const showPanel = panelOpen && hasResults
@@ -594,8 +659,37 @@ export default function ReviewReader({
 
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap', width: '100%', padding: '0 80px', position: 'relative' }}>
-        {/* STATE: proofreading in progress */}
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 24px', gap: 16 }}>
+        {/* left: 校对配置（Popover 弹出，不占位） */}
+        {!(inProgress || proofreading) && !(flatErrors.length > 0 && pending.length > 0) && (
+          <Popover
+            trigger="click"
+            open={showOptions}
+            onOpenChange={setShowOptions}
+            placement="topLeft"
+            styles={{ body: { padding: '12px 16px' } }}
+            content={
+              <ControlsRow
+                showOptions={true}
+                selectedModel={selectedModel} onModelChange={onModelChange}
+                models={models}
+                selectedTypes={selectedTypes} onTypesChange={onTypesChange}
+                inProgress={inProgress}
+              />
+            }
+          >
+            <Button
+              type="text"
+              size="middle"
+              style={{ color: color.textTertiary, fontSize: 14, whiteSpace: 'nowrap' }}
+            >
+              {showOptions ? '◀' : '▶'} 校对配置
+            </Button>
+          </Popover>
+        )}
+
+        {/* center: main content */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12 }}>
         {inProgress || proofreading ? (
           <>
             <Progress
@@ -625,20 +719,32 @@ export default function ReviewReader({
                   shape="round"
                   size="large"
                   icon={<CheckCircleOutlined />}
-                  onClick={() => handleStatus('accepted')}
+                  onClick={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
                   disabled={inProgress}
-                  style={{ height: 48, paddingInline: 32, fontSize: 16 }}
+                  style={{
+                    height: 48, paddingInline: 32, fontSize: 16,
+                    transition: 'background 0.15s, box-shadow 0.15s',
+                    background: flashSide === 'accepted' ? '#52c41a' : undefined,
+                    boxShadow: flashSide === 'accepted' ? '0 0 0 3px rgba(82,196,26,0.3)' : undefined,
+                  }}
                 >
-                  采纳
+                  ← 采纳
                 </Button>
                 <Button
                   size="large"
                   icon={<CloseCircleOutlined />}
-                  onClick={() => handleStatus('rejected')}
+                  onClick={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
                   disabled={inProgress}
-                  style={{ height: 48, paddingInline: 32, fontSize: 16 }}
+                  style={{
+                    height: 48, paddingInline: 32, fontSize: 16,
+                    transition: 'background 0.15s, box-shadow 0.15s',
+                    background: flashSide === 'rejected' ? '#ff4d4f' : undefined,
+                    color: flashSide === 'rejected' ? '#fff' : undefined,
+                    borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
+                    boxShadow: flashSide === 'rejected' ? '0 0 0 3px rgba(255,77,79,0.3)' : undefined,
+                  }}
                 >
-                  拒绝
+                  拒绝 →
                 </Button>
                 <Tag style={{ marginLeft: 4, fontSize: 16, padding: '4px 12px', borderRadius: 999 }}>
                   {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
@@ -652,48 +758,25 @@ export default function ReviewReader({
           </>
         ) : (
           <>
-            {projectError && onRetry ? (
-              <span style={{ color: color.warning, fontWeight: 500, fontSize: fontSize.bodyXs }}>
-                ⚠ 上次校对失败：{projectError}
-              </span>
-            ) : null}
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <Button
-                type="primary"
-                shape="round"
-                size="large"
-                icon={<ThunderboltOutlined />}
-                loading={proofreading}
-                onClick={onStartProofread}
-                disabled={inProgress}
-                style={{ height: 52, paddingInline: 40, fontSize: 18 }}
-              >
-                {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
-              </Button>
-              <Button
-                type="text"
-                size="middle"
-                onClick={() => setShowOptions(s => !s)}
-                style={{ color: color.textTertiary, fontSize: 14 }}
-              >
-                {showOptions ? '收起选项 ▲' : '更多选项 ▼'}
-              </Button>
-            </div>
-
-            <ControlsRow
-              showOptions={showOptions}
-              selectedModel={selectedModel} onModelChange={onModelChange}
-              models={models}
-              selectedTypes={selectedTypes} onTypesChange={onTypesChange}
-              inProgress={inProgress}
-            />
+            <Button
+              type="primary"
+              shape="round"
+              size="large"
+              icon={<ThunderboltOutlined />}
+              loading={proofreading}
+              onClick={onStartProofread}
+              disabled={inProgress}
+              style={{ height: 52, paddingInline: 40, fontSize: 18 }}
+            >
+              {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
+            </Button>
           </>
         )}
+        </div>
 
-        {/* 字号调节 */}
+        {/* right: 字号调节 */}
         <div style={{
-          position: 'absolute', right: 20,
+          flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 6,
           background: color.bgCard,
           borderRadius: radius.md,
@@ -723,7 +806,12 @@ export default function ReviewReader({
         </div>
       </div>
       {selectedError && floatCardStyle && (
-        <ErrorDetailCard error={selectedError} style={floatCardStyle} />
+        <ErrorDetailCard
+          error={selectedError}
+          style={floatCardStyle}
+          onAccept={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
+          onReject={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
+        />
       )}
     </>
   )
