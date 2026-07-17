@@ -22,6 +22,7 @@ const tokens = {
 
     bgPage: '#fff',
     bgCard: '#fafafa',
+    bgReader: '#f9f7f4',
     bgHighlight: '#fffbe6',
     bgChapterSelected: '#e6f4ff',
 

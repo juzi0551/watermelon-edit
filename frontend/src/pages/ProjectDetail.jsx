@@ -282,9 +282,9 @@ export default function ProjectDetail() {
           </Dragger>
         )}
         {total > 0 && (
-          <div style={{ display: 'flex', gap: 16 }}>
-            <div style={{ width: 260, flexShrink: 0 }}>
-              <Title level={5}>章节目录</Title>
+          <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 190px)', overflow: 'hidden' }}>
+            <div style={{ width: 260, flexShrink: 0, height: '100%', overflowY: 'auto' }}>
+              <Title level={5} style={{ marginTop: 0 }}>章节目录</Title>
               {chapters.length === 0 ? (
                 <Text type="secondary">尚未校对出章节结构，先执行校对。</Text>
               ) : (

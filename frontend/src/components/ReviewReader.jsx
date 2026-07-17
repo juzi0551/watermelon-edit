@@ -6,6 +6,7 @@ import {
 import {
   CheckCircleOutlined, CloseCircleOutlined,
   ThunderboltOutlined, LoadingOutlined, CloseOutlined,
+  MinusOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { color, radius, spacing, fontSize } from '../design-tokens'
 
@@ -243,8 +244,17 @@ export default function ReviewReader({
   const [panelTab, setPanelTab] = useState('pending')
   const [customEdit, setCustomEdit] = useState('')
   const [showOptions, setShowOptions] = useState(false)
+  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
+    try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
+  })
   const flowRef = useRef(null)
   const contentRef = useRef(null)
+
+  useEffect(() => {
+    localStorage.setItem('reader_font_offset', String(fontSizeOffset))
+  }, [fontSizeOffset])
+
+  const currentBodyFontSize = fontSize.body + fontSizeOffset
 
   useEffect(() => {
     if (pending.length > 0 && !selectedId) {
@@ -340,28 +350,36 @@ export default function ReviewReader({
 
   return (
     <>
-      <div style={{ paddingBottom: 80, display: 'flex', gap: 0, position: 'relative' }}>
-        <div
-          ref={contentRef}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            transition: 'margin-right 0.2s',
-          }}
-        >
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        {/* main area: left content + right panel */}
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          {/* left: paragraph flow */}
+          <div
+            ref={contentRef}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+            }}
+          >
             <div
               ref={flowRef}
               style={{
-                padding: '0 24px',
-                maxHeight: '70vh',
+                flex: 1,
+                minHeight: 0,
                 overflowY: 'auto',
+                padding: '0 24px',
+                background: color.bgReader,
+                borderRadius: radius.md,
               }}
             >
               {[...paras].sort((a, b) => a.idx - b.idx).map(para => {
                 const paraErrs = errors.filter(e => e.paragraph_index === para.idx)
                 return (
                   <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24 }}>
-                    <div style={{ lineHeight: 1.9, fontSize: fontSize.body }}>
+                    <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize }}>
                       <ParagraphView
                         text={para.text}
                         paraErrors={paraErrs}
@@ -411,81 +429,86 @@ export default function ReviewReader({
             </div>
           </div>
 
-        {/* squeeze panel */}
-        <div
-          style={{
-            width: showPanel ? 420 : 0,
-            overflow: 'hidden',
-            flexShrink: 0,
-            transition: 'width 0.2s ease',
-            opacity: showPanel ? 1 : 0,
-            borderLeft: `1px solid ${color.border}`,
-            background: color.bgPage,
-            borderRadius: 8,
-          }}
-        >
-          <div style={{ width: 420, height: '100%', display: 'flex', flexDirection: 'column' }}>
-            {/* 面板标题 */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '14px 16px 0',
-            }}>
-              <span style={{ fontWeight: 600, fontSize: 15 }}>问题列表</span>
-              <Button type="text" size="small" icon={<CloseOutlined />} onClick={onTogglePanel} />
-            </div>
+          {/* right panel */}
+          <div
+            style={{
+              width: showPanel ? 420 : 0,
+              overflow: 'hidden',
+              flexShrink: 0,
+              transition: 'width 0.2s ease',
+              opacity: showPanel ? 1 : 0,
+              borderLeft: `1px solid ${color.border}`,
+              background: color.bgPage,
+              borderRadius: 8,
+            }}
+          >
+            <div style={{ width: 420, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              {/* 面板标题 */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '14px 16px 0',
+              }}>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>问题列表</span>
+                <Button type="text" size="small" icon={<CloseOutlined />} onClick={onTogglePanel} />
+              </div>
 
-            <Tabs
-              activeKey={panelTab}
-              onChange={setPanelTab}
-              style={{ padding: '0 16px', flex: 1, minHeight: 0 }}
-              items={[
-                {
-                  key: 'pending',
-                  label: <span>待处理 <Badge count={pending.length} size="small" style={{ backgroundColor: color.warning }} /></span>,
-                  children: pending.length === 0
-                    ? <Empty description="暂无待处理问题" />
-                    : (
-                      <ErrorList
-                        errors={pending}
-                        selectedId={selectedId}
-                        onSelect={(id) => { setSelectedId(id) }}
-                      />
-                    ),
-                },
-                {
-                  key: 'accepted',
-                  label: <span>已采纳 <Badge count={accepted.length} size="small" style={{ backgroundColor: color.success }} /></span>,
-                  children: accepted.length === 0
-                    ? <Empty description="暂无已采纳问题" />
-                    : (
-                      <ErrorList
-                        errors={accepted}
-                        selectedId={selectedId}
-                        onSelect={(id) => { setSelectedId(id) }}
-                      />
-                    ),
-                },
-                {
-                  key: 'rejected',
-                  label: <span>已拒绝 <Badge count={rejected.length} size="small" /></span>,
-                  children: rejected.length === 0
-                    ? <Empty description="暂无已拒绝问题" />
-                    : (
-                      <ErrorList
-                        errors={rejected}
-                        selectedId={selectedId}
-                        onSelect={(id) => { setSelectedId(id) }}
-                      />
-                    ),
-                },
-              ]}
-            />
+              <Tabs
+                activeKey={panelTab}
+                onChange={setPanelTab}
+                style={{ padding: '0 16px', flex: 1, minHeight: 0 }}
+                items={[
+                  {
+                    key: 'pending',
+                    label: <span>待处理 <Badge count={pending.length} size="small" style={{ backgroundColor: color.warning }} /></span>,
+                    children: pending.length === 0
+                      ? <Empty description="暂无待处理问题" />
+                      : (
+                        <ErrorList
+                          errors={pending}
+                          selectedId={selectedId}
+                          onSelect={(id) => { setSelectedId(id) }}
+                        />
+                      ),
+                  },
+                  {
+                    key: 'accepted',
+                    label: <span>已采纳 <Badge count={accepted.length} size="small" style={{ backgroundColor: color.success }} /></span>,
+                    children: accepted.length === 0
+                      ? <Empty description="暂无已采纳问题" />
+                      : (
+                        <ErrorList
+                          errors={accepted}
+                          selectedId={selectedId}
+                          onSelect={(id) => { setSelectedId(id) }}
+                        />
+                      ),
+                  },
+                  {
+                    key: 'rejected',
+                    label: <span>已拒绝 <Badge count={rejected.length} size="small" /></span>,
+                    children: rejected.length === 0
+                      ? <Empty description="暂无已拒绝问题" />
+                      : (
+                        <ErrorList
+                          errors={rejected}
+                          selectedId={selectedId}
+                          onSelect={(id) => { setSelectedId(id) }}
+                        />
+                      ),
+                  },
+                ]}
+              />
+            </div>
           </div>
         </div>
+
+        {/* bottom bar spacer */}
+        <div style={{ height: 80, flexShrink: 0 }} />
       </div>
 
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap', width: '100%', padding: '0 80px', position: 'relative' }}>
         {/* STATE: proofreading in progress */}
         {inProgress || proofreading ? (
           <>
@@ -579,6 +602,37 @@ export default function ReviewReader({
             />
           </>
         )}
+
+        {/* 字号调节 */}
+        <div style={{
+          position: 'absolute', right: 20,
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: color.bgCard,
+          borderRadius: radius.md,
+          border: `1px solid ${color.border}`,
+          padding: '2px 8px',
+        }}>
+          <Button
+            type="text"
+            size="small"
+            icon={<MinusOutlined />}
+            disabled={currentBodyFontSize <= 14}
+            onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
+            style={{ width: 24, height: 24, fontSize: 12 }}
+          />
+          <span style={{ fontSize: 12, minWidth: 22, textAlign: 'center', color: color.textSecondary }}>
+            {currentBodyFontSize}
+          </span>
+          <Button
+            type="text"
+            size="small"
+            icon={<PlusOutlined />}
+            disabled={currentBodyFontSize >= 24}
+            onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
+            style={{ width: 24, height: 24, fontSize: 12 }}
+          />
+        </div>
+        </div>
       </div>
     </>
   )
