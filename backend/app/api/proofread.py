@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import time
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -12,6 +14,7 @@ from app.core.database import (
     delete_chapters_in_range, set_proofread_progress,
     get_document_progress, update_project_status,
     set_document_error, clear_document_error,
+    insert_llm_log,
 )
 from app.utils.helpers import generate_id
 
@@ -71,6 +74,9 @@ async def start_proofread(project_id: str, req: ProofreadRequest):
 
 
 async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
+    # 记录最后一次 proofread_window 的上下文，异常时写入日志
+    _last_log_ctx: dict | None = None
+    _last_t0: float | None = None
     try:
         total = get_paragraph_count(doc_id)
         progress = get_document_progress(doc_id)
@@ -93,7 +99,22 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             if window_paras:
                 system_prompt = build_proofread_system_prompt(types)
                 user_text = build_proofread_user_text(window_paras)
-                errs, chs = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
+                _last_log_ctx = dict(
+                    model=req.model, mode=req.mode,
+                    range_start=range_start, range_end=range_end,
+                    prompt=user_text, system_prompt=system_prompt,
+                    selected_types=json.dumps(types, ensure_ascii=False),
+                )
+                _last_t0 = time.time()
+                errs, chs, raw = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
+                duration = int((time.time() - _last_t0) * 1000)
+                insert_llm_log(
+                    generate_id(), project_id, doc_id,
+                    **_last_log_ctx,
+                    status="ok", duration_ms=duration, error_message=None,
+                    response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
+                )
+                _last_log_ctx = None
                 for e in errs:
                     if range_start <= e["paragraph_index"] < range_end:
                         e.pop("chapter_id", None)
@@ -133,7 +154,22 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 continue
             system_prompt = build_proofread_system_prompt(types)
             user_text = build_proofread_user_text(window_paras)
-            errs, chs = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
+            _last_log_ctx = dict(
+                model=req.model, mode=req.mode,
+                range_start=ws, range_end=we,
+                prompt=user_text, system_prompt=system_prompt,
+                selected_types=json.dumps(types, ensure_ascii=False),
+            )
+            _last_t0 = time.time()
+            errs, chs, raw = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
+            duration = int((time.time() - _last_t0) * 1000)
+            insert_llm_log(
+                generate_id(), project_id, doc_id,
+                **_last_log_ctx,
+                status="ok", duration_ms=duration, error_message=None,
+                response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
+            )
+            _last_log_ctx = None
             for e in errs:
                 if range_start <= e["paragraph_index"] < range_end:
                     e.pop("chapter_id", None)
@@ -158,6 +194,15 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
         logger.info("章节校对完成 doc=%s chapter=%s errors=%s chapters=%s upto=%s",
                     doc_id, req.chapter_id, found_errors, found_chapters, new_upto)
     except LLMCallError as e:
+        # 记录失败的 LLM 调用
+        if _last_log_ctx is not None and _last_t0 is not None:
+            duration = int((time.time() - _last_t0) * 1000)
+            insert_llm_log(
+                generate_id(), project_id, doc_id,
+                **_last_log_ctx,
+                status="error", duration_ms=duration, error_message=str(e),
+                response_raw=None, errors_found=0, chapters_found=0,
+            )
         # 保存已完成的进度，状态置 reviewing，记录错误供前端提示，允许稍后重试
         try:
             new_upto = get_document_progress(doc_id)["proofread_upto"]

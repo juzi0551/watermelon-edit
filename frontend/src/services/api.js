@@ -43,6 +43,15 @@ export async function getModels() {
   return data.models
 }
 
+// ==================== LLM 调用历史 ====================
+
+export async function getLLMLogs(projectId, limit = 50, offset = 0) {
+  const params = { limit, offset }
+  if (projectId) params.project_id = projectId
+  const { data } = await api.get('/debug/llm-logs', { params })
+  return data.logs
+}
+
 // ==================== Debug (大模型调用日志) ====================
 
 export async function getLLMLog() {
