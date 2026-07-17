@@ -12,6 +12,7 @@ import {
   getResults, setErrorStatus, acceptAll, exportDoc,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
+import { color } from '../design-tokens'
 
 const { Title, Text } = Typography
 const { Dragger } = Upload
@@ -242,7 +243,7 @@ export default function ProjectDetail() {
         title={
           <Space>
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
-            <span style={{ fontWeight: 600, fontSize: 16 }}>{project?.name || '加载中...'}</span>
+            <span style={{ fontWeight: 600, fontSize: 18 }}>{project?.name || '加载中...'}</span>
           </Space>
         }
         extra={
@@ -295,8 +296,8 @@ export default function ProjectDetail() {
                       style={{
                         cursor: 'pointer',
                         paddingLeft: ch.level === 2 ? 20 : 0,
-                        color: ch.level === 2 ? '#888' : undefined,
-                        background: selectedChapter === ch.id ? '#e6f4ff' : 'transparent',
+                        color: ch.level === 2 ? color.textTertiary : undefined,
+                        background: selectedChapter === ch.id ? color.bgChapterSelected : 'transparent',
                         padding: '4px 8px',
                         borderRadius: 4,
                       }}

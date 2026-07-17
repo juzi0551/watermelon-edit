@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
-  Select, Radio, Progress, Input,
+  Select, Radio, Progress, Input, Badge,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
-  ThunderboltOutlined, LoadingOutlined,
+  ThunderboltOutlined, LoadingOutlined, CloseOutlined,
 } from '@ant-design/icons'
-
-const { Text } = Typography
+import { color, radius, spacing, fontSize } from '../design-tokens'
 
 const TYPE_LABEL = {
   typo: '错别字', grammar: '语法', punctuation: '标点', format: '格式',
@@ -48,16 +47,41 @@ function DiffView({ original, suggested }) {
     [original, suggested],
   )
   return (
-    <span style={{ fontSize: 14, lineHeight: 1.6 }}>
-      <span>{prefix}</span>
+    <div style={{
+      background: color.bgCard,
+      borderRadius: radius.md,
+      padding: `${spacing.sm}px ${spacing.md}px`,
+      fontSize: fontSize.bodySm,
+      lineHeight: 1.8,
+      border: `1px solid ${color.border}`,
+    }}>
+      {prefix && <span style={{ color: color.textPrimary }}>{prefix}</span>}
       {removed && (
-        <span style={{ color: '#ff4d4f', textDecoration: 'line-through' }}>{removed}</span>
+        <span style={{
+          background: color.diffRemovedBg,
+          color: color.diffRemovedText,
+          textDecoration: 'line-through',
+          padding: '1px 4px',
+          borderRadius: radius.sm,
+          margin: '0 1px',
+        }}>
+          {removed}
+        </span>
       )}
       {added && (
-        <span style={{ color: '#52c41a', fontWeight: 600 }}>{added}</span>
+        <span style={{
+          background: color.diffAddedBg,
+          color: color.diffAddedText,
+          fontWeight: 600,
+          padding: '1px 4px',
+          borderRadius: radius.sm,
+          margin: '0 1px',
+        }}>
+          {added}
+        </span>
       )}
-      <span>{suffix}</span>
-    </span>
+      {suffix && <span style={{ color: color.textPrimary }}>{suffix}</span>}
+    </div>
   )
 }
 
@@ -90,11 +114,11 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
           cursor: 'pointer',
           padding: '0 2px',
           borderRadius: 2,
-          backgroundColor: isSel ? '#fff1b8' : 'transparent',
+          backgroundColor: isSel ? color.bgHighlight : 'transparent',
           borderBottom: accepted
-            ? '1px dashed #888'
+            ? `1px dashed ${color.textTertiary}`
             : pending
-              ? (isSel ? '2px solid #faad14' : '1px dotted #faad14')
+              ? (isSel ? `2px solid ${color.warning}` : `1px dotted ${color.warning}`)
               : 'none',
         }}
       >{displayText}</span>,
@@ -118,41 +142,72 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
 
 function ErrorList({ errors, selectedId, onSelect }) {
   return (
-    <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-      {errors.map(e => (
-        <div
-          key={e.id}
-          style={{
-            cursor: 'pointer',
-            background: e.id === selectedId ? '#fff1b8' : 'transparent',
-            padding: '8px 10px',
-            borderRadius: 4,
-            marginBottom: 4,
-            borderLeft: `3px solid ${
-              e.user_status === 'pending' ? '#faad14'
-                : e.user_status === 'accepted' ? '#52c41a' : '#bbb'
-            }`,
-          }}
-          onClick={() => onSelect(e.id)}
-        >
-          <Space size={4} style={{ marginBottom: 2 }}>
-            <span style={{ fontSize: 12, color: '#888' }}>第{e.paragraph_index}段</span>
-            <Tag style={{ fontSize: 11, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
-            <Tag style={{ fontSize: 11, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
-              {SEVERITY_LABEL[e.severity]}
-            </Tag>
-          </Space>
-          <div style={{ fontSize: 13 }}>
-            <Text delete type="danger">{e.original_text}</Text>
-            <span style={{ margin: '0 6px', color: '#bbb' }}>→</span>
-            <Text type="success">{e.suggested_text}</Text>
+    <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+      {errors.map(e => {
+        const statusColor = e.user_status === 'pending' ? color.warning
+          : e.user_status === 'accepted' ? color.success : color.borderRejected
+        return (
+          <div
+            key={e.id}
+            className="error-list-item"
+            style={{
+              cursor: 'pointer',
+              background: e.id === selectedId ? color.bgHighlight : color.bgPage,
+              padding: '10px 14px',
+              borderRadius: radius.md,
+              marginBottom: 6,
+              border: '1px solid',
+              borderColor: e.id === selectedId ? color.borderSelected : color.border,
+              borderLeft: `3px solid ${statusColor}`,
+              transition: 'background 0.15s, box-shadow 0.15s',
+            }}
+            onClick={() => onSelect(e.id)}
+            onMouseEnter={(e) => {
+              if (e.id !== selectedId) e.currentTarget.style.background = color.bgCard
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = e.id === selectedId ? color.bgHighlight : color.bgPage
+            }}
+          >
+            <Space size={spacing.xs} style={{ marginBottom: 4 }}>
+              <Tag style={{ fontSize: fontSize.metaSm, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
+                第{e.paragraph_index}段
+              </Tag>
+              <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
+              <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
+                {SEVERITY_LABEL[e.severity]}
+              </Tag>
+            </Space>
+            <div style={{ fontSize: fontSize.bodyXs, lineHeight: 1.6 }}>
+              <span style={{
+                background: color.diffRemovedBg,
+                color: color.diffRemovedText,
+                textDecoration: 'line-through',
+                padding: '1px 4px',
+                borderRadius: radius.sm,
+              }}>
+                {e.original_text}
+              </span>
+              <span style={{ margin: '0 6px', color: color.textMuted, fontSize: fontSize.meta }}>→</span>
+              <span style={{
+                background: color.diffAddedBg,
+                color: color.diffAddedText,
+                padding: '1px 4px',
+                borderRadius: radius.sm,
+                fontWeight: 500,
+              }}>
+                {e.suggested_text}
+              </span>
+            </div>
+            <div style={{ fontSize: fontSize.meta, color: color.textDescription, marginTop: 3 }}>{e.description}</div>
           </div>
-          <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{e.description}</div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
+
+
 
 export default function ReviewReader({
   results, project, inProgress, onSetStatus, onAcceptAll,
@@ -272,8 +327,8 @@ export default function ReviewReader({
     left: 0,
     right: 0,
     zIndex: 1000,
-    background: '#fff',
-    borderTop: '1px solid #e8e8e8',
+    background: color.bgPage,
+    borderTop: `1px solid ${color.borderBar}`,
     boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
     padding: '10px 24px',
     display: 'flex',
@@ -306,7 +361,7 @@ export default function ReviewReader({
                 const paraErrs = errors.filter(e => e.paragraph_index === para.idx)
                 return (
                   <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24 }}>
-                    <div style={{ lineHeight: 1.9, fontSize: 16 }}>
+                    <div style={{ lineHeight: 1.9, fontSize: fontSize.body }}>
                       <ParagraphView
                         text={para.text}
                         paraErrors={paraErrs}
@@ -314,7 +369,7 @@ export default function ReviewReader({
                         onSelect={setSelectedId}
                       />
                       {para?.revised_text && (
-                        <span style={{ color: '#52c41a', fontSize: 13, marginLeft: 8 }}>
+                        <span style={{ color: color.success, fontSize: fontSize.bodyXs, marginLeft: spacing.sm }}>
                           （已修订）
                         </span>
                       )}
@@ -322,15 +377,15 @@ export default function ReviewReader({
 
                     {paraErrs.some(e => e.id === selectedId) && selectedError && (
                       <div
-                        style={{
-                          marginTop: 8,
-                          padding: '10px 14px',
-                          background: '#fafafa',
-                          borderRadius: 6,
-                          borderLeft: '3px solid #faad14',
-                        }}
-                      >
-                        <Space style={{ marginBottom: 4 }} wrap>
+                          style={{
+                            marginTop: spacing.sm,
+                            padding: '10px 14px',
+                            background: color.bgCard,
+                            borderRadius: radius.md,
+                            borderLeft: `3px solid ${color.warning}`,
+                          }}
+                        >
+                          <Space style={{ marginBottom: 4 }} wrap>
                           <Tag color="blue">{TYPE_LABEL[selectedError.type] || selectedError.type}</Tag>
                           <Tag color={SEVERITY_COLOR[selectedError.severity]}>
                             {SEVERITY_LABEL[selectedError.severity]}危
@@ -341,7 +396,7 @@ export default function ReviewReader({
                             </Tag>
                           )}
                         </Space>
-                        <div style={{ marginBottom: 4, color: '#666', fontSize: 14 }}>
+                        <div style={{ marginBottom: 4, color: color.textSecondary, fontSize: fontSize.bodySm }}>
                           {selectedError.description}
                         </div>
                         <DiffView
@@ -363,61 +418,69 @@ export default function ReviewReader({
             overflow: 'hidden',
             flexShrink: 0,
             transition: 'width 0.2s ease',
-            borderLeft: showPanel ? '1px solid #f0f0f0' : 'none',
-            background: '#fff',
+            opacity: showPanel ? 1 : 0,
+            borderLeft: `1px solid ${color.border}`,
+            background: color.bgPage,
             borderRadius: 8,
           }}
         >
-          {showPanel && (
-            <div style={{ width: 420, padding: '12px 0', height: '100%' }}>
-              <Tabs
-                activeKey={panelTab}
-                onChange={setPanelTab}
-                style={{ padding: '0 16px' }}
-                items={[
-                  {
-                    key: 'pending',
-                    label: `待处理（${pending.length}）`,
-                    children: pending.length === 0
-                      ? <Empty description="暂无待处理问题" />
-                      : (
-                        <ErrorList
-                          errors={pending}
-                          selectedId={selectedId}
-                          onSelect={(id) => { setSelectedId(id) }}
-                        />
-                      ),
-                  },
-                  {
-                    key: 'accepted',
-                    label: `已采纳（${accepted.length}）`,
-                    children: accepted.length === 0
-                      ? <Empty description="暂无已采纳问题" />
-                      : (
-                        <ErrorList
-                          errors={accepted}
-                          selectedId={selectedId}
-                          onSelect={(id) => { setSelectedId(id) }}
-                        />
-                      ),
-                  },
-                  {
-                    key: 'rejected',
-                    label: `已拒绝（${rejected.length}）`,
-                    children: rejected.length === 0
-                      ? <Empty description="暂无已拒绝问题" />
-                      : (
-                        <ErrorList
-                          errors={rejected}
-                          selectedId={selectedId}
-                          onSelect={(id) => { setSelectedId(id) }}
-                        />
-                      ),
-                  },
-                ]}
-              />
+          <div style={{ width: 420, height: '100%', display: 'flex', flexDirection: 'column' }}>
+            {/* 面板标题 */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '14px 16px 0',
+            }}>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>问题列表</span>
+              <Button type="text" size="small" icon={<CloseOutlined />} onClick={onTogglePanel} />
             </div>
-          )}
+
+            <Tabs
+              activeKey={panelTab}
+              onChange={setPanelTab}
+              style={{ padding: '0 16px', flex: 1, minHeight: 0 }}
+              items={[
+                {
+                  key: 'pending',
+                  label: <span>待处理 <Badge count={pending.length} size="small" style={{ backgroundColor: color.warning }} /></span>,
+                  children: pending.length === 0
+                    ? <Empty description="暂无待处理问题" />
+                    : (
+                      <ErrorList
+                        errors={pending}
+                        selectedId={selectedId}
+                        onSelect={(id) => { setSelectedId(id) }}
+                      />
+                    ),
+                },
+                {
+                  key: 'accepted',
+                  label: <span>已采纳 <Badge count={accepted.length} size="small" style={{ backgroundColor: color.success }} /></span>,
+                  children: accepted.length === 0
+                    ? <Empty description="暂无已采纳问题" />
+                    : (
+                      <ErrorList
+                        errors={accepted}
+                        selectedId={selectedId}
+                        onSelect={(id) => { setSelectedId(id) }}
+                      />
+                    ),
+                },
+                {
+                  key: 'rejected',
+                  label: <span>已拒绝 <Badge count={rejected.length} size="small" /></span>,
+                  children: rejected.length === 0
+                    ? <Empty description="暂无已拒绝问题" />
+                    : (
+                      <ErrorList
+                        errors={rejected}
+                        selectedId={selectedId}
+                        onSelect={(id) => { setSelectedId(id) }}
+                      />
+                    ),
+                },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -432,7 +495,7 @@ export default function ReviewReader({
               style={{ width: 200, margin: 0 }}
               size="small"
             />
-            <span style={{ color: '#888', fontSize: 13 }}>
+            <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs }}>
               <LoadingOutlined spin style={{ marginRight: 6 }} />
               {bannerText || '正在校对，请稍候…'}
             </span>
@@ -472,7 +535,7 @@ export default function ReviewReader({
                 </Tag>
               </>
             ) : (
-              <span style={{ color: '#888' }}>
+              <span style={{ color: color.textTertiary }}>
                 点击文中有标记的文本查看错误详情
               </span>
             )}
@@ -480,7 +543,7 @@ export default function ReviewReader({
         ) : (
           <>
             {projectError && onRetry ? (
-              <span style={{ color: '#faad14', fontWeight: 500, fontSize: 13 }}>
+              <span style={{ color: color.warning, fontWeight: 500, fontSize: fontSize.bodyXs }}>
                 ⚠ 上次校对失败：{projectError}
               </span>
             ) : null}
@@ -501,7 +564,7 @@ export default function ReviewReader({
                 type="text"
                 size="small"
                 onClick={() => setShowOptions(s => !s)}
-                style={{ color: '#888', fontSize: 12 }}
+                style={{ color: color.textTertiary, fontSize: fontSize.meta }}
               >
                 {showOptions ? '收起选项 ▲' : '更多选项 ▼'}
               </Button>

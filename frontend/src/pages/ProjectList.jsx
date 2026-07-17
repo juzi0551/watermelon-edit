@@ -150,6 +150,7 @@ export default function ProjectList() {
           rowKey="id"
           loading={loading}
           pagination={false}
+          size="large"
         />
       </Card>
 
