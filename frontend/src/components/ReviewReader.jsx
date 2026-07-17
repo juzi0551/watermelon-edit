@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
-  Select, Radio, Progress, Input, Badge, Popover,
+  Select, Radio, Progress, Input, Badge, Popover, Tooltip, message,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
@@ -21,6 +21,13 @@ const TYPE_OPTIONS = [
   { value: 'punctuation', label: '标点' },
   { value: 'format', label: '格式' },
 ]
+const kbdStyle = {
+  display: 'inline-block', minWidth: 24, textAlign: 'center',
+  padding: '0 6px', fontSize: 11, lineHeight: '20px',
+  background: 'rgba(255,255,255,0.15)', borderRadius: 4,
+  border: '1px solid rgba(255,255,255,0.3)', marginRight: 6,
+  fontFamily: 'inherit',
+}
 
 function computeInlineDiff(original, suggested) {
   let prefixLen = 0
@@ -86,7 +93,7 @@ function DiffView({ original, suggested }) {
   )
 }
 
-function ErrorDetailCard({ error, style: extStyle, onAccept, onReject }) {
+function ErrorDetailCard({ error, style: extStyle, onAccept, onReject, onClose }) {
   const pending = error.user_status === 'pending'
   return (
     <div
@@ -102,11 +109,20 @@ function ErrorDetailCard({ error, style: extStyle, onAccept, onReject }) {
         ...extStyle,
       }}
     >
+      <div style={{ position: 'relative' }}>
+        <Button
+          type="text"
+          size="small"
+          icon={<CloseOutlined />}
+          onClick={(e) => { e.stopPropagation(); onClose?.() }}
+          style={{ position: 'absolute', top: -6, right: -8, width: 24, height: 24, fontSize: 12, color: color.textTertiary }}
+        />
       <div style={{ marginBottom: 10 }}>
         <DiffView
           original={error.original_text}
           suggested={error.suggested_text}
         />
+      </div>
       </div>
       <div style={{
         marginBottom: 8,
@@ -125,7 +141,7 @@ function ErrorDetailCard({ error, style: extStyle, onAccept, onReject }) {
           {SEVERITY_LABEL[error.severity]}危
         </Tag>
         {!pending && (
-          <Tag color={error.user_status === 'accepted' ? 'green' : 'red'} style={{ margin: 0, fontSize: 11, lineHeight: '20px' }}>
+          <Tag color={error.user_status === 'accepted' ? 'green' : 'red'} style={{ margin: '0 0 0 auto', fontSize: 11, lineHeight: '20px' }}>
             {error.user_status === 'accepted' ? '已采纳' : '已拒绝'}
           </Tag>
         )}
@@ -484,6 +500,38 @@ export default function ReviewReader({
         return
       }
 
+      // Escape → 关闭问题卡片
+      if (e.key === 'Escape') {
+        if (selectedIdRef.current) {
+          e.preventDefault()
+          setSelectedId(null)
+        }
+        return
+      }
+
+      // 上下箭头 → 上一个 / 下一个问题
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (inInput) return
+        e.preventDefault()
+        if (flatErrors.length === 0) return
+        const curId = selectedIdRef.current
+        const curIdx = curId ? flatErrors.findIndex(e => e.id === curId) : -1
+        if (e.key === 'ArrowDown') {
+          if (curIdx < flatErrors.length - 1) {
+            setSelectedId(flatErrors[curIdx + 1].id)
+          } else {
+            message.info('已是最后一个问题')
+          }
+        } else {
+          if (curIdx > 0) {
+            setSelectedId(flatErrors[curIdx - 1].id)
+          } else {
+            message.info('已是第一个问题')
+          }
+        }
+        return
+      }
+
       // 左右箭头 → 采纳/拒绝
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
       if (inInput) return
@@ -689,7 +737,7 @@ export default function ReviewReader({
         )}
 
         {/* center: main content */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12 }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, position: 'relative' }}>
         {inProgress || proofreading ? (
           <>
             <Progress
@@ -749,6 +797,7 @@ export default function ReviewReader({
                 <Tag style={{ marginLeft: 4, fontSize: 16, padding: '4px 12px', borderRadius: 999 }}>
                   {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
                 </Tag>
+                <ShortcutHint />
               </>
             ) : (
               <span style={{ color: color.textTertiary }}>
@@ -770,13 +819,14 @@ export default function ReviewReader({
             >
               {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
             </Button>
+            <ShortcutHint />
           </>
         )}
         </div>
 
         {/* right: 字号调节 */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
-          flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 6,
           background: color.bgCard,
           borderRadius: radius.md,
@@ -804,6 +854,7 @@ export default function ReviewReader({
           />
         </div>
         </div>
+        </div>
       </div>
       {selectedError && floatCardStyle && (
         <ErrorDetailCard
@@ -811,9 +862,34 @@ export default function ReviewReader({
           style={floatCardStyle}
           onAccept={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
           onReject={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
+          onClose={() => setSelectedId(null)}
         />
       )}
     </>
+  )
+}
+
+function ShortcutHint() {
+  return (
+    <Tooltip
+      placement="top"
+      title={
+        <div style={{ lineHeight: 2 }}>
+          <div><kbd style={kbdStyle}>空格</kbd> 开始 / 继续校对</div>
+          <div><kbd style={kbdStyle}>↑</kbd> <kbd style={kbdStyle}>↓</kbd> 上一个 / 下一个问题</div>
+          <div><kbd style={kbdStyle}>←</kbd> 采纳</div>
+          <div><kbd style={kbdStyle}>→</kbd> 拒绝</div>
+        </div>
+      }
+    >
+      <span style={{
+        fontSize: 12, color: color.textTertiary, cursor: 'pointer',
+        whiteSpace: 'nowrap', userSelect: 'none', marginLeft: 12,
+        alignSelf: 'flex-end', paddingBottom: 10,
+      }}>
+        快捷键
+      </span>
+    </Tooltip>
   )
 }
 

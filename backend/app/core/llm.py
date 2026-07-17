@@ -25,7 +25,7 @@ _TEST_PROMPT = "只回复一个字：好"
 _DEFAULT_SYSTEM_PROMPT_HARDCODED = "你是一个专业的小说校对编辑。请严格以JSON格式返回结果。"
 
 
-async def call_llm(prompt: str, model_id: str, timeout: int = 180, tag: str = "", system_prompt: str | None = None) -> str:
+async def call_llm(prompt: str, model_id: str, timeout: int = 60, tag: str = "", system_prompt: str | None = None) -> str:
     """调用大模型，返回原始响应字符串；任何失败都抛出 LLMCallError。
 
     使用异步 acompletion 并在单次调用上设置超时，避免阻塞事件循环或永久挂起。
@@ -119,7 +119,7 @@ async def test_llm(model_id: str) -> tuple[bool, str]:
             model=_litellm_model(model_id),
             api_key=api_key,
             messages=[{"role": "user", "content": _TEST_PROMPT}],
-            timeout=100,
+            timeout=60,
             tool_choice="none",
         )
         api_base = _api_base(model_id)
@@ -127,7 +127,7 @@ async def test_llm(model_id: str) -> tuple[bool, str]:
             kwargs["api_base"] = api_base
         response = await asyncio.wait_for(
             litellm.acompletion(**kwargs),
-            timeout=105,
+            timeout=65,
         )
         content = response.choices[0].message.content or ""
         return True, f"连接成功（模型返回：{content[:20]}）"
