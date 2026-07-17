@@ -286,6 +286,59 @@ export default function ReviewReader({
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
   const [floatCardStyle, setFloatCardStyle] = useState(null)
+  const positionSavedRef = useRef(false)
+
+  useEffect(() => {
+    const el = flowRef.current
+    if (!el || paras.length === 0) return
+    let timer = null
+    const save = () => {
+      const container = el
+      const viewTop = container.scrollTop
+      const viewBottom = viewTop + container.clientHeight
+      const paraEls = container.querySelectorAll('[data-para]')
+      let targetIdx = null
+      for (const child of paraEls) {
+        const childTop = child.offsetTop
+        const childBottom = childTop + child.offsetHeight
+        if (childTop >= viewTop && childBottom <= viewBottom) {
+          targetIdx = child.getAttribute('data-para')
+          break
+        }
+      }
+      if (targetIdx == null) {
+        let closest = null, closestDist = Infinity
+        for (const child of paraEls) {
+          const dist = Math.abs(child.offsetTop - viewTop)
+          if (dist < closestDist) { closestDist = dist; closest = child.getAttribute('data-para') }
+        }
+        targetIdx = closest
+      }
+      if (targetIdx != null) {
+        localStorage.setItem(`reading_pos_${project?.id}`, targetIdx)
+      }
+    }
+    const handler = () => {
+      clearTimeout(timer)
+      timer = setTimeout(save, 300)
+    }
+    el.addEventListener('scroll', handler, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', handler)
+      clearTimeout(timer)
+    }
+  }, [paras.length, project?.id])
+
+  useEffect(() => {
+    if (positionSavedRef.current || paras.length === 0 || !flowRef.current) return
+    const saved = localStorage.getItem(`reading_pos_${project?.id}`)
+    if (saved == null) return
+    positionSavedRef.current = true
+    requestAnimationFrame(() => {
+      const el = flowRef.current.querySelector(`[data-para="${saved}"]`)
+      if (el) el.scrollIntoView({ block: 'start' })
+    })
+  }, [paras.length, project?.id])
 
   useEffect(() => {
     localStorage.setItem('reader_font_offset', String(fontSizeOffset))

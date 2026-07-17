@@ -41,7 +41,7 @@ export default function ProjectDetail() {
   )
   const [exporting, setExporting] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
-  const [chaptersOpen, setChaptersOpen] = useState(true)
+  const [chaptersOpen, setChaptersOpen] = useState(false)
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
 
