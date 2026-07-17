@@ -291,33 +291,9 @@ export default function ReviewReader({
   useEffect(() => {
     const el = flowRef.current
     if (!el || paras.length === 0) return
+    const key = `reading_scrolltop_${project?.id}`
     let timer = null
-    const save = () => {
-      const container = el
-      const viewTop = container.scrollTop
-      const viewBottom = viewTop + container.clientHeight
-      const paraEls = container.querySelectorAll('[data-para]')
-      let targetIdx = null
-      for (const child of paraEls) {
-        const childTop = child.offsetTop
-        const childBottom = childTop + child.offsetHeight
-        if (childTop >= viewTop && childBottom <= viewBottom) {
-          targetIdx = child.getAttribute('data-para')
-          break
-        }
-      }
-      if (targetIdx == null) {
-        let closest = null, closestDist = Infinity
-        for (const child of paraEls) {
-          const dist = Math.abs(child.offsetTop - viewTop)
-          if (dist < closestDist) { closestDist = dist; closest = child.getAttribute('data-para') }
-        }
-        targetIdx = closest
-      }
-      if (targetIdx != null) {
-        localStorage.setItem(`reading_pos_${project?.id}`, targetIdx)
-      }
-    }
+    const save = () => localStorage.setItem(key, el.scrollTop)
     const handler = () => {
       clearTimeout(timer)
       timer = setTimeout(save, 300)
@@ -331,13 +307,27 @@ export default function ReviewReader({
 
   useEffect(() => {
     if (positionSavedRef.current || paras.length === 0 || !flowRef.current) return
-    const saved = localStorage.getItem(`reading_pos_${project?.id}`)
+    const saved = localStorage.getItem(`reading_scrolltop_${project?.id}`)
     if (saved == null) return
     positionSavedRef.current = true
+    const el = flowRef.current
     requestAnimationFrame(() => {
-      const el = flowRef.current.querySelector(`[data-para="${saved}"]`)
-      if (el) el.scrollIntoView({ block: 'start' })
+      el.scrollTop = Number(saved)
     })
+  }, [paras.length, project?.id])
+
+  // 页面关闭/隐藏时立即保存滚动位置，避免 debounce 滞后丢失最后位置
+  useEffect(() => {
+    const el = flowRef.current
+    if (!el || paras.length === 0 || !project?.id) return
+    const key = `reading_scrolltop_${project?.id}`
+    const save = () => { if (el) localStorage.setItem(key, el.scrollTop) }
+    window.addEventListener('beforeunload', save)
+    document.addEventListener('visibilitychange', save)
+    return () => {
+      window.removeEventListener('beforeunload', save)
+      document.removeEventListener('visibilitychange', save)
+    }
   }, [paras.length, project?.id])
 
   useEffect(() => {
