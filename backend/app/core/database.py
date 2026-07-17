@@ -22,6 +22,62 @@ DB_PATH = os.path.join(DB_DIR, "novel_proofreader.db")
 DEFAULT_PROOFREAD_TYPES = '["typo","grammar","punctuation","format"]'
 
 
+DEFAULT_SYSTEM_PROMPT_GENERAL = """你是一个专业的小说校对编辑。请严格按照以下要求返回结果：
+
+1. 检查文本中的错别字、语法错误、标点符号错误、格式不一致。
+2. 以 JSON 格式返回结果，且只返回 JSON，不要其他内容。
+3. 若某类无错误，对应数组返回空数组。"""
+
+# 详细的校对指令模板（含 {type_desc} 占位符，会被替换为错误类型列表）
+# 前端设置页可自由编辑此模板
+DEFAULT_SYSTEM_PROMPT_PROOFREAD = """请作为专业的小说校对编辑，检查以下文本中的错误。
+
+只检查以下类型的错误：{type_desc}。
+
+同时请识别本段范围内的章节结构：
+- 主标题（卷/章）level=1
+- 副标题（节）level=2，且必须给出 parent_idx（所属主标题的 title_paragraph_idx）
+每段用 [全局段落下标] 前缀标出，你返回的 paragraph_index 与 title_paragraph_idx 必须等于这些下标。
+
+以 JSON 格式返回：
+{
+  "chapters": [
+    {"level": 1, "title": "第一章 少年初长", "title_paragraph_idx": 0, "start_idx": 0, "end_idx": 2},
+    {"level": 2, "title": "第一节 启程", "title_paragraph_idx": 5, "parent_idx": 0, "start_idx": 3, "end_idx": 5}
+  ],
+  "errors": [
+    {"type": "typo", "paragraph_index": 1, "locator": "成才", "replacement": "成材", "severity": "medium", "description": "同音错字"}
+  ]
+}
+
+规则：
+1. locator 必须直接从原文逐字复制，不得做任何修改。
+2. locator 至少要包含 5 个字符（或整个出错词，取较长者），确保它在段落内唯一出现。
+3. locator 和 replacement 是同一段文本的「原文版」和「修正版」。replacement 与 locator 之间的差异，必须恰好是本次修正的内容，不能有任何字符的增删改落在 locator/replacement 范围之外。
+4. 同一段有多个错误时，各 locator 之间不能重叠互斥，彼此要保持足够间距。
+5. description 用简短的诊断说明（5-10 字）。
+6. 跨段引号检查（重要）：
+   a. 观察相邻段落的引号（" ' 「 」 『 』）是否配对。如果前段有左引号开头、后段没有左引号，则后段缺少左引号。
+   b. 按中文规范：引文跨段时，每段开头应有左引号，仅在末段末尾有右引号。
+   c. 缺引号时，以该段前 5-10 个字为 locator，replacement 在 locator 前补上对应的引号字符。
+   d. 引号不配对（左多右少、右多左少）时，在缺引号的段落报告错误。
+   e. 上述修正 type 均用 "punctuation"。
+
+若某类无错误，对应数组返回空。只返回 JSON，不要其他内容。"""
+
+
+def _init_default_settings(conn):
+    defaults = {
+        "system_prompt_general": DEFAULT_SYSTEM_PROMPT_GENERAL,
+        "system_prompt_proofread": DEFAULT_SYSTEM_PROMPT_PROOFREAD,
+    }
+    for key, value in defaults.items():
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+
 def _migrate_schema(conn):
     """一次性迁移：把旧的可再生表（chapters/proofread_results/errors）按新 schema 重建。
 
@@ -50,6 +106,19 @@ def _migrate_schema(conn):
             conn.execute(f"ALTER TABLE documents ADD COLUMN {col}")
         except sqlite3.OperationalError:
             pass
+    try:
+        conn.execute("ALTER TABLE documents ADD COLUMN last_error TEXT")
+    except sqlite3.OperationalError:
+        pass
+    if version < 3:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        _init_default_settings(conn)
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '3')")
 
 
 def init_db():
@@ -545,5 +614,49 @@ def get_result(document_id: str) -> dict:
         "chapters": get_chapters(document_id),
     }
 
-# 启动时初始化表
+# ==================== Settings（缓存 + 读写） ====================
+
+_settings_cache: dict | None = None
+
+
+def _load_settings_cache():
+    """从 DB 加载全部设置到内存缓存。"""
+    global _settings_cache
+    _settings_cache = {}
+    try:
+        with get_conn() as conn:
+            rows = conn.execute("SELECT key, value FROM settings").fetchall()
+            for row in rows:
+                _settings_cache[row["key"]] = row["value"]
+    except Exception:
+        pass
+
+
+def get_setting(key: str, default: str = "") -> str:
+    """读取设置（优先走缓存），不存在返回 default。"""
+    if _settings_cache is None:
+        _load_settings_cache()
+    return _settings_cache.get(key, default)
+
+
+def set_setting(key: str, value: str):
+    """写入设置（同步 DB + 更新缓存）。"""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+    if _settings_cache is not None:
+        _settings_cache[key] = value
+
+
+def get_all_settings() -> dict:
+    """返回所有设置（用于 API 暴露给前端）。"""
+    if _settings_cache is None:
+        _load_settings_cache()
+    return dict(_settings_cache)
+
+
+# 启动时初始化表 + 设置缓存
 init_db()
+_load_settings_cache()

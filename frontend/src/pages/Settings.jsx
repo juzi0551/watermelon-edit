@@ -1,23 +1,35 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Form, Input, Button, List, Tag, Typography, Space, message, Popconfirm } from 'antd'
-import { KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined, ApiOutlined, ArrowLeftOutlined } from '@ant-design/icons'
+import { KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined, ApiOutlined, ArrowLeftOutlined, EditOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { getProviders, saveApiKey, deleteApiKey, testApiKey } from '../services/api'
+import { getProviders, saveApiKey, deleteApiKey, testApiKey, getPrompts, savePrompts } from '../services/api'
 
 const { Text } = Typography
+const { TextArea } = Input
 
 export default function Settings() {
   const [providers, setProviders] = useState([])
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState(null)
   const [form] = Form.useForm()
+
+  // system prompt state
+  const [promptGeneral, setPromptGeneral] = useState('')
+  const [promptProofread, setPromptProofread] = useState('')
+  const [promptSaving, setPromptSaving] = useState(false)
+
   const navigate = useNavigate()
 
   const load = async () => {
     setLoading(true)
     try {
-      const data = await getProviders()
-      setProviders(data)
+      const [providersData, promptsData] = await Promise.all([
+        getProviders(),
+        getPrompts(),
+      ])
+      setProviders(providersData)
+      setPromptGeneral(promptsData.system_prompt_general)
+      setPromptProofread(promptsData.system_prompt_proofread)
     } finally {
       setLoading(false)
     }
@@ -112,7 +124,7 @@ export default function Settings() {
                         />
                       </Form.Item>
                       <Form.Item noStyle>
-                        <Button type="primary" icon={<SaveOutlined />} onClick={() => handleSave(p.provider)}>
+                        <Button type="primary" shape="round" icon={<SaveOutlined />} onClick={() => handleSave(p.provider)}>
                           保存
                         </Button>
                       </Form.Item>
@@ -146,6 +158,59 @@ export default function Settings() {
             </List.Item>
           )}
         />
+      </Card>
+
+      <Card title={<Space><EditOutlined /> 系统提示词</Space>} style={{ marginTop: 16 }}>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          自定义发送给大模型的 system prompt。{'{type_desc}'} 会被替换为错误类型列表（错别字、语法错误等）。
+          修改后重启校对才会生效。
+        </Text>
+
+        <div style={{ marginBottom: 16 }}>
+          <Text strong style={{ display: 'block', marginBottom: 4 }}>通用提示词</Text>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
+            未指定校对指令时使用的默认 system prompt。
+          </Text>
+          <TextArea
+            rows={3}
+            value={promptGeneral}
+            onChange={(e) => setPromptGeneral(e.target.value)}
+            placeholder="通用 system prompt"
+          />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <Text strong style={{ display: 'block', marginBottom: 4 }}>校对指令模板</Text>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
+            校对的 system prompt，{'{type_desc}'} 会被自动替换。
+          </Text>
+          <TextArea
+            rows={15}
+            value={promptProofread}
+            onChange={(e) => setPromptProofread(e.target.value)}
+            placeholder="校对指令模板"
+          />
+        </div>
+
+        <Button
+          type="primary"
+          shape="round"
+          icon={<SaveOutlined />}
+          loading={promptSaving}
+          onClick={async () => {
+            setPromptSaving(true)
+            try {
+              await savePrompts(promptGeneral, promptProofread)
+              message.success('系统提示词已保存')
+            } catch {
+              message.error('保存失败')
+            } finally {
+              setPromptSaving(false)
+            }
+          }}
+        >
+          保存提示词
+        </Button>
       </Card>
     </div>
   )

@@ -9,7 +9,6 @@ KEYS_PATH = os.path.join(KEYS_DIR, "api_keys.json")
 # litellm 通过 "前缀/模型名" 路由到对应服务商的 OpenAI 兼容端点
 #   deepseek -> https://api.deepseek.com
 #   moonshot -> https://api.moonshot.cn/v1
-#   kimi-code -> https://api.kimi.com/coding/v1 （独立的 Kimi 编程服务，Key 与普通 Moonshot Key 不互通）
 # LiteLLM 未内置前缀、或不识别具体模型名的服务商，统一用 litellm_prefix="openai" + 自定义 api_base 走 OpenAI 兼容端点
 PROVIDERS = {
     "deepseek": {
@@ -29,16 +28,16 @@ PROVIDERS = {
         "litellm_prefix": "openai",
         "api_base": "https://api.moonshot.cn/v1",
         "models": [
-            {"id": "kimi-k2.6", "name": "Kimi K2.6", "temperature": 1},
+            {"id": "kimi-k3", "name": "Kimi K3"},
+            {"id": "kimi-k2.6", "name": "Kimi K2.6"},
         ],
     },
-    "kimi-code": {
-        "name": "Kimi Code（编程）",
-        "env_key": "KIMI_CODE_API_KEY",
-        "litellm_prefix": "openai",
-        "api_base": "https://api.kimi.com/coding/v1",
+    "google": {
+        "name": "Google Gemini",
+        "env_key": "GEMINI_API_KEY",
+        "litellm_prefix": "gemini",
         "models": [
-            {"id": "kimi-for-coding", "name": "Kimi For Coding（编程）", "temperature": 1, "agentic": True},
+            {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash"},
         ],
     },
 }
@@ -76,7 +75,7 @@ def _mask(key: str) -> str:
 
 def _litellm_model(model_id: str) -> str:
     """转换为 LiteLLM 模型标识，如 deepseek/deepseek-v4-flash。
-    无内置前缀的服务商（如 kimi-code）返回原始模型名，由 api_base 决定路由。"""
+    无内置前缀的服务商返回原始模型名，由 api_base 决定路由。"""
     pid = _provider_of(model_id)
     if not pid:
         return model_id
@@ -93,7 +92,7 @@ def _api_base(model_id: str) -> str | None:
 
 
 def _model_temperature(model_id: str) -> float | None:
-    """返回模型自定义 temperature（如有），用于有强制约束的模型（如 kimi-for-coding 仅允许 1）。"""
+    """返回模型自定义 temperature（如有），仅对明确支持的模型（如 moonshot-v1 系列）返回。"""
     pid = _provider_of(model_id)
     if not pid:
         return None
@@ -101,6 +100,18 @@ def _model_temperature(model_id: str) -> float | None:
         if m["id"] == model_id:
             return m.get("temperature")
     return None
+
+
+def _model_extra_kwargs(model_id: str) -> dict:
+    """返回模型自定义额外参数，合并到 litellm 调用参数中。
+    注意：不要用 extra_body 包装，litellm 会将其作为字面 JSON 字段发送。
+    直接返回原始字段名，litellm 会自动收集到 extra_body 中。"""
+    pid = _provider_of(model_id)
+    if pid == "moonshot":
+        k2_6_ids = {"kimi-k2.6", "kimi-k2.5", "kimi-k2.7-code"}
+        if model_id in k2_6_ids:
+            return {"thinking": {"type": "enabled"}}
+    return {}
 
 
 # ---------- API Key 读写（按服务商） ----------
@@ -153,18 +164,5 @@ def list_models() -> list[dict]:
                 "name": m["name"],
                 "provider": pid,
                 "deprecated": m.get("deprecated", False),
-                "agentic": m.get("agentic", False),
             })
     return out
-
-
-def is_agentic_model(model_id: str) -> bool:
-    """判断是否为 agentic 编程模型（如 Kimi Code）。这类模型会自行调用工具，
-    不适合单轮 JSON 抽取的校对任务，使用会导致 499 / 超时。"""
-    pid = _provider_of(model_id)
-    if not pid:
-        return False
-    for m in PROVIDERS[pid]["models"]:
-        if m["id"] == model_id:
-            return bool(m.get("agentic", False))
-    return False

@@ -2,14 +2,18 @@ import os
 
 from fastapi import APIRouter, UploadFile, File
 from app.utils.helpers import generate_id
+import logging
 from app.core.document import parse_paragraphs
 from app.core.database import (
     create_project, get_project, list_projects, update_project_status,
     update_project_document, delete_project,
     create_document, get_current_document, get_document_versions,
     insert_paragraphs, get_paragraph_count, get_chapters,
-    get_document_progress,
+    get_document_progress, set_document_error,
 )
+from app.api.proofread import _RUNNING
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -52,6 +56,14 @@ async def api_get_project(project_id: str):
         return {"error": "项目不存在"}
 
     doc = get_current_document(project_id)
+
+    # 恢复上次超时/崩溃遗留的「校对中」状态
+    if doc and project.get("status") == "proofreading" and doc["id"] not in _RUNNING:
+        logger.warning("检测到僵死校对状态，自动恢复 project=%s doc=%s", project_id, doc["id"])
+        update_project_status(project_id, "reviewing")
+        set_document_error(doc["id"], "上次校对已中断（超时或服务重启），已恢复，可重新校对")
+        project["status"] = "reviewing"
+
     chapters = []
     if doc:
         chapters = get_chapters(doc["id"])

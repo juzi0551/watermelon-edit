@@ -56,9 +56,9 @@ export default function ProjectList() {
 
   const statusMap = {
     new: { color: 'default', text: '新建' },
-    uploaded: { color: 'processing', text: '已上传' },
-    parsed: { color: 'processing', text: '已解析' },
-    proofreading: { color: 'processing', text: '校对中' },
+    uploaded: { color: 'default', text: '已上传' },
+    parsed: { color: 'default', text: '已解析' },
+    proofreading: { color: 'default', text: '校对中' },
     reviewing: { color: 'warning', text: '审核中' },
     completed: { color: 'success', text: '已完成' },
   }
@@ -138,7 +138,7 @@ export default function ProjectList() {
             beforeUpload={handleUploadDoc}
             disabled={loading}
           >
-            <Button type="primary" icon={<PlusOutlined />} loading={loading}>
+            <Button type="primary" shape="round" icon={<PlusOutlined />} loading={loading}>
               新建项目
             </Button>
           </Upload>

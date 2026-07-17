@@ -243,10 +243,7 @@ SUPPORTED_MODELS = {
 | 服务商 | Key 申请地址 | 接口地址（base_url） | 说明 |
 | --- | --- | --- | --- |
 | **DeepSeek** | [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) | `https://api.deepseek.com` | 环境变量 `DEEPSEEK_API_KEY` |
-| **Kimi（Moonshot）** | [platform.kimi.com/console/api-keys](https://platform.kimi.com/console/api-keys) | `https://api.moonshot.cn/v1` | 环境变量 `MOONSHOT_API_KEY`；推荐模型 `kimi-k2.6` |
-| **Kimi Code（编程）** | [platform.kimi.com/console/api-keys](https://platform.kimi.com/console/api-keys)（需 Kimi Code 权限） | `https://api.kimi.com/coding/v1` | 环境变量 `KIMI_CODE_API_KEY`；与 Moonshot Key **独立、不互通** |
-
-> 注意：Kimi（Moonshot）与 Kimi Code 是两个独立服务，Key 不能混用。具体可用模型以各平台控制台为准。
+| **Kimi（Moonshot）** | [platform.kimi.com/console/api-keys](https://platform.kimi.com/console/api-keys) | `https://api.moonshot.cn/v1` | 环境变量 `MOONSHOT_API_KEY` |
 
 ## 待确认事项
 1. 是否需要支持其他大模型？（如通义千问、文心一言等）

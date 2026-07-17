@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.core.proofer import proofread_window, build_proofread_prompt
+from app.core.proofer import proofread_window, build_proofread_system_prompt, build_proofread_user_text
 from app.core.llm import LLMCallError
 from app.core.database import (
     get_project, get_current_document,
@@ -14,7 +14,7 @@ from app.core.database import (
     set_document_error, clear_document_error,
 )
 from app.utils.helpers import generate_id
-from config import is_agentic_model
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,6 @@ async def start_proofread(project_id: str, req: ProofreadRequest):
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目尚未上传文档"}
-
-    if is_agentic_model(req.model):
-        return {"error": "编程模型（如 Kimi Code）不适合校对，请选择对话模型（DeepSeek / Kimi K2.6 等）"}
 
     doc_id = doc["id"]
     total = get_paragraph_count(doc_id)
@@ -94,8 +91,9 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             window_paras = [(i, text_by_idx[i]) for i in range(ws, we) if i in text_by_idx]
             found_chapters = 0
             if window_paras:
-                prompt = build_proofread_prompt(window_paras, types)
-                errs, chs = await proofread_window(prompt, req.model, types, req.mode)
+                system_prompt = build_proofread_system_prompt(types)
+                user_text = build_proofread_user_text(window_paras)
+                errs, chs = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
                 for e in errs:
                     if range_start <= e["paragraph_index"] < range_end:
                         e.pop("chapter_id", None)
@@ -133,8 +131,9 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             window_paras = [(i, text_by_idx[i]) for i in range(ws, we) if i in text_by_idx]
             if not window_paras:
                 continue
-            prompt = build_proofread_prompt(window_paras, types)
-            errs, chs = await proofread_window(prompt, req.model, types, req.mode)
+            system_prompt = build_proofread_system_prompt(types)
+            user_text = build_proofread_user_text(window_paras)
+            errs, chs = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
             for e in errs:
                 if range_start <= e["paragraph_index"] < range_end:
                     e.pop("chapter_id", None)

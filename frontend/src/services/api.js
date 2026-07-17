@@ -50,6 +50,21 @@ export async function getLLMLog() {
   return data.calls
 }
 
+// ==================== Settings (System Prompts) ====================
+
+export async function getPrompts() {
+  const { data } = await api.get('/settings/prompts')
+  return data
+}
+
+export async function savePrompts(general, proofread) {
+  const { data } = await api.put('/settings/prompts', {
+    system_prompt_general: general,
+    system_prompt_proofread: proofread,
+  })
+  return data
+}
+
 // ==================== Settings (API Key，按服务商) ====================
 
 export async function getProviders() {

@@ -4,7 +4,7 @@
  */
 const tokens = {
   color: {
-    primary: '#1677ff',
+    primary: '#374151',
     success: '#52c41a',
     warning: '#faad14',
     danger: '#ff4d4f',
@@ -24,7 +24,7 @@ const tokens = {
     bgCard: '#fafafa',
     bgReader: '#f9f7f4',
     bgHighlight: '#fffbe6',
-    bgChapterSelected: '#e6f4ff',
+    bgChapterSelected: '#e5e5e5',
 
     diffRemovedBg: '#fff1f0',
     diffRemovedText: '#cf1322',
@@ -33,10 +33,10 @@ const tokens = {
   },
 
   radius: {
-    sm: 3,
-    md: 6,
-    lg: 8,
-    full: 4,
+    sm: 6,
+    md: 10,
+    lg: 14,
+    full: 999,
   },
 
   spacing: {

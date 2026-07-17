@@ -6,6 +6,7 @@ import {
 } from 'antd'
 import {
   InboxOutlined, ArrowLeftOutlined, DownloadOutlined, UnorderedListOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
@@ -40,6 +41,7 @@ export default function ProjectDetail() {
   )
   const [exporting, setExporting] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [chaptersOpen, setChaptersOpen] = useState(true)
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
 
@@ -232,7 +234,7 @@ export default function ProjectDetail() {
   if (error) return (
     <Card>
       <Empty description={error}>
-        <Button type="primary" onClick={() => navigate('/')}>返回项目列表</Button>
+        <Button type="primary" shape="round" onClick={() => navigate('/')}>返回项目列表</Button>
       </Empty>
     </Card>
   )
@@ -253,11 +255,13 @@ export default function ProjectDetail() {
                 icon={<UnorderedListOutlined />}
                 onClick={() => setPanelOpen(v => !v)}
                 type={panelOpen ? 'primary' : 'default'}
+                shape="round"
               >
                 问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
               </Button>
               <Button
                 type="primary"
+                shape="round"
                 icon={<DownloadOutlined />}
                 disabled={inProgress}
                 onClick={handleExport}
@@ -282,33 +286,74 @@ export default function ProjectDetail() {
           </Dragger>
         )}
         {total > 0 && (
-          <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 190px)', overflow: 'hidden' }}>
-            <div style={{ width: 260, flexShrink: 0, height: '100%', overflowY: 'auto' }}>
-              <Title level={5} style={{ marginTop: 0 }}>章节目录</Title>
-              {chapters.length === 0 ? (
-                <Text type="secondary">尚未校对出章节结构，先执行校对。</Text>
-              ) : (
-                <List
+          <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 190px)', overflow: 'hidden' }}>
+            {/* chapter list sidebar */}
+            <div style={{
+              width: chaptersOpen ? 260 : 0,
+              overflow: 'hidden',
+              flexShrink: 0,
+              transition: 'width 0.2s ease',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+            }}>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                paddingRight: 4,
+              }}>
+                <Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>章节目录</Title>
+                <Button
+                  type="text"
                   size="small"
-                  dataSource={chapters}
-                  renderItem={(ch) => (
-                    <List.Item
-                      style={{
-                        cursor: 'pointer',
-                        paddingLeft: ch.level === 2 ? 20 : 0,
-                        color: ch.level === 2 ? color.textTertiary : undefined,
-                        background: selectedChapter === ch.id ? color.bgChapterSelected : 'transparent',
-                        padding: '4px 8px',
-                        borderRadius: 4,
-                      }}
-                      onClick={() => setSelectedChapter(ch.id)}
-                    >
-                      <Text>{ch.title || `第 ${ch.title_paragraph_idx} 段`}</Text>
-                    </List.Item>
-                  )}
+                  icon={<MenuFoldOutlined />}
+                  onClick={() => setChaptersOpen(false)}
                 />
-              )}
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', marginTop: 8 }}>
+                {chapters.length === 0 ? (
+                  <Text type="secondary">尚未校对出章节结构，先执行校对。</Text>
+                ) : (
+                  <List
+                    size="small"
+                    dataSource={chapters}
+                    renderItem={(ch) => (
+                      <List.Item
+                        style={{
+                          cursor: 'pointer',
+                          paddingLeft: ch.level === 2 ? 20 : 0,
+                          color: ch.level === 2 ? color.textTertiary : undefined,
+                          background: selectedChapter === ch.id ? color.bgChapterSelected : 'transparent',
+                          padding: '4px 8px',
+                          borderRadius: 4,
+                        }}
+                        onClick={() => setSelectedChapter(ch.id)}
+                      >
+                        <Text>{ch.title || `第 ${ch.title_paragraph_idx} 段`}</Text>
+                      </List.Item>
+                    )}
+                  />
+                )}
+              </div>
             </div>
+
+            {/* toggle button (when collapsed) */}
+            {!chaptersOpen && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', paddingTop: 4,
+                flexShrink: 0,
+              }}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MenuUnfoldOutlined />}
+                  onClick={() => setChaptersOpen(true)}
+                  style={{ marginRight: 12 }}
+                />
+              </div>
+            )}
+
+            {/* gap when open */}
+            {chaptersOpen && <div style={{ width: 16, flexShrink: 0 }} />}
 
             <div style={{ flex: 1, minWidth: 0 }}>
               {results && (

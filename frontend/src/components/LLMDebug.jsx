@@ -69,7 +69,7 @@ export default function LLMDebug() {
                 size="small"
                 title={
                   <Space wrap>
-                    <Tag color={c.status === 'ok' ? 'green' : c.status === 'error' ? 'red' : 'blue'}>{c.status}</Tag>
+                    <Tag color={c.status === 'ok' ? 'green' : c.status === 'error' ? 'red' : 'default'}>{c.status}</Tag>
                     <Text strong>{c.model}</Text>
                     {c.tag ? <Tag>{c.tag}</Tag> : null}
                     <Text type="secondary">{c.duration_ms} ms</Text>

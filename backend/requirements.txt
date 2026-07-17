@@ -1,7 +1,7 @@
 fastapi==0.115.0
 uvicorn==0.30.0
 python-docx==1.1.2
-litellm==1.50.0
+litellm==1.91.3
 pydantic==2.9.0
 python-multipart==0.0.9
 jieba==0.42.1

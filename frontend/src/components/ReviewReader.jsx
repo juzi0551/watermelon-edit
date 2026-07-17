@@ -13,7 +13,7 @@ import { color, radius, spacing, fontSize } from '../design-tokens'
 const TYPE_LABEL = {
   typo: '错别字', grammar: '语法', punctuation: '标点', format: '格式',
 }
-const SEVERITY_COLOR = { high: 'red', medium: 'orange', low: 'blue' }
+const SEVERITY_COLOR = { high: 'red', medium: 'orange', low: 'default' }
 const SEVERITY_LABEL = { high: '高', medium: '中', low: '低' }
 const TYPE_OPTIONS = [
   { value: 'typo', label: '错别字' },
@@ -132,7 +132,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
     segs.push(
       <Tag
         key={`chip-${e.id}`}
-        color={accepted ? 'green' : (SEVERITY_COLOR[e.severity] || 'blue')}
+        color={accepted ? 'green' : (SEVERITY_COLOR[e.severity] || 'default')}
         style={{ cursor: 'pointer', margin: '0 4px' }}
         onClick={() => onSelect(e.id)}
       >{accepted ? e.suggested_text : e.original_text}</Tag>,
@@ -404,7 +404,7 @@ export default function ReviewReader({
                           }}
                         >
                           <Space style={{ marginBottom: 4 }} wrap>
-                          <Tag color="blue">{TYPE_LABEL[selectedError.type] || selectedError.type}</Tag>
+                          <Tag>{TYPE_LABEL[selectedError.type] || selectedError.type}</Tag>
                           <Tag color={SEVERITY_COLOR[selectedError.severity]}>
                             {SEVERITY_LABEL[selectedError.severity]}危
                           </Tag>
@@ -536,6 +536,7 @@ export default function ReviewReader({
                 />
                 <Button
                   type="primary"
+                  shape="round"
                   size="large"
                   icon={<CheckCircleOutlined />}
                   onClick={() => handleStatus('accepted')}
@@ -553,7 +554,7 @@ export default function ReviewReader({
                 >
                   拒绝
                 </Button>
-                <Tag color="blue" style={{ marginLeft: 4, fontSize: 14, padding: '2px 8px' }}>
+                <Tag style={{ marginLeft: 4, fontSize: 14, padding: '2px 8px', borderRadius: 999 }}>
                   {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
                 </Tag>
               </>
@@ -574,6 +575,7 @@ export default function ReviewReader({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <Button
                 type="primary"
+                shape="round"
                 size="large"
                 icon={<ThunderboltOutlined />}
                 loading={proofreading}

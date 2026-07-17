@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from config import list_providers_status, set_api_key, delete_api_key, PROVIDERS
 from app.core.llm import test_llm
+from app.core.database import get_all_settings, set_setting
 
 router = APIRouter()
 
@@ -35,8 +36,31 @@ async def remove_key(provider: str):
     return {"status": "ok", "provider": provider}
 
 
+@router.get("/settings/prompts")
+async def get_prompts():
+    """获取可编辑的系统提示词模板。"""
+    all_s = get_all_settings()
+    return {
+        "system_prompt_general": all_s.get("system_prompt_general", ""),
+        "system_prompt_proofread": all_s.get("system_prompt_proofread", ""),
+    }
+
+
+class UpdatePromptsRequest(BaseModel):
+    system_prompt_general: str
+    system_prompt_proofread: str
+
+
+@router.put("/settings/prompts")
+async def update_prompts(req: UpdatePromptsRequest):
+    """更新系统提示词模板。"""
+    set_setting("system_prompt_general", req.system_prompt_general)
+    set_setting("system_prompt_proofread", req.system_prompt_proofread)
+    return {"status": "ok"}
+
+
 @router.post("/settings/test/{model_id}")
 async def test_key(model_id: str):
     """测试指定模型的 API Key 是否可用（发起一次最小调用）。"""
-    ok, msg = test_llm(model_id)
+    ok, msg = await test_llm(model_id)
     return {"ok": ok, "message": msg}

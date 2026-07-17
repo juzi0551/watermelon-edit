@@ -13,7 +13,7 @@ const { Text } = Typography
 function AppHeader() {
   const navigate = useNavigate()
   return (
-    <Header style={{ background: '#1677ff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <Header style={{ background: '#374151', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Link to="/" style={{ textDecoration: 'none' }}>
         <Text strong style={{ color: '#fff', fontSize: 18 }}>小说校稿工具</Text>
       </Link>
