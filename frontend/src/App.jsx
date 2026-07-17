@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { Layout, Typography, Button, Space } from 'antd'
 import { SettingOutlined } from '@ant-design/icons'
 import ProjectList from './pages/ProjectList'
@@ -29,22 +29,30 @@ function AppHeader() {
   )
 }
 
+function AppLayout() {
+  const location = useLocation()
+  const isDetail = location.pathname.startsWith('/project/')
+  return (
+    <Layout style={{ minHeight: '100vh' }}>
+      {!isDetail && <AppHeader />}
+      <Content style={{ padding: isDetail ? 0 : '24px 16px', background: '#f5f5f5' }}>
+        <Routes>
+          <Route path="/" element={<ProjectList />} />
+          <Route path="/project/:projectId" element={<ProjectDetail />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Content>
+      <Footer style={{ textAlign: 'center' }}>
+        <Text type="secondary">小说校稿工具 v0.1.0 · 基于 DeepSeek / Kimi 等大模型</Text>
+      </Footer>
+    </Layout>
+  )
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <Layout style={{ minHeight: '100vh' }}>
-        <AppHeader />
-        <Content style={{ padding: '24px 16px', background: '#f5f5f5' }}>
-          <Routes>
-            <Route path="/" element={<ProjectList />} />
-            <Route path="/project/:projectId" element={<ProjectDetail />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </Content>
-        <Footer style={{ textAlign: 'center' }}>
-          <Text type="secondary">小说校稿工具 v0.1.0 · 基于 DeepSeek / Kimi 等大模型</Text>
-        </Footer>
-      </Layout>
+      <AppLayout />
     </BrowserRouter>
   )
 }

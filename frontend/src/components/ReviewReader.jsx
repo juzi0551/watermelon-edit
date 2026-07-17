@@ -86,6 +86,43 @@ function DiffView({ original, suggested }) {
   )
 }
 
+function ErrorDetailCard({ error, style: extStyle }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        zIndex: 1100,
+        width: 380,
+        padding: '10px 14px',
+        background: color.bgCard,
+        borderRadius: radius.md,
+        borderLeft: `3px solid ${color.warning}`,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+        ...extStyle,
+      }}
+    >
+      <Space style={{ marginBottom: 4 }} wrap>
+        <Tag>{TYPE_LABEL[error.type] || error.type}</Tag>
+        <Tag color={SEVERITY_COLOR[error.severity]}>
+          {SEVERITY_LABEL[error.severity]}危
+        </Tag>
+        {error.user_status !== 'pending' && (
+          <Tag color={error.user_status === 'accepted' ? 'green' : 'red'}>
+            {error.user_status === 'accepted' ? '已采纳' : '已拒绝'}
+          </Tag>
+        )}
+      </Space>
+      <div style={{ marginBottom: 4, color: color.textSecondary, fontSize: fontSize.bodySm }}>
+        {error.description}
+      </div>
+      <DiffView
+        original={error.original_text}
+        suggested={error.suggested_text}
+      />
+    </div>
+  )
+}
+
 function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   if (!text) return null
   const found = []
@@ -101,25 +138,24 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
     if (f.idx < cursor) { chips.push(f.error); return }
     if (f.idx > cursor) segs.push(<span key={`t${cursor}`}>{text.slice(cursor, f.idx)}</span>)
     const e = f.error
-    const isSel = e.id === selectedId
     const accepted = e.user_status === 'accepted'
-    const rejected = e.user_status === 'rejected'
     const pending = e.user_status === 'pending'
     const displayText = accepted ? e.suggested_text : e.original_text
     segs.push(
       <span
         key={e.id}
+        data-error-id={e.id}
         onClick={() => onSelect(e.id)}
         title={accepted ? `原: ${e.original_text}` : undefined}
         style={{
           cursor: 'pointer',
           padding: '0 2px',
           borderRadius: 2,
-          backgroundColor: isSel ? color.bgHighlight : 'transparent',
+          backgroundColor: e.id === selectedId ? color.bgHighlight : 'transparent',
           borderBottom: accepted
             ? `1px dashed ${color.textTertiary}`
             : pending
-              ? (isSel ? `2px solid ${color.warning}` : `1px dotted ${color.warning}`)
+              ? (e.id === selectedId ? `2px solid ${color.warning}` : `1px dotted ${color.warning}`)
               : 'none',
         }}
       >{displayText}</span>,
@@ -132,6 +168,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
     segs.push(
       <Tag
         key={`chip-${e.id}`}
+        data-error-id={e.id}
         color={accepted ? 'green' : (SEVERITY_COLOR[e.severity] || 'default')}
         style={{ cursor: 'pointer', margin: '0 4px' }}
         onClick={() => onSelect(e.id)}
@@ -142,70 +179,66 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
 }
 
 function ErrorList({ errors, selectedId, onSelect }) {
-  return (
-    <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-      {errors.map(e => {
-        const statusColor = e.user_status === 'pending' ? color.warning
-          : e.user_status === 'accepted' ? color.success : color.borderRejected
-        return (
-          <div
-            key={e.id}
-            className="error-list-item"
-            style={{
-              cursor: 'pointer',
-              background: e.id === selectedId ? color.bgHighlight : color.bgPage,
-              padding: '10px 14px',
-              borderRadius: radius.md,
-              marginBottom: 6,
-              border: '1px solid',
-              borderColor: e.id === selectedId ? color.borderSelected : color.border,
-              borderLeft: `3px solid ${statusColor}`,
-              transition: 'background 0.15s, box-shadow 0.15s',
-            }}
-            onClick={() => onSelect(e.id)}
-            onMouseEnter={(e) => {
-              if (e.id !== selectedId) e.currentTarget.style.background = color.bgCard
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = e.id === selectedId ? color.bgHighlight : color.bgPage
-            }}
-          >
-            <Space size={spacing.xs} style={{ marginBottom: 4 }}>
-              <Tag style={{ fontSize: fontSize.metaSm, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
-                第{e.paragraph_index}段
-              </Tag>
-              <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
-              <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
-                {SEVERITY_LABEL[e.severity]}
-              </Tag>
-            </Space>
-            <div style={{ fontSize: fontSize.bodyXs, lineHeight: 1.6 }}>
-              <span style={{
-                background: color.diffRemovedBg,
-                color: color.diffRemovedText,
-                textDecoration: 'line-through',
-                padding: '1px 4px',
-                borderRadius: radius.sm,
-              }}>
-                {e.original_text}
-              </span>
-              <span style={{ margin: '0 6px', color: color.textMuted, fontSize: fontSize.meta }}>→</span>
-              <span style={{
-                background: color.diffAddedBg,
-                color: color.diffAddedText,
-                padding: '1px 4px',
-                borderRadius: radius.sm,
-                fontWeight: 500,
-              }}>
-                {e.suggested_text}
-              </span>
-            </div>
-            <div style={{ fontSize: fontSize.meta, color: color.textDescription, marginTop: 3 }}>{e.description}</div>
-          </div>
-        )
-      })}
-    </div>
-  )
+  return errors.map(e => {
+    const statusColor = e.user_status === 'pending' ? color.warning
+      : e.user_status === 'accepted' ? color.success : color.borderRejected
+    return (
+      <div
+        key={e.id}
+        className="error-list-item"
+        style={{
+          cursor: 'pointer',
+          background: e.id === selectedId ? color.bgHighlight : color.bgPage,
+          padding: '10px 14px',
+          borderRadius: radius.md,
+          marginBottom: 6,
+          border: '1px solid',
+          borderColor: e.id === selectedId ? color.borderSelected : color.border,
+          borderLeft: `3px solid ${statusColor}`,
+          transition: 'background 0.15s, box-shadow 0.15s',
+        }}
+        onClick={() => onSelect(e.id)}
+        onMouseEnter={(e) => {
+          if (e.id !== selectedId) e.currentTarget.style.background = color.bgCard
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = e.id === selectedId ? color.bgHighlight : color.bgPage
+        }}
+      >
+        <Space size={spacing.xs} style={{ marginBottom: 4 }}>
+          <Tag style={{ fontSize: fontSize.metaSm, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
+            第{e.paragraph_index}段
+          </Tag>
+          <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
+          <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
+            {SEVERITY_LABEL[e.severity]}
+          </Tag>
+        </Space>
+        <div style={{ fontSize: fontSize.bodyXs, lineHeight: 1.6 }}>
+          <span style={{
+            background: color.diffRemovedBg,
+            color: color.diffRemovedText,
+            textDecoration: 'line-through',
+            padding: '1px 4px',
+            borderRadius: radius.sm,
+          }}>
+            {e.original_text}
+          </span>
+          <span style={{ margin: '0 6px', color: color.textMuted, fontSize: fontSize.meta }}>→</span>
+          <span style={{
+            background: color.diffAddedBg,
+            color: color.diffAddedText,
+            padding: '1px 4px',
+            borderRadius: radius.sm,
+            fontWeight: 500,
+          }}>
+            {e.suggested_text}
+          </span>
+        </div>
+        <div style={{ fontSize: fontSize.meta, color: color.textDescription, marginTop: 3 }}>{e.description}</div>
+      </div>
+    )
+  })
 }
 
 
@@ -249,6 +282,10 @@ export default function ReviewReader({
   })
   const flowRef = useRef(null)
   const contentRef = useRef(null)
+  const resultsRef = useRef(results)
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
+  const [floatCardStyle, setFloatCardStyle] = useState(null)
 
   useEffect(() => {
     localStorage.setItem('reader_font_offset', String(fontSizeOffset))
@@ -256,12 +293,46 @@ export default function ReviewReader({
 
   const currentBodyFontSize = fontSize.body + fontSizeOffset
 
+  // 当校对结果首次加载/更新时，自动选中第一条待处理错误
   useEffect(() => {
-    if (pending.length > 0 && !selectedId) {
-      setSelectedId(pending[0].id)
+    if (results && results !== resultsRef.current) {
+      resultsRef.current = results
+      if (pending.length > 0) {
+        setSelectedId(pending[0].id)
+      }
     }
-  }, [pending, selectedId])
+  }, [results, pending])
 
+  // 悬浮卡片：跟随选中错误的位置
+  useEffect(() => {
+    const container = flowRef.current
+    if (!container || !selectedId) { setFloatCardStyle(null); return }
+    const calc = () => {
+      const id = selectedIdRef.current
+      if (!id) { setFloatCardStyle(null); return }
+      const span = container.querySelector(`[data-error-id="${id}"]`)
+      if (!span) { setFloatCardStyle(null); return }
+      const rect = span.getBoundingClientRect()
+      const cardW = 380
+      const cardH = 170
+      let top = rect.bottom + 6
+      if (top + cardH > window.innerHeight - 16) {
+        top = Math.max(8, rect.top - cardH - 6)
+      }
+      let left = rect.left
+      if (left + cardW > window.innerWidth - 16) {
+        left = Math.max(8, window.innerWidth - cardW - 16)
+      }
+      setFloatCardStyle({ top, left })
+    }
+    calc()
+    container.addEventListener('scroll', calc, { passive: true })
+    window.addEventListener('resize', calc, { passive: true })
+    return () => {
+      container.removeEventListener('scroll', calc)
+      window.removeEventListener('resize', calc)
+    }
+  }, [selectedId])
   useEffect(() => {
     if (!selectedId || !flowRef.current) return
     const err = flatErrors.find(e => e.id === selectedId)
@@ -340,7 +411,7 @@ export default function ReviewReader({
     background: color.bgPage,
     borderTop: `1px solid ${color.borderBar}`,
     boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
-    padding: '10px 24px',
+    padding: '14px 32px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -378,7 +449,7 @@ export default function ReviewReader({
               {[...paras].sort((a, b) => a.idx - b.idx).map(para => {
                 const paraErrs = errors.filter(e => e.paragraph_index === para.idx)
                 return (
-                  <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24 }}>
+                    <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24 }}>
                     <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize }}>
                       <ParagraphView
                         text={para.text}
@@ -392,37 +463,6 @@ export default function ReviewReader({
                         </span>
                       )}
                     </div>
-
-                    {paraErrs.some(e => e.id === selectedId) && selectedError && (
-                      <div
-                          style={{
-                            marginTop: spacing.sm,
-                            padding: '10px 14px',
-                            background: color.bgCard,
-                            borderRadius: radius.md,
-                            borderLeft: `3px solid ${color.warning}`,
-                          }}
-                        >
-                          <Space style={{ marginBottom: 4 }} wrap>
-                          <Tag>{TYPE_LABEL[selectedError.type] || selectedError.type}</Tag>
-                          <Tag color={SEVERITY_COLOR[selectedError.severity]}>
-                            {SEVERITY_LABEL[selectedError.severity]}危
-                          </Tag>
-                          {selectedError.user_status !== 'pending' && (
-                            <Tag color={selectedError.user_status === 'accepted' ? 'green' : 'red'}>
-                              {selectedError.user_status === 'accepted' ? '已采纳' : '已拒绝'}
-                            </Tag>
-                          )}
-                        </Space>
-                        <div style={{ marginBottom: 4, color: color.textSecondary, fontSize: fontSize.bodySm }}>
-                          {selectedError.description}
-                        </div>
-                        <DiffView
-                          original={selectedError.original_text}
-                          suggested={selectedError.suggested_text}
-                        />
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -452,9 +492,15 @@ export default function ReviewReader({
                 <Button type="text" size="small" icon={<CloseOutlined />} onClick={onTogglePanel} />
               </div>
 
+              <style>{`
+                .right-panel-tabs .ant-tabs-content-holder { overflow: hidden; }
+                .right-panel-tabs .ant-tabs-content { height: 100%; }
+                .right-panel-tabs .ant-tabs-tabpane-active { height: 100%; overflow-y: auto; }
+              `}</style>
               <Tabs
                 activeKey={panelTab}
                 onChange={setPanelTab}
+                className="right-panel-tabs"
                 style={{ padding: '0 16px', flex: 1, minHeight: 0 }}
                 items={[
                   {
@@ -501,14 +547,11 @@ export default function ReviewReader({
             </div>
           </div>
         </div>
-
-        {/* bottom bar spacer */}
-        <div style={{ height: 80, flexShrink: 0 }} />
       </div>
 
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap', width: '100%', padding: '0 80px', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap', width: '100%', padding: '0 80px', position: 'relative' }}>
         {/* STATE: proofreading in progress */}
         {inProgress || proofreading ? (
           <>
@@ -530,7 +573,7 @@ export default function ReviewReader({
                 <Input
                   value={customEdit}
                   onChange={(e) => setCustomEdit(e.target.value)}
-                  style={{ width: 360, fontSize: 14 }}
+                  style={{ width: 420, fontSize: 16 }}
                   size="large"
                   placeholder="修改结果…"
                 />
@@ -541,7 +584,7 @@ export default function ReviewReader({
                   icon={<CheckCircleOutlined />}
                   onClick={() => handleStatus('accepted')}
                   disabled={inProgress}
-                  style={{ height: 40, paddingInline: 24 }}
+                  style={{ height: 48, paddingInline: 32, fontSize: 16 }}
                 >
                   采纳
                 </Button>
@@ -550,11 +593,11 @@ export default function ReviewReader({
                   icon={<CloseCircleOutlined />}
                   onClick={() => handleStatus('rejected')}
                   disabled={inProgress}
-                  style={{ height: 40, paddingInline: 24 }}
+                  style={{ height: 48, paddingInline: 32, fontSize: 16 }}
                 >
                   拒绝
                 </Button>
-                <Tag style={{ marginLeft: 4, fontSize: 14, padding: '2px 8px', borderRadius: 999 }}>
+                <Tag style={{ marginLeft: 4, fontSize: 16, padding: '4px 12px', borderRadius: 999 }}>
                   {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
                 </Tag>
               </>
@@ -581,15 +624,15 @@ export default function ReviewReader({
                 loading={proofreading}
                 onClick={onStartProofread}
                 disabled={inProgress}
-                style={{ height: 44, paddingInline: 32, fontSize: 16 }}
+                style={{ height: 52, paddingInline: 40, fontSize: 18 }}
               >
                 {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
               </Button>
               <Button
                 type="text"
-                size="small"
+                size="middle"
                 onClick={() => setShowOptions(s => !s)}
-                style={{ color: color.textTertiary, fontSize: fontSize.meta }}
+                style={{ color: color.textTertiary, fontSize: 14 }}
               >
                 {showOptions ? '收起选项 ▲' : '更多选项 ▼'}
               </Button>
@@ -612,7 +655,7 @@ export default function ReviewReader({
           background: color.bgCard,
           borderRadius: radius.md,
           border: `1px solid ${color.border}`,
-          padding: '2px 8px',
+          padding: '4px 10px',
         }}>
           <Button
             type="text"
@@ -620,9 +663,9 @@ export default function ReviewReader({
             icon={<MinusOutlined />}
             disabled={currentBodyFontSize <= 14}
             onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
-            style={{ width: 24, height: 24, fontSize: 12 }}
+            style={{ width: 28, height: 28, fontSize: 14 }}
           />
-          <span style={{ fontSize: 12, minWidth: 22, textAlign: 'center', color: color.textSecondary }}>
+          <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
             {currentBodyFontSize}
           </span>
           <Button
@@ -631,11 +674,14 @@ export default function ReviewReader({
             icon={<PlusOutlined />}
             disabled={currentBodyFontSize >= 24}
             onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
-            style={{ width: 24, height: 24, fontSize: 12 }}
+            style={{ width: 28, height: 28, fontSize: 14 }}
           />
         </div>
         </div>
       </div>
+      {selectedError && floatCardStyle && (
+        <ErrorDetailCard error={selectedError} style={floatCardStyle} />
+      )}
     </>
   )
 }
