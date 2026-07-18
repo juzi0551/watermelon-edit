@@ -226,10 +226,12 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   return <>{segs}</>
 }
 
-function ErrorList({ errors, selectedId, onSelect }) {
+function ErrorList({ errors, selectedId, onSelect, unmatchedIds }) {
   return errors.map(e => {
     const statusColor = e.user_status === 'pending' ? color.warning
       : e.user_status === 'accepted' ? color.success : color.borderRejected
+    const noLoc = unmatchedIds?.has(e.id)
+    const borderColor = noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)
     return (
       <div
         key={e.id}
@@ -241,7 +243,7 @@ function ErrorList({ errors, selectedId, onSelect }) {
           borderRadius: radius.md,
           marginBottom: 6,
           border: '1px solid',
-          borderColor: e.id === selectedId ? color.borderSelected : color.border,
+          borderColor: noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border),
           borderLeft: `3px solid ${statusColor}`,
           transition: 'background 0.15s, box-shadow 0.15s',
         }}
@@ -257,6 +259,7 @@ function ErrorList({ errors, selectedId, onSelect }) {
           <Tag style={{ fontSize: fontSize.metaSm, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
             第{e.paragraph_index}段
           </Tag>
+          {noLoc && <Tag color="warning" style={{ fontSize: fontSize.metaSm, margin: 0 }}>位置异常</Tag>}
           <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
           <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
             {SEVERITY_LABEL[e.severity]}
@@ -320,6 +323,16 @@ export default function ReviewReader({
   const pending = useMemo(() => flatErrors.filter(e => e.user_status === 'pending'), [flatErrors])
   const accepted = useMemo(() => flatErrors.filter(e => e.user_status === 'accepted'), [flatErrors])
   const rejected = useMemo(() => flatErrors.filter(e => e.user_status === 'rejected'), [flatErrors])
+  const unmatchedIds = useMemo(() => {
+    const ids = new Set()
+    errors.forEach(e => {
+      const para = paraMap[e.paragraph_index]
+      if (!para || !para.text || (e.original_text && para.text.indexOf(e.original_text) < 0)) {
+        ids.add(e.id)
+      }
+    })
+    return ids
+  }, [errors, paraMap])
 
   const [selectedId, setSelectedId] = useState(null)
   const [panelTab, setPanelTab] = useState('pending')
@@ -361,7 +374,9 @@ export default function ReviewReader({
     positionSavedRef.current = true
     const el = flowRef.current
     requestAnimationFrame(() => {
-      el.scrollTop = Number(saved)
+      if (positionSavedRef.current) {
+        el.scrollTop = Number(saved)
+      }
     })
   }, [paras.length, project?.id])
 
@@ -385,15 +400,16 @@ export default function ReviewReader({
 
   const currentBodyFontSize = fontSize.body + fontSizeOffset
 
-  // 当校对结果首次加载/更新时，自动选中第一条待处理错误
+  // 自动选中第一条待处理错误
   useEffect(() => {
     if (results && results !== resultsRef.current) {
       resultsRef.current = results
-      if (pending.length > 0) {
-        setSelectedId(pending[0].id)
-      }
     }
-  }, [results, pending])
+    if (!selectedId && pending.length > 0) {
+      positionSavedRef.current = false  // 允许滚动到错误，不被阅读位置覆盖
+      setSelectedId(pending[0].id)
+    }
+  }, [results, pending, selectedId])
 
   // 悬浮卡片：跟随选中错误的位置
   useEffect(() => {
@@ -669,6 +685,7 @@ export default function ReviewReader({
                           errors={pending}
                           selectedId={selectedId}
                           onSelect={(id) => { setSelectedId(id) }}
+                          unmatchedIds={unmatchedIds}
                         />
                       ),
                   },
@@ -682,6 +699,7 @@ export default function ReviewReader({
                           errors={accepted}
                           selectedId={selectedId}
                           onSelect={(id) => { setSelectedId(id) }}
+                          unmatchedIds={unmatchedIds}
                         />
                       ),
                   },
@@ -695,6 +713,7 @@ export default function ReviewReader({
                           errors={rejected}
                           selectedId={selectedId}
                           onSelect={(id) => { setSelectedId(id) }}
+                          unmatchedIds={unmatchedIds}
                         />
                       ),
                   },
@@ -715,7 +734,7 @@ export default function ReviewReader({
             open={showOptions}
             onOpenChange={setShowOptions}
             placement="topLeft"
-            styles={{ body: { padding: '12px 16px' } }}
+            styles={{ body: { padding: '12px 16px', width: 330 } }}
             content={
               <ControlsRow
                 showOptions={true}
@@ -901,18 +920,21 @@ function ControlsRow({
 }) {
   if (!showOptions) return null
   return (
-    <Space wrap size="small" style={{ justifyContent: 'center' }}>
-      <Select
-        style={{ width: 160 }}
-        value={selectedModel}
-        disabled={inProgress}
-        onChange={onModelChange}
-        options={models.map(m => ({ value: m.model_id, label: m.name }))}
-        size="small"
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>模型</span>
+        <Select
+          style={{ width: 300 }}
+          value={selectedModel}
+          disabled={inProgress}
+          onChange={onModelChange}
+          options={models.map(m => ({ value: m.model_id, label: `${m.provider_name || m.provider} · ${m.name}` }))}
+          size="small"
+        />
+      </div>
       <Select
         mode="multiple"
-        style={{ minWidth: 180 }}
+        style={{ width: '100%' }}
         value={selectedTypes}
         disabled={inProgress}
         onChange={onTypesChange}
@@ -927,6 +949,6 @@ function ControlsRow({
           )
         }}
       />
-    </Space>
+    </div>
   )
 }

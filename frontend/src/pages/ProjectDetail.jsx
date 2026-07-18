@@ -94,6 +94,12 @@ export default function ProjectDetail() {
     document.title = project?.name || 'Watermelon Edit'
   }, [project])
 
+  // 有未处理的问题时自动打开问题列表
+  useEffect(() => {
+    const pending = results?.errors?.filter(e => e.user_status === 'pending').length
+    if (pending > 0) setPanelOpen(true)
+  }, [results])
+
   // persist proofread config across refreshes
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
   useEffect(() => { localStorage.setItem('proofread_types', JSON.stringify(selectedTypes)) }, [selectedTypes])

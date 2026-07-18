@@ -37,15 +37,33 @@ export default function Settings() {
 
   useEffect(() => { load() }, [])
 
-  const handleSave = async (providerId) => {
+  const handleSave = async (providerId, opts = {}) => {
     const values = await form.validateFields()
     const key = values[`key_${providerId}`]
+    const acct = values[`acct_${providerId}`]
+    const provider = providers.find(p => p.provider === providerId)
+
+    // 只保存 Account ID（不要求 API Key）
+    if (opts.onlyAccountId) {
+      if (!acct || !acct.trim()) return
+      const res = await saveApiKey(providerId, null, acct.trim())
+      if (res.error) {
+        message.error(res.error)
+      } else {
+        message.success('Account ID 已保存')
+        form.setFieldsValue({ [`acct_${providerId}`]: '' })
+        load()
+      }
+      return
+    }
+
+    // 保存 API Key（可选同时更新 Account ID）
     if (!key || !key.trim()) return
-    const res = await saveApiKey(providerId, key.trim())
+    const res = await saveApiKey(providerId, key.trim(), acct)
     if (res.error) {
       message.error(res.error)
     } else {
-      message.success(`${providerId} API Key 已保存`)
+      message.success(`${provider.name || providerId} 配置已保存`)
       form.setFieldsValue({ [`key_${providerId}`]: '' })
       load()
     }
@@ -115,20 +133,44 @@ export default function Settings() {
                         <Text type="secondary">当前 Key：{p.masked_key}</Text>
                       </div>
                     )}
-                    <Form form={form} layout="inline">
-                      <Form.Item name={`key_${p.provider}`} noStyle>
-                        <Input.Password
-                          placeholder={p.configured ? '输入新 Key 覆盖' : '粘贴 API Key'}
-                          style={{ width: 360 }}
-                          onPressEnter={() => handleSave(p.provider)}
-                        />
-                      </Form.Item>
-                      <Form.Item noStyle>
-                        <Button type="primary" shape="round" icon={<SaveOutlined />} onClick={() => handleSave(p.provider)}>
-                          保存
-                        </Button>
-                      </Form.Item>
-                    </Form>
+                    <div>
+                      <Form form={form} layout="inline">
+                        <Form.Item name={`key_${p.provider}`} noStyle>
+                          <Input.Password
+                            placeholder={p.configured ? '输入新 Key 覆盖' : '粘贴 API Key'}
+                            style={{ width: 360 }}
+                            onPressEnter={() => handleSave(p.provider)}
+                          />
+                        </Form.Item>
+                        <Form.Item noStyle>
+                          <Button type="primary" shape="round" icon={<SaveOutlined />} onClick={() => handleSave(p.provider)}>
+                            保存
+                          </Button>
+                        </Form.Item>
+                        {p.requires_account_id && (
+                          <div style={{ display: 'block', width: '100%', marginTop: 8 }}>
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Account ID（Cloudflare Workers AI 必需）</Text>
+                            <Space>
+                              <Form.Item name={`acct_${p.provider}`} noStyle>
+                                <Input
+                                  placeholder={p.masked_account_id ? `当前：${p.masked_account_id}` : '粘贴 Account ID'}
+                                  style={{ width: 360 }}
+                                />
+                              </Form.Item>
+                              <Button
+                                size="small"
+                                type="primary"
+                                shape="round"
+                                icon={<SaveOutlined />}
+                                onClick={() => handleSave(p.provider, { onlyAccountId: true })}
+                              >
+                                保存
+                              </Button>
+                            </Space>
+                          </div>
+                        )}
+                      </Form>
+                    </div>
                     <div style={{ marginTop: 10 }}>
                       {p.models.map((m) => (
                         <Tag

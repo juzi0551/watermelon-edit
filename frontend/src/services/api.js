@@ -81,8 +81,11 @@ export async function getProviders() {
   return data.providers
 }
 
-export async function saveApiKey(provider, apiKey) {
-  const { data } = await api.post('/settings/keys', { provider, api_key: apiKey })
+export async function saveApiKey(provider, apiKey, accountId) {
+  const payload = { provider }
+  if (apiKey) payload.api_key = apiKey
+  if (accountId) payload.account_id = accountId
+  const { data } = await api.post('/settings/keys', payload)
   return data
 }
 

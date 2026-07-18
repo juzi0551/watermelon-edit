@@ -142,10 +142,11 @@ function HistoryTab() {
                 <Tag color={tagColor[c.status] || 'default'} style={{ margin: 0, minWidth: 40, textAlign: 'center' }}>
                   {c.status === 'ok' ? '成功' : c.status === 'error' ? '失败' : c.status}
                 </Tag>
-                <Text strong style={{ minWidth: 140, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.model}</Text>
-                <Text type="secondary" style={{ minWidth: 60, fontSize: 12, textAlign: 'right' }}>{c.duration_ms}ms</Text>
-                <Text type="secondary" style={{ minWidth: 40, fontSize: 12, textAlign: 'right' }}>{c.errors_found || 0}误</Text>
-                <Text type="secondary" style={{ minWidth: 60, fontSize: 12, textAlign: 'right' }}>段{c.range_start}-{c.range_end}</Text>
+                <Text strong style={{ minWidth: 130, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.model}</Text>
+                <Text type="secondary" style={{ minWidth: 55, fontSize: 12, textAlign: 'right' }}>{c.duration_ms}ms</Text>
+                {c.total_tokens != null && <Text type="secondary" style={{ minWidth: 50, fontSize: 12, textAlign: 'right' }}>{c.total_tokens}t</Text>}
+                <Text type="secondary" style={{ minWidth: 36, fontSize: 12, textAlign: 'right' }}>{c.errors_found || 0}误</Text>
+                <Text type="secondary" style={{ minWidth: 56, fontSize: 12, textAlign: 'right' }}>段{c.range_start}-{c.range_end}</Text>
                 <Text type="secondary" style={{ flex: 1, textAlign: 'right', fontSize: 12 }}>{c.created_at}</Text>
               </div>
             ))}
@@ -176,6 +177,14 @@ function HistoryTab() {
               <Text type="secondary">{detail.created_at}</Text>
               {detail.project_id && <Text type="secondary">段落 {detail.range_start}-{detail.range_end}</Text>}
             </Space>
+            {(detail.prompt_tokens != null || detail.cost != null) && (
+              <Space wrap>
+                {detail.prompt_tokens != null && <Text type="secondary">输入 {detail.prompt_tokens} tokens</Text>}
+                {detail.completion_tokens != null && <Text type="secondary">输出 {detail.completion_tokens} tokens</Text>}
+                {detail.total_tokens != null && <Tag color="blue">{detail.total_tokens} tokens</Tag>}
+                {detail.cost != null && <Text type="secondary">费用 ¥{Number(detail.cost).toFixed(6)}</Text>}
+              </Space>
+            )}
             {detail.error_message && (
               <Paragraph type="danger" style={{ marginBottom: 0 }}>{detail.error_message}</Paragraph>
             )}

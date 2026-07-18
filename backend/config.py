@@ -18,8 +18,6 @@ PROVIDERS = {
         "models": [
             {"id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash"},
             {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro"},
-            {"id": "deepseek-chat", "name": "DeepSeek Chat（2026/07/24 弃用）", "deprecated": True},
-            {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner（2026/07/24 弃用）", "deprecated": True},
         ],
     },
     "moonshot": {
@@ -38,6 +36,17 @@ PROVIDERS = {
         "litellm_prefix": "gemini",
         "models": [
             {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash"},
+        ],
+    },
+    "cloudflare": {
+        "name": "Cloudflare Workers AI",
+        "env_key": "CLOUDFLARE_API_KEY",
+        "litellm_prefix": "cloudflare",
+        "account_id_env_key": "CLOUDFLARE_ACCOUNT_ID",
+        "models": [
+            {"id": "@cf/zai-org/glm-5.2", "name": "GLM 5.2"},
+            {"id": "@cf/zai-org/glm-4.7-flash", "name": "GLM 4.7 Flash"},
+            {"id": "@cf/moonshotai/kimi-k2.6", "name": "Kimi K2.6"},
         ],
     },
 }
@@ -116,6 +125,15 @@ def _model_extra_kwargs(model_id: str) -> dict:
 
 # ---------- API Key 读写（按服务商） ----------
 
+def _resolve_key_value(value: str | dict | None) -> str | None:
+    """从 keys JSON 的值中提取 API Key 字符串（兼容 dict 和 普通字符串）。"""
+    if isinstance(value, dict):
+        return value.get("api_key")
+    if isinstance(value, str):
+        return value
+    return None
+
+
 def get_api_key(model_id: str) -> str | None:
     """根据模型找到所属服务商，返回该服务商的 API Key（JSON 文件优先，回退环境变量）。"""
     pid = _provider_of(model_id)
@@ -123,13 +141,40 @@ def get_api_key(model_id: str) -> str | None:
         return None
     keys = _load_keys()
     if pid in keys:
-        return keys[pid]
+        key = _resolve_key_value(keys[pid])
+        if key:
+            return key
     return os.getenv(PROVIDERS[pid]["env_key"])
 
 
-def set_api_key(provider_id: str, api_key: str):
+def get_account_id(provider_id: str) -> str | None:
+    """返回服务商的 Account ID（仅 Cloudflare 等需要）。"""
     keys = _load_keys()
-    keys[provider_id] = api_key
+    value = keys.get(provider_id)
+    if isinstance(value, dict):
+        acct = value.get("account_id")
+        if acct:
+            return acct
+    # 回退环境变量
+    env_key = PROVIDERS.get(provider_id, {}).get("account_id_env_key")
+    if env_key:
+        return os.getenv(env_key)
+    return None
+
+
+def set_api_key(provider_id: str, api_key: str, account_id: str | None = None):
+    keys = _load_keys()
+    if PROVIDERS.get(provider_id, {}).get("account_id_env_key"):
+        # 需要 account_id 的服务商（如 Cloudflare），存为 dict
+        existing = keys.get(provider_id)
+        if isinstance(existing, dict):
+            existing["api_key"] = api_key
+            if account_id is not None:
+                existing["account_id"] = account_id
+        else:
+            keys[provider_id] = {"api_key": api_key, "account_id": account_id or ""}
+    else:
+        keys[provider_id] = api_key
     _save_keys(keys)
 
 
@@ -147,7 +192,13 @@ def list_providers_status() -> list[dict]:
             "provider": pid,
             "name": p["name"],
             "configured": bool(keys.get(pid)),
-            "masked_key": _mask(keys.get(pid, "")),
+            "masked_key": _mask(
+                _resolve_key_value(keys.get(pid)) or keys.get(pid, "")
+            ),
+            "requires_account_id": bool(p.get("account_id_env_key")),
+            "masked_account_id": _mask(
+                keys.get(pid)["account_id"]
+            ) if isinstance(keys.get(pid), dict) and keys[pid].get("account_id") else "",
             "models": p["models"],
         }
         for pid, p in PROVIDERS.items()
@@ -163,6 +214,7 @@ def list_models() -> list[dict]:
                 "model_id": m["id"],
                 "name": m["name"],
                 "provider": pid,
+                "provider_name": p["name"],
                 "deprecated": m.get("deprecated", False),
             })
     return out

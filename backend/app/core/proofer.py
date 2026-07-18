@@ -38,10 +38,11 @@ def build_proofread_prompt(window_paragraphs: list[tuple], selected_types: list[
     return system + "\n\n文本：\n---\n" + text + "\n---"
 
 
-async def proofread_window(prompt: str, model_id: str, selected_types: list[str] | None = None, tag: str = "", system_prompt: str | None = None) -> tuple[list[dict], list[dict], str | None]:
-    """对一个窗口（W 段）调用 LLM 校对，返回 (errors, chapters, raw_response)。
+async def proofread_window(prompt: str, model_id: str, selected_types: list[str] | None = None, tag: str = "", system_prompt: str | None = None) -> tuple[list[dict], list[dict], str | None, dict]:
+    """对一个窗口（W 段）调用 LLM 校对，返回 (errors, chapters, raw_response, token_info)。
 
     raw_response 为 LLM 返回的原始响应字符串（用于持久化日志），解析失败时可能为 None。
+    token_info 包含 prompt_tokens / completion_tokens / total_tokens / cost。
     errors 已按 selected_types 过滤并规范化；chapters 为本窗口识别的章节结构。
     LLM 调用或解析彻底失败时抛出 LLMCallError。
 
@@ -51,22 +52,22 @@ async def proofread_window(prompt: str, model_id: str, selected_types: list[str]
     if selected_types is None:
         selected_types = ALL_TYPES
     if system_prompt is not None:
-        raw = await call_llm(prompt, model_id, tag=tag, system_prompt=system_prompt)
+        raw, token_info = await call_llm(prompt, model_id, tag=tag, system_prompt=system_prompt)
     else:
-        raw = await call_llm(prompt, model_id, tag=tag)
+        raw, token_info = await call_llm(prompt, model_id, tag=tag)
     data = _robust_json_load(raw)
     if data is None:
         raise LLMCallError("大模型返回的 JSON 无法解析（可能截断或格式错误）")
     chapters = _normalize_chapters(data.get("chapters", []))
     errors = _normalize_errors(data.get("errors", []), set(selected_types))
-    return errors, chapters, raw
+    return errors, chapters, raw, token_info
 
 
 def proofread_chapter(chapter_id: str, chapter_content: str, model_id: str) -> list[dict]:
     """旧接口兼容：对单个章节文本校对（Stage5 重写 proofread 路由后删除）。"""
     paras = [(i, ln.strip()) for i, ln in enumerate(chapter_content.split("\n")) if ln.strip()]
     prompt = build_proofread_prompt(paras, ALL_TYPES)
-    errors, _, _ = proofread_window(prompt, model_id, ALL_TYPES)
+    errors, _, _, _ = proofread_window(prompt, model_id, ALL_TYPES)
     for e in errors:
         e["chapter_id"] = chapter_id
     return errors

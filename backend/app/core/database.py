@@ -146,6 +146,16 @@ def _migrate_schema(conn):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_logs_project ON llm_logs(project_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_logs_created ON llm_logs(created_at)")
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '4')")
+    for col in (
+        "prompt_tokens INTEGER",
+        "completion_tokens INTEGER",
+        "total_tokens INTEGER",
+        "cost REAL",
+    ):
+        try:
+            conn.execute(f"ALTER TABLE llm_logs ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
 
 
 def init_db():
@@ -692,6 +702,10 @@ def insert_llm_log(
     status: str, duration_ms: int, error_message: str | None,
     response_raw: str | None,
     errors_found: int, chapters_found: int,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+    cost: float | None = None,
 ):
     """写入一条 LLM 调用日志到持久表。"""
     with get_conn() as conn:
@@ -700,12 +714,14 @@ def insert_llm_log(
                (id, project_id, doc_id, model, mode,
                 range_start, range_end, prompt, system_prompt,
                 selected_types, status, duration_ms, error_message,
-                response_raw, errors_found, chapters_found)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                response_raw, errors_found, chapters_found,
+                prompt_tokens, completion_tokens, total_tokens, cost)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (id, project_id, doc_id, model, mode,
              range_start, range_end, prompt, system_prompt,
              selected_types, status, duration_ms, error_message,
-             response_raw, errors_found, chapters_found),
+             response_raw, errors_found, chapters_found,
+             prompt_tokens, completion_tokens, total_tokens, cost),
         )
 
 

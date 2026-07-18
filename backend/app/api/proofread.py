@@ -73,6 +73,23 @@ async def start_proofread(project_id: str, req: ProofreadRequest):
     return {"status": "started", "message": "校对已在后台开始，请在详情页查看进度"}
 
 
+def _fix_error_paragraph(e: dict, window_paras: list[tuple[int, str]]):
+    """校验 error 的 paragraph_index 是否匹配 original_text，不匹配时在本窗口内重找。"""
+    orig = e.get("original_text", "") or e.get("locator", "")
+    if not orig:
+        return
+    # 已精确匹配 → 不动
+    for idx, text in window_paras:
+        if idx == e["paragraph_index"] and orig in text:
+            return
+    # 不匹配 → 在整个窗口内搜索能匹配的段落编号
+    for idx, text in window_paras:
+        if orig in text:
+            logger.info("纠正错误段落编号: %s -> %s (text=%r)", e["paragraph_index"], idx, orig[:20])
+            e["paragraph_index"] = idx
+            return
+
+
 async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
     # 记录最后一次 proofread_window 的上下文，异常时写入日志
     _last_log_ctx: dict | None = None
@@ -106,17 +123,19 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     selected_types=json.dumps(types, ensure_ascii=False),
                 )
                 _last_t0 = time.time()
-                errs, chs, raw = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
+                errs, chs, raw, token_info = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
                 duration = int((time.time() - _last_t0) * 1000)
                 insert_llm_log(
                     generate_id(), project_id, doc_id,
                     **_last_log_ctx,
                     status="ok", duration_ms=duration, error_message=None,
                     response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
+                    **token_info,
                 )
                 _last_log_ctx = None
                 for e in errs:
                     if range_start <= e["paragraph_index"] < range_end:
+                        _fix_error_paragraph(e, window_paras)
                         e.pop("chapter_id", None)
                         insert_error(doc_id, e)
                 for c in chs:
@@ -161,17 +180,19 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 selected_types=json.dumps(types, ensure_ascii=False),
             )
             _last_t0 = time.time()
-            errs, chs, raw = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
+            errs, chs, raw, token_info = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
             duration = int((time.time() - _last_t0) * 1000)
             insert_llm_log(
                 generate_id(), project_id, doc_id,
                 **_last_log_ctx,
                 status="ok", duration_ms=duration, error_message=None,
                 response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
+                **token_info,
             )
             _last_log_ctx = None
             for e in errs:
                 if range_start <= e["paragraph_index"] < range_end:
+                    _fix_error_paragraph(e, window_paras)
                     e.pop("chapter_id", None)
                     insert_error(doc_id, e)
                     found_errors += 1
