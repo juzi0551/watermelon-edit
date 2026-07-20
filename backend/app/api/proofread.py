@@ -73,21 +73,23 @@ async def start_proofread(project_id: str, req: ProofreadRequest):
     return {"status": "started", "message": "校对已在后台开始，请在详情页查看进度"}
 
 
-def _fix_error_paragraph(e: dict, window_paras: list[tuple[int, str]]):
+def _fix_error_paragraph(e: dict, window_paras: list[tuple[int, str]]) -> bool:
     """校验 error 的 paragraph_index 是否匹配 original_text，不匹配时在本窗口内重找。"""
     orig = e.get("original_text", "") or e.get("locator", "")
     if not orig:
-        return
+        return True
     # 已精确匹配 → 不动
     for idx, text in window_paras:
         if idx == e["paragraph_index"] and orig in text:
-            return
+            return True
     # 不匹配 → 在整个窗口内搜索能匹配的段落编号
     for idx, text in window_paras:
         if orig in text:
             logger.info("纠正错误段落编号: %s -> %s (text=%r)", e["paragraph_index"], idx, orig[:20])
             e["paragraph_index"] = idx
-            return
+            return True
+    logger.warning("丢弃无法匹配的错误: paragraph=%s text=%r", e["paragraph_index"], orig[:20])
+    return False
 
 
 async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
@@ -135,7 +137,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 _last_log_ctx = None
                 for e in errs:
                     if range_start <= e["paragraph_index"] < range_end:
-                        _fix_error_paragraph(e, window_paras)
+                        if not _fix_error_paragraph(e, window_paras):
+                            continue
                         e.pop("chapter_id", None)
                         insert_error(doc_id, e)
                 for c in chs:
@@ -192,7 +195,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             _last_log_ctx = None
             for e in errs:
                 if range_start <= e["paragraph_index"] < range_end:
-                    _fix_error_paragraph(e, window_paras)
+                    if not _fix_error_paragraph(e, window_paras):
+                        continue
                     e.pop("chapter_id", None)
                     insert_error(doc_id, e)
                     found_errors += 1

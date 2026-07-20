@@ -231,7 +231,6 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds }) {
     const statusColor = e.user_status === 'pending' ? color.warning
       : e.user_status === 'accepted' ? color.success : color.borderRejected
     const noLoc = unmatchedIds?.has(e.id)
-    const borderColor = noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)
     return (
       <div
         key={e.id}
@@ -349,6 +348,7 @@ export default function ReviewReader({
   selectedIdRef.current = selectedId
   const [floatCardStyle, setFloatCardStyle] = useState(null)
   const positionSavedRef = useRef(false)
+  const hasAutoSelectedRef = useRef(false)
 
   useEffect(() => {
     const el = flowRef.current
@@ -404,8 +404,11 @@ export default function ReviewReader({
   useEffect(() => {
     if (results && results !== resultsRef.current) {
       resultsRef.current = results
+      hasAutoSelectedRef.current = false  // 新结果到来时重置，允许自动选中
+      setSelectedId(null)                 // 清除上次选中，触发自动选中
     }
-    if (!selectedId && pending.length > 0) {
+    if (!hasAutoSelectedRef.current && !selectedId && pending.length > 0) {
+      hasAutoSelectedRef.current = true
       positionSavedRef.current = false  // 允许滚动到错误，不被阅读位置覆盖
       setSelectedId(pending[0].id)
     }
@@ -734,7 +737,7 @@ export default function ReviewReader({
             open={showOptions}
             onOpenChange={setShowOptions}
             placement="topLeft"
-            styles={{ body: { padding: '12px 16px', width: 330 } }}
+            styles={{ body: { padding: '12px 16px', width: 400 } }}
             content={
               <ControlsRow
                 showOptions={true}
