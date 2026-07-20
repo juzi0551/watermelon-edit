@@ -175,56 +175,73 @@ const ErrorDetailCard = forwardRef(ErrorDetailCardInner)
 
 function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   if (!text) return null
-  const found = []
+  // 对同一原文多次出现，按顺序分配不同位置
+  const posMap = {}
+  const intervals = []
   paraErrors.forEach(e => {
-    const idx = text.indexOf(e.original_text)
-    if (idx >= 0) found.push({ error: e, idx, end: idx + e.original_text.length })
+    const t = e.original_text
+    const from = posMap[t] ?? 0
+    const idx = text.indexOf(t, from)
+    if (idx >= 0) {
+      intervals.push({ error: e, start: idx, end: idx + t.length })
+      posMap[t] = idx + 1
+    }
   })
-  found.sort((a, b) => a.idx - b.idx)
+  if (intervals.length === 0) return <span>{text}</span>
+  intervals.sort((a, b) => a.start - b.start || a.end - b.end)
+
+  // 按所有区间边界切分正文，每段只渲染一次（无重复），标注覆盖它的所有错误 id
+  const bounds = new Set([0, text.length])
+  intervals.forEach(iv => { bounds.add(iv.start); bounds.add(iv.end) })
+  const points = [...bounds].sort((a, b) => a - b)
+
   const segs = []
-  const chips = []
-  let cursor = 0
-  found.forEach(f => {
-    if (f.idx < cursor) { chips.push(f.error); return }
-    if (f.idx > cursor) segs.push(<span key={`t${cursor}`}>{text.slice(cursor, f.idx)}</span>)
-    const e = f.error
-    const accepted = e.user_status === 'accepted'
-    const pending = e.user_status === 'pending'
-    const displayText = accepted ? e.suggested_text : e.original_text
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i]
+    const end = points[i + 1]
+    if (start >= end) continue
+    const segText = text.slice(start, end)
+    const covering = intervals.filter(iv => iv.start <= start && iv.end >= end)
+    if (covering.length === 0) {
+      segs.push(<span key={`t${start}`}>{segText}</span>)
+      continue
+    }
+    const ids = covering.map(iv => iv.error.id)
+    const isSelected = ids.includes(selectedId)
+    const srcIv = covering.find(iv => iv.error.id === selectedId) || covering[0]
+    const source = srcIv.error
+    const accepted = source.user_status === 'accepted'
+    const pending = source.user_status === 'pending'
+    // 仅当该段只属于一个错误时才用其 suggested_text 替换（按段切片，避免长度变化错位/重复）
+    const displayText = (covering.length === 1 && accepted)
+      ? source.suggested_text.slice(start - srcIv.start, end - srcIv.start)
+      : segText
     segs.push(
       <span
-        key={e.id}
-        data-error-id={e.id}
-        onClick={() => onSelect(e.id)}
-        title={accepted ? `原: ${e.original_text}` : undefined}
+        key={`seg${start}`}
+        data-error-id={ids.join(',')}
+        onClick={() => {
+          if (ids.length <= 1) { onSelect(ids[0]); return }
+          const cur = ids.indexOf(selectedId)
+          onSelect(ids[(cur + 1) % ids.length])
+        }}
+        title={covering.length > 1
+          ? covering.map(iv => `${iv.error.original_text} → ${iv.error.suggested_text}`).join('\n')
+          : undefined}
         style={{
           cursor: 'pointer',
           padding: '0 2px',
           borderRadius: 2,
-          backgroundColor: e.id === selectedId ? color.bgHighlight : 'transparent',
+          backgroundColor: isSelected ? color.bgHighlight : 'transparent',
           borderBottom: accepted
             ? `1px dashed ${color.textTertiary}`
             : pending
-              ? (e.id === selectedId ? `2px solid ${color.warning}` : `1px dotted ${color.warning}`)
+              ? (isSelected ? `2px solid ${color.warning}` : `1px dotted ${color.warning}`)
               : 'none',
         }}
       >{displayText}</span>,
     )
-    cursor = f.end
-  })
-  if (cursor < text.length) segs.push(<span key="t-end">{text.slice(cursor)}</span>)
-  chips.forEach(e => {
-    const accepted = e.user_status === 'accepted'
-    segs.push(
-      <Tag
-        key={`chip-${e.id}`}
-        data-error-id={e.id}
-        color={accepted ? 'green' : (SEVERITY_COLOR[e.severity] || 'default')}
-        style={{ cursor: 'pointer', margin: '0 4px' }}
-        onClick={() => onSelect(e.id)}
-      >{accepted ? e.suggested_text : e.original_text}</Tag>,
-    )
-  })
+  }
   return <>{segs}</>
 }
 
@@ -428,7 +445,9 @@ export default function ReviewReader({
       if (!el) return
       const id = selectedIdRef.current
       if (!id) { setShowFloatCard(false); return }
-      const span = container.querySelector(`[data-error-id="${id}"]`)
+      const strId = String(id)
+      const span = Array.from(container.querySelectorAll('[data-error-id]'))
+        .find(el => el.dataset.errorId.split(',').includes(strId))
       if (!span) { setShowFloatCard(false); return }
       const rect = span.getBoundingClientRect()
       const cardW = 380
