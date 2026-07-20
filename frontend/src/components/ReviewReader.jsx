@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, forwardRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, Badge, Popover, Tooltip, message,
@@ -93,10 +93,11 @@ function DiffView({ original, suggested }) {
   )
 }
 
-function ErrorDetailCard({ error, style: extStyle, onAccept, onReject, onClose }) {
+function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
   const pending = error.user_status === 'pending'
   return (
     <div
+      ref={ref}
       style={{
         position: 'fixed',
         zIndex: 1100,
@@ -106,7 +107,6 @@ function ErrorDetailCard({ error, style: extStyle, onAccept, onReject, onClose }
         borderRadius: radius.md,
         borderLeft: `3px solid ${color.warning}`,
         boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-        ...extStyle,
       }}
     >
       <div style={{ position: 'relative' }}>
@@ -170,6 +170,8 @@ function ErrorDetailCard({ error, style: extStyle, onAccept, onReject, onClose }
     </div>
   )
 }
+
+const ErrorDetailCard = forwardRef(ErrorDetailCardInner)
 
 function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   if (!text) return null
@@ -346,8 +348,10 @@ export default function ReviewReader({
   const resultsRef = useRef(results)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
-  const [floatCardStyle, setFloatCardStyle] = useState(null)
+  const [showFloatCard, setShowFloatCard] = useState(false)
+  const floatCardElRef = useRef(null)
   const positionSavedRef = useRef(false)
+  const autoSelectRef = useRef(false)
   const hasAutoSelectedRef = useRef(false)
 
   useEffect(() => {
@@ -368,7 +372,7 @@ export default function ReviewReader({
   }, [paras.length, project?.id])
 
   useEffect(() => {
-    if (positionSavedRef.current || paras.length === 0 || !flowRef.current) return
+    if (autoSelectRef.current || positionSavedRef.current || paras.length === 0 || !flowRef.current) return
     const saved = localStorage.getItem(`reading_scrolltop_${project?.id}`)
     if (saved == null) return
     positionSavedRef.current = true
@@ -404,24 +408,28 @@ export default function ReviewReader({
   useEffect(() => {
     if (results && results !== resultsRef.current) {
       resultsRef.current = results
-      // 新结果到来时直接选中第一条 pending，不经过 null 中间态（避免浮层闪烁）
       if (pending.length > 0) {
         hasAutoSelectedRef.current = true
+        autoSelectRef.current = true
         positionSavedRef.current = false
         setSelectedId(pending[0].id)
       }
     }
   }, [results, pending])
 
-  // 悬浮卡片：跟随选中错误的位置
+  // 悬浮卡片：跟随选中错误的位置（用 ref 直接操作 DOM，绕过 React 渲染周期避免卡顿）
   useEffect(() => {
     const container = flowRef.current
-    if (!container || !selectedId) { setFloatCardStyle(null); return }
-    const calc = () => {
+    if (!container || !selectedId) { setShowFloatCard(false); return }
+    setShowFloatCard(true)
+    let rafId
+    const updatePos = () => {
+      const el = floatCardElRef.current
+      if (!el) return
       const id = selectedIdRef.current
-      if (!id) { setFloatCardStyle(null); return }
+      if (!id) { setShowFloatCard(false); return }
       const span = container.querySelector(`[data-error-id="${id}"]`)
-      if (!span) { setFloatCardStyle(null); return }
+      if (!span) { setShowFloatCard(false); return }
       const rect = span.getBoundingClientRect()
       const cardW = 380
       const cardH = 170
@@ -433,24 +441,27 @@ export default function ReviewReader({
       if (left + cardW > window.innerWidth - 16) {
         left = Math.max(8, window.innerWidth - cardW - 16)
       }
-      setFloatCardStyle({ top, left })
+      el.style.top = `${top}px`
+      el.style.left = `${left}px`
     }
-    calc()
-    container.addEventListener('scroll', calc, { passive: true })
-    window.addEventListener('resize', calc, { passive: true })
+    updatePos()
+    const onScroll = () => { rafId = requestAnimationFrame(updatePos) }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
     return () => {
-      container.removeEventListener('scroll', calc)
-      window.removeEventListener('resize', calc)
+      cancelAnimationFrame(rafId)
+      container.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
     }
   }, [selectedId])
   useEffect(() => {
     if (!selectedId || !flowRef.current) return
-    // 如果是刚恢复了阅读位置，跳过自动滚动到选中错误，避免覆盖 scrollTop
     if (positionSavedRef.current) { positionSavedRef.current = false; return }
     const err = flatErrors.find(e => e.id === selectedId)
     if (!err) return
     const el = flowRef.current.querySelector(`[data-para="${err.paragraph_index}"]`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    autoSelectRef.current = false
   }, [selectedId, flatErrors])
 
   useEffect(() => {
@@ -623,8 +634,11 @@ export default function ReviewReader({
               {[...paras].sort((a, b) => a.idx - b.idx).map(para => {
                 const paraErrs = errors.filter(e => e.paragraph_index === para.idx)
                 return (
-                    <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24 }}>
-                    <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize }}>
+                    <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24, display: 'flex', gap: 8 }}>
+                    <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 32, textAlign: 'right', userSelect: 'none' }}>
+                      {para.idx}
+                    </span>
+                    <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize, flex: 1 }}>
                       <ParagraphView
                         text={para.text}
                         paraErrors={paraErrs}
@@ -877,10 +891,10 @@ export default function ReviewReader({
         </div>
         </div>
       </div>
-      {selectedError && floatCardStyle && (
+      {selectedError && showFloatCard && (
         <ErrorDetailCard
+          ref={floatCardElRef}
           error={selectedError}
-          style={floatCardStyle}
           onAccept={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
           onReject={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
           onClose={() => setSelectedId(null)}
