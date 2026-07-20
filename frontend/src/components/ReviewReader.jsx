@@ -404,15 +404,14 @@ export default function ReviewReader({
   useEffect(() => {
     if (results && results !== resultsRef.current) {
       resultsRef.current = results
-      hasAutoSelectedRef.current = false  // 新结果到来时重置，允许自动选中
-      setSelectedId(null)                 // 清除上次选中，触发自动选中
+      // 新结果到来时直接选中第一条 pending，不经过 null 中间态（避免浮层闪烁）
+      if (pending.length > 0) {
+        hasAutoSelectedRef.current = true
+        positionSavedRef.current = false
+        setSelectedId(pending[0].id)
+      }
     }
-    if (!hasAutoSelectedRef.current && !selectedId && pending.length > 0) {
-      hasAutoSelectedRef.current = true
-      positionSavedRef.current = false  // 允许滚动到错误，不被阅读位置覆盖
-      setSelectedId(pending[0].id)
-    }
-  }, [results, pending, selectedId])
+  }, [results, pending])
 
   // 悬浮卡片：跟随选中错误的位置
   useEffect(() => {
