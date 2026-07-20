@@ -663,9 +663,9 @@ export default function ReviewReader({
               width: showPanel ? 420 : 0,
               overflow: 'hidden',
               flexShrink: 0,
-              transition: 'width 0.2s ease',
+              transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               opacity: showPanel ? 1 : 0,
-              borderLeft: `1px solid ${color.border}`,
+              borderLeft: showPanel ? `1px solid ${color.border}` : 'none',
               background: color.bgPage,
               borderRadius: 8,
             }}
