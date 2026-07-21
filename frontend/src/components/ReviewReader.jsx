@@ -245,11 +245,12 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   return <>{segs}</>
 }
 
-function ErrorList({ errors, selectedId, onSelect, unmatchedIds }) {
+function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) {
   return errors.map(e => {
     const statusColor = e.user_status === 'pending' ? color.warning
       : e.user_status === 'accepted' ? color.success : color.borderRejected
     const noLoc = unmatchedIds?.has(e.id)
+    const done = e.user_status !== 'pending'
     return (
       <div
         key={e.id}
@@ -282,6 +283,16 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds }) {
           <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
             {SEVERITY_LABEL[e.severity]}
           </Tag>
+          {done && (
+            <Button
+              type="text"
+              size="small"
+              onClick={(ev) => { ev.stopPropagation(); onSetStatus?.(e.id, 'pending') }}
+              style={{ height: 20, fontSize: 11, lineHeight: '18px', paddingInline: 6, color: color.textSecondary }}
+            >
+              重置
+            </Button>
+          )}
         </Space>
         <div style={{ fontSize: fontSize.bodyXs, lineHeight: 1.6 }}>
           <span style={{
@@ -721,6 +732,7 @@ export default function ReviewReader({
                           selectedId={selectedId}
                           onSelect={(id) => { setSelectedId(id) }}
                           unmatchedIds={unmatchedIds}
+                          onSetStatus={onSetStatus}
                         />
                       ),
                   },
@@ -735,6 +747,7 @@ export default function ReviewReader({
                           selectedId={selectedId}
                           onSelect={(id) => { setSelectedId(id) }}
                           unmatchedIds={unmatchedIds}
+                          onSetStatus={onSetStatus}
                         />
                       ),
                   },
@@ -749,6 +762,7 @@ export default function ReviewReader({
                           selectedId={selectedId}
                           onSelect={(id) => { setSelectedId(id) }}
                           unmatchedIds={unmatchedIds}
+                          onSetStatus={onSetStatus}
                         />
                       ),
                   },
