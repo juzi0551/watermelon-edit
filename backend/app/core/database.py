@@ -541,6 +541,18 @@ def delete_errors_in_range(document_id: str, start_idx: int, end_idx: int):
         )
 
 
+def delete_errors_by_indices(document_id: str, indices: list[int]):
+    """删除指定段落编号的错误（用于 selection 模式）。"""
+    if not indices:
+        return
+    placeholders = ",".join("?" for _ in indices)
+    with get_conn() as conn:
+        conn.execute(
+            f"DELETE FROM errors WHERE document_id = ? AND paragraph_index IN ({placeholders})",
+            (document_id, *indices),
+        )
+
+
 def delete_all_errors(document_id: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM errors WHERE document_id = ?", (document_id,))

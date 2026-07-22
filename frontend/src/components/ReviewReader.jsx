@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, forwardRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, Badge, Popover, Tooltip, message,
+  Checkbox,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
@@ -335,6 +336,7 @@ export default function ReviewReader({
   total = 0, upto = 0,
   bannerText = '',
   projectError = null, onRetry, onChapterChange,
+  selectedParas, onSelectionChange, onStartSelectionProofread,
 }) {
   const errors = results?.errors || []
   const paras = results?.paragraphs || []
@@ -663,8 +665,19 @@ export default function ReviewReader({
             >
               {[...paras].sort((a, b) => a.idx - b.idx).map(para => {
                 const paraErrs = errors.filter(e => e.paragraph_index === para.idx)
+                const checked = selectedParas?.has(para.idx)
                 return (
                     <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24, display: 'flex', gap: 8 }}>
+                    <Checkbox
+                      checked={checked}
+                      onChange={() => {
+                        const next = new Set(selectedParas || [])
+                        if (next.has(para.idx)) next.delete(para.idx)
+                        else next.add(para.idx)
+                        onSelectionChange?.(next)
+                      }}
+                      style={{ lineHeight: '1.9', paddingTop: 2 }}
+                    />
                     <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 32, textAlign: 'right', userSelect: 'none' }}>
                       {para.idx}
                     </span>
@@ -776,33 +789,58 @@ export default function ReviewReader({
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 24px', gap: 16 }}>
-        {/* left: 校对配置（Popover 弹出，不占位） */}
-        {!(inProgress || proofreading) && !(flatErrors.length > 0 && pending.length > 0) && (
-          <Popover
-            trigger="click"
-            open={showOptions}
-            onOpenChange={setShowOptions}
-            placement="topLeft"
-            styles={{ body: { padding: '12px 16px', width: 400 } }}
-            content={
-              <ControlsRow
-                showOptions={true}
-                selectedModel={selectedModel} onModelChange={onModelChange}
-                models={models}
-                selectedTypes={selectedTypes} onTypesChange={onTypesChange}
-                inProgress={inProgress}
-              />
-            }
-          >
-            <Button
-              type="text"
-              size="middle"
-              style={{ color: color.textTertiary, fontSize: 14, whiteSpace: 'nowrap' }}
+        {/* left: 选段操作 | 校对配置 */}
+        {!(inProgress || proofreading) && <>
+          {selectedParas?.size > 0 ? (
+            <Space size={4}>
+              <Tag style={{ fontSize: 12, margin: 0 }}>已选 {selectedParas.size} 段</Tag>
+              <Button
+                type="text"
+                size="small"
+                onClick={() => {
+                  const errIdxs = new Set(errors.map(e => e.paragraph_index))
+                  onSelectionChange?.(errIdxs)
+                }}
+                style={{ fontSize: 12, color: color.textSecondary }}
+              >
+                选取错误段落
+              </Button>
+              <Button
+                type="text"
+                size="small"
+                onClick={() => onSelectionChange?.(new Set())}
+                style={{ fontSize: 12, color: color.textSecondary }}
+              >
+                清除
+              </Button>
+            </Space>
+          ) : (
+            <Popover
+              trigger="click"
+              open={showOptions}
+              onOpenChange={setShowOptions}
+              placement="topLeft"
+              styles={{ body: { padding: '12px 16px', width: 400 } }}
+              content={
+                <ControlsRow
+                  showOptions={true}
+                  selectedModel={selectedModel} onModelChange={onModelChange}
+                  models={models}
+                  selectedTypes={selectedTypes} onTypesChange={onTypesChange}
+                  inProgress={inProgress}
+                />
+              }
             >
-              {showOptions ? '◀' : '▶'} 校对配置
-            </Button>
-          </Popover>
-        )}
+              <Button
+                type="text"
+                size="middle"
+                style={{ color: color.textTertiary, fontSize: 14, whiteSpace: 'nowrap' }}
+              >
+                {showOptions ? '◀' : '▶'} 校对配置
+              </Button>
+            </Popover>
+          )}
+        </>}
 
         {/* center: main content */}
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, position: 'relative' }}>
@@ -872,6 +910,22 @@ export default function ReviewReader({
                 点击文中有标记的文本查看错误详情
               </span>
             )}
+          </>
+        ) : selectedParas?.size > 0 ? (
+          <>
+            <Button
+              type="primary"
+              shape="round"
+              size="large"
+              icon={<ThunderboltOutlined />}
+              loading={proofreading}
+              onClick={() => onStartSelectionProofread?.([...selectedParas])}
+              disabled={inProgress}
+              style={{ height: 52, paddingInline: 40, fontSize: 18 }}
+            >
+              校对选中（{selectedParas.size} 段）
+            </Button>
+            <ShortcutHint />
           </>
         ) : (
           <>

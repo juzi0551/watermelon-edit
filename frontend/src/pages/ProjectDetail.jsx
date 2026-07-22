@@ -44,6 +44,7 @@ export default function ProjectDetail() {
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
+  const [selectedParas, setSelectedParas] = useState(new Set())
 
   const loadProject = async () => {
     setLoading(true)
@@ -185,6 +186,33 @@ export default function ProjectDetail() {
         message.success(`校对完成：已校对至 ${d.proofread_upto || 0}/${d.paragraph_count || 0} 段`)
       }
     } catch {}
+  }
+
+  const handleSelectionProofread = async (indices) => {
+    setProofreading(true)
+    try {
+      const payload = {
+        mode: 'selection',
+        model: selectedModel,
+        types: selectedTypes,
+        paragraph_indices: indices,
+      }
+      const res = await startProofread(projectId, payload)
+      if (res.error) {
+        message.error(res.error)
+        setProofreading(false)
+        return
+      }
+      if (res.status === 'running') {
+        message.info(res.message)
+      }
+      setSelectedParas(new Set())
+      setMode('selection')
+      await pollProofread()
+    } catch (e) {
+      message.error('选中段校对失败：' + (e.response?.data?.detail || e.message))
+      setProofreading(false)
+    }
   }
 
   const handleSetStatus = async (errorId, status, customText) => {
@@ -394,6 +422,9 @@ export default function ProjectDetail() {
                     projectError={project?.last_error}
                     onRetry={handleProofread}
                     onChapterChange={setSelectedChapter}
+                    selectedParas={selectedParas}
+                    onSelectionChange={setSelectedParas}
+                    onStartSelectionProofread={handleSelectionProofread}
                   />
               )}
             </div>
