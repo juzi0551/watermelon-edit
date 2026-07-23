@@ -40,7 +40,7 @@ export default function ProjectDetail() {
     }
   )
   const [exporting, setExporting] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(true)
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
@@ -209,6 +209,7 @@ export default function ProjectDetail() {
       setSelectedParas(new Set())
       setMode('selection')
       await pollProofread()
+      setMode('continue')
     } catch (e) {
       message.error('选中段校对失败：' + (e.response?.data?.detail || e.message))
       setProofreading(false)

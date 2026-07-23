@@ -30,6 +30,16 @@ PROVIDERS = {
             {"id": "kimi-k2.6", "name": "Kimi K2.6"},
         ],
     },
+    "minimax": {
+        "name": "MiniMax（稀宇）",
+        "env_key": "MINIMAX_API_KEY",
+        "litellm_prefix": "openai",
+        "api_base": "https://api.minimaxi.com/v1",
+        "models": [
+            {"id": "MiniMax-M3", "name": "MiniMax M3"},
+            {"id": "MiniMax-M2.7-highspeed", "name": "MiniMax M2.7 Highspeed"},
+        ],
+    },
     "google": {
         "name": "Google Gemini",
         "env_key": "GEMINI_API_KEY",
