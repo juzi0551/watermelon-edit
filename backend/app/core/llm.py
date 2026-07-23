@@ -3,9 +3,13 @@ import litellm
 import time
 import datetime
 import asyncio
+import logging
 from collections import deque
 from config import get_api_key, get_account_id, _provider_of, _litellm_model, _api_base, _model_extra_kwargs
 from app.core.database import get_setting
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLMCallError(Exception):
@@ -32,8 +36,7 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
     token_info 包含 prompt_tokens / completion_tokens / total_tokens / cost，
     调用失败时所有字段为 None。
 
-    使用异步 acompletion 并在单次调用上设置超时，避免阻塞事件循环或永久挂起。
-
+    流式调用（stream=True），timeout 为整体超时（含首 token 等待和 chunk 间等待）。
     system_prompt 可覆盖默认系统提示词（用于将指令放入 system 而非 user 消息）。
     传空字符串表示不用 system 消息（仅用于测试）。
     """
@@ -60,6 +63,8 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
         "status": "running",
         "duration_ms": 0,
         "response": None,
+        "thinking": "",
+        "thinking_status": "idle",  # idle | thinking | done
         "error": None,
     }
     _record_llm_call(entry)
@@ -79,8 +84,8 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
             api_key=api_key,
             messages=messages,
             timeout=timeout,
-            tool_choice="none",
-            response_format={"type": "json_object"},
+            stream=True,
+            drop_params=True,  # 自动丢弃不支持的参数
         )
         api_base = _api_base(model_id)
         if api_base:
@@ -88,23 +93,61 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
         extra = _model_extra_kwargs(model_id)
         if extra:
             kwargs.update(extra)
-        response = await asyncio.wait_for(
-            litellm.acompletion(**kwargs),
-            timeout=timeout + 5,
-        )
-        content = response.choices[0].message.content
-        usage = response.usage
+        # 流式调用：timeout 为 chunk 间等待时间，非总超时
+        t_prefill = time.time()
+        response = await litellm.acompletion(**kwargs)
+        t_prefill_done = time.time()
+        logger.info("TTFT_DEBUG: litellm.acompletion() returned in %.1fs (model=%s)", t_prefill_done - t_prefill, model_id)
+        content = ""
         token_info = {
-            "prompt_tokens": usage.prompt_tokens if usage else None,
-            "completion_tokens": usage.completion_tokens if usage else None,
-            "total_tokens": usage.total_tokens if usage else None,
-            "cost": getattr(response, "_cost", None),
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+            "cost": None,
         }
+        # 若流式返回空内容，标记为异常
+        got_content = False
+        got_first_chunk = False
+        got_first_content = False
+        async for chunk in response:
+            if not got_first_chunk:
+                # 第一个 chunk：连接建立 + prefill 完成（思考型模型此时可能仍在 thinking）
+                logger.info("TTFT_DEBUG: first_chunk=%.1fs (model=%s)", time.time() - t_prefill, model_id)
+                got_first_chunk = True
+            got_content = True
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta:
+                # 捕获 thinking token（reasoning_content 字段，主流思考模型通用）
+                rc = getattr(delta, "reasoning_content", None)
+                if rc:
+                    entry["thinking"] = (entry["thinking"] or "") + rc
+                    entry["thinking_status"] = "thinking"
+                if delta.content:
+                    if not got_first_content:
+                        logger.info("TTFT_DEBUG: first_content=%.1fs (model=%s)", time.time() - t_prefill, model_id)
+                        got_first_content = True
+                        # 思考结束，进入输出阶段
+                        if entry["thinking_status"] == "thinking":
+                            entry["thinking_status"] = "done"
+                    content += delta.content
+                    entry["response"] = content  # ← 增量写入，前端轮询可见
+            usage = getattr(chunk, "usage", None)
+            if usage:
+                token_info = {
+                    "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                    "completion_tokens": getattr(usage, "completion_tokens", None),
+                    "total_tokens": getattr(usage, "total_tokens", None),
+                    "cost": getattr(chunk, "_cost", None),
+                }
+        if not got_content:
+            raise LLMCallError("流式返回为空，模型可能未产生任何输出")
         entry.update({
             "status": "ok",
             "duration_ms": int((time.time() - t0) * 1000),
             "response": content,
             "token_info": token_info,
+            # 思考型模型若 thinking_status 仍为 thinking（无后续 content），也标记为 done
+            "thinking_status": "done" if entry["thinking_status"] == "thinking" else entry["thinking_status"],
         })
         return content, token_info
     except LLMCallError as e:
@@ -118,9 +161,9 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
         entry.update({
             "status": "error",
             "duration_ms": int((time.time() - t0) * 1000),
-            "error": f"调用超时：模型 {timeout} 秒内未返回完整响应",
+            "error": f"流式超时：超过 {timeout} 秒未收到新数据，模型可能已停止输出",
         })
-        raise LLMCallError(f"调用超时：模型 {timeout} 秒内未返回完整响应")
+        raise LLMCallError(f"流式超时：超过 {timeout} 秒未收到新数据，模型可能已停止输出")
     except Exception as e:
         entry.update({
             "status": "error",
@@ -155,7 +198,6 @@ async def test_llm(model_id: str) -> tuple[bool, str]:
             api_key=api_key,
             messages=[{"role": "user", "content": _TEST_PROMPT}],
             timeout=60,
-            tool_choice="none",
         )
         api_base = _api_base(model_id)
         if api_base:

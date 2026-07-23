@@ -439,6 +439,29 @@ def get_paragraphs(document_id: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_paragraphs_in_range(document_id: str, start_idx: int, end_idx: int) -> list[dict]:
+    """只读取 [start_idx, end_idx) 范围内的段落，避免大文档全量读取。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM paragraphs WHERE document_id = ? AND idx >= ? AND idx < ? ORDER BY idx",
+            (document_id, start_idx, end_idx),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_paragraphs_by_indices(document_id: str, indices: list[int]) -> list[dict]:
+    """按指定段落编号列表查询，用于 selection 模式。"""
+    if not indices:
+        return []
+    placeholders = ",".join("?" for _ in indices)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM paragraphs WHERE document_id = ? AND idx IN ({placeholders}) ORDER BY idx",
+            (document_id, *indices),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_paragraph_count(document_id: str) -> int:
     with get_conn() as conn:
         row = conn.execute(

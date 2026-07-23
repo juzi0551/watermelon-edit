@@ -378,6 +378,7 @@ export default function ReviewReader({
   const [selectedId, setSelectedId] = useState(null)
   const [panelTab, setPanelTab] = useState('pending')
   const [customEdit, setCustomEdit] = useState('')
+
   const [showOptions, setShowOptions] = useState(false)
   const [fontSizeOffset, setFontSizeOffset] = useState(() => {
     try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
@@ -1012,6 +1013,7 @@ export default function ReviewReader({
           onClose={() => setSelectedId(null)}
         />
       )}
+
     </>
   )
 }

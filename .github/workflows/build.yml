@@ -1,0 +1,78 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Bundle with PyInstaller
+        run: |
+          cd backend
+          pyinstaller ^
+            --name "西瓜少年" ^
+            --onedir ^
+            --noconfirm ^
+            --clean ^
+            --add-data "static;static" ^
+            --add-data "app\data;app\data" ^
+            --add-data "config.py;." ^
+            --hidden-import app ^
+            --hidden-import app.api ^
+            --hidden-import app.core ^
+            --hidden-import app.models ^
+            --hidden-import app.utils ^
+            --hidden-import uvicorn ^
+            --hidden-import uvicorn.logging ^
+            --hidden-import uvicorn.loops ^
+            --hidden-import uvicorn.loops.auto ^
+            --hidden-import uvicorn.protocols ^
+            --hidden-import uvicorn.protocols.http ^
+            --hidden-import uvicorn.protocols.http.auto ^
+            --hidden-import uvicorn.protocols.websockets ^
+            --hidden-import uvicorn.protocols.websockets.auto ^
+            --hidden-import uvicorn.lifespan ^
+            --hidden-import uvicorn.lifespan.on ^
+            ..\run.py
+
+      - name: Copy data files to dist
+        run: |
+          # 确保 data 目录在 exe 旁边（运行时用户数据写这里）
+          mkdir -p "backend\dist\西瓜少年\data"
+          echo {}> "backend\dist\西瓜少年\data\api_keys.json"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 西瓜少年-windows
+          path: backend/dist/西瓜少年/
+          retention-days: 30

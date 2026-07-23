@@ -48,6 +48,16 @@ PROVIDERS = {
             {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash"},
         ],
     },
+    "aliyun": {
+        "name": "阿里云百炼（DashScope）",
+        "env_key": "DASHSCOPE_API_KEY",
+        "litellm_prefix": "openai",
+        "api_base": "https://llm-w0hqh39vgj4b5mdf.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+        "models": [
+            {"id": "qwen3.7-plus", "name": "Qwen 3.7 Plus"},
+            {"id": "qwen3.7-max", "name": "Qwen 3.7 Max"},
+        ],
+    },
     "cloudflare": {
         "name": "Cloudflare Workers AI",
         "env_key": "CLOUDFLARE_API_KEY",
@@ -64,21 +74,33 @@ PROVIDERS = {
 
 # ---------- 工具函数 ----------
 
+# API Key 内存缓存（避免每次 LLM 调用都同步读磁盘）
+_keys_cache: dict | None = None
+
+
 def _load_keys() -> dict:
+    global _keys_cache
+    if _keys_cache is not None:
+        return _keys_cache
     os.makedirs(KEYS_DIR, exist_ok=True)
     if not os.path.exists(KEYS_PATH):
-        return {}
+        _keys_cache = {}
+        return _keys_cache
     try:
         with open(KEYS_PATH, "r") as f:
-            return json.load(f)
+            _keys_cache = json.load(f)
+            return _keys_cache
     except (json.JSONDecodeError, IOError):
-        return {}
+        _keys_cache = {}
+        return _keys_cache
 
 
 def _save_keys(keys: dict):
+    global _keys_cache
     os.makedirs(KEYS_DIR, exist_ok=True)
     with open(KEYS_PATH, "w") as f:
         json.dump(keys, f, indent=2)
+    _keys_cache = keys  # 写入后同步更新缓存
 
 
 def _provider_of(model_id: str) -> str | None:
