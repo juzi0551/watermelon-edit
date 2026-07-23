@@ -213,10 +213,20 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
     const source = srcIv.error
     const accepted = source.user_status === 'accepted'
     const pending = source.user_status === 'pending'
-    // 仅当该段只属于一个错误时才用其 suggested_text 替换（按段切片，避免长度变化错位/重复）
-    const displayText = (covering.length === 1 && accepted)
-      ? source.suggested_text.slice(start - srcIv.start, end - srcIv.start)
-      : segText
+    const displayText = (() => {
+      // 单错误覆盖且已采纳：将 segment 按原文长度比例映射到 suggested_text
+      if (covering.length === 1 && accepted) {
+        const origSegLen = end - start
+        const origErrLen = srcIv.end - srcIv.start
+        const sugErrLen = source.suggested_text.length
+        const off = start - srcIv.start
+        if (origErrLen > 0) {
+          const sugSegLen = Math.round(origSegLen * sugErrLen / origErrLen)
+          return source.suggested_text.slice(off, off + sugSegLen)
+        }
+      }
+      return segText
+    })()
     segs.push(
       <span
         key={`seg${start}`}
@@ -373,6 +383,7 @@ export default function ReviewReader({
     try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
   })
   const [flashSide, setFlashSide] = useState(null) // 'accept' | 'reject' | null
+  const [showCheckboxes, setShowCheckboxes] = useState(false)
   const flowRef = useRef(null)
   const contentRef = useRef(null)
   const resultsRef = useRef(results)
@@ -668,16 +679,18 @@ export default function ReviewReader({
                 const checked = selectedParas?.has(para.idx)
                 return (
                     <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24, display: 'flex', gap: 8 }}>
-                    <Checkbox
-                      checked={checked}
-                      onChange={() => {
-                        const next = new Set(selectedParas || [])
-                        if (next.has(para.idx)) next.delete(para.idx)
-                        else next.add(para.idx)
-                        onSelectionChange?.(next)
-                      }}
-                      style={{ lineHeight: '1.9', paddingTop: 2 }}
-                    />
+                    {showCheckboxes && (
+                      <Checkbox
+                        checked={selectedParas?.has(para.idx)}
+                        onChange={() => {
+                          const next = new Set(selectedParas || [])
+                          if (next.has(para.idx)) next.delete(para.idx)
+                          else next.add(para.idx)
+                          onSelectionChange?.(next)
+                        }}
+                        style={{ lineHeight: '1.9', paddingTop: 2 }}
+                      />
+                    )}
                     <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 32, textAlign: 'right', userSelect: 'none' }}>
                       {para.idx}
                     </span>
@@ -789,9 +802,20 @@ export default function ReviewReader({
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 24px', gap: 16 }}>
-        {/* left: 选段操作 | 校对配置 */}
+        {/* left: 选段模式切换 | 选段操作 | 校对配置 */}
         {!(inProgress || proofreading) && <>
-          {selectedParas?.size > 0 ? (
+          <Button
+            type="text"
+            size="small"
+            onClick={() => setShowCheckboxes(v => !v)}
+            style={{
+              fontSize: 13, color: showCheckboxes ? color.warning : color.textTertiary,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {showCheckboxes ? '☑' : '☐'} 选段
+          </Button>
+          {showCheckboxes && selectedParas?.size > 0 && (
             <Space size={4}>
               <Tag style={{ fontSize: 12, margin: 0 }}>已选 {selectedParas.size} 段</Tag>
               <Button
@@ -814,7 +838,8 @@ export default function ReviewReader({
                 清除
               </Button>
             </Space>
-          ) : (
+          )}
+          {!showCheckboxes && (
             <Popover
               trigger="click"
               open={showOptions}

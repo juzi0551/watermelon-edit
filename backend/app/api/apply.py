@@ -15,7 +15,11 @@ router = APIRouter()
 
 
 def _recompute_paragraph(document_id: str, paragraph_idx: int):
-    """根据该段所有已采纳错误，重算 revised_text（撤回即重新基于原文计算）。"""
+    """根据该段所有已采纳错误，重算 revised_text（撤回即重新基于原文计算）。
+
+    Bug 1 修复：按 position 排序而非插入顺序。
+    Bug 2 修复：基于 position 切片替换，而非 str.find/replace（避免匹配到错误位置）。
+    """
     para = get_paragraph_by_idx(document_id, paragraph_idx)
     if not para:
         return
@@ -26,10 +30,26 @@ def _recompute_paragraph(document_id: str, paragraph_idx: int):
     if not accepted:
         update_paragraph_revised(para["id"], None)
         return
-    revised = para["text"]
+
+    original = para["text"]
+
+    # 用 indexOf 获取每个错误在原文中的确切位置
+    indexed: list[tuple[int, dict]] = []
     for e in accepted:
-        if e["original_text"] and e["original_text"] in revised:
-            revised = revised.replace(e["original_text"], e["suggested_text"], 1)
+        pos = original.find(e["original_text"])
+        if pos >= 0:
+            indexed.append((pos, e))
+
+    # 按位置降序处理（从右向左），保证左侧未处理的位置不受长度变化影响
+    indexed.sort(key=lambda x: x[0], reverse=True)
+
+    revised = original
+    for pos, e in indexed:
+        end = pos + len(e["original_text"])
+        # 验证 original 确实还在该 position（未被此前处理的右侧重叠错误修改）
+        if revised[pos:end] == e["original_text"]:
+            revised = revised[:pos] + e["suggested_text"] + revised[end:]
+
     update_paragraph_revised(para["id"], revised)
 
 
@@ -57,10 +77,19 @@ async def accept_all(project_id: str):
     if not doc:
         return {"error": "项目无文档"}
     doc_id = doc["id"]
-    for e in get_errors(doc_id):
+    errors = get_errors(doc_id)
+    if not errors:
+        return {"status": "ok", "count": 0}
+    for e in errors:
         update_error_status(e["id"], "accepted")
-        _recompute_paragraph(doc_id, e["paragraph_index"])
-    return {"status": "ok", "count": len(get_errors(doc_id))}
+    # 按段落分组，每段只重算一次（Bug 3 修复）
+    seen = set()
+    for e in errors:
+        pi = e["paragraph_index"]
+        if pi not in seen:
+            seen.add(pi)
+            _recompute_paragraph(doc_id, pi)
+    return {"status": "ok", "count": len(errors)}
 
 
 @router.post("/projects/{project_id}/export")
