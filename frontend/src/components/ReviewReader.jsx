@@ -108,6 +108,9 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
         borderRadius: radius.md,
         borderLeft: `3px solid ${color.warning}`,
         boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        opacity: 0,
+        transform: 'translateY(3px)',
+        transition: 'opacity 0.08s cubic-bezier(0, 0, 0.2, 1), transform 0.08s cubic-bezier(0, 0, 0.2, 1)',
       }}
     >
       <div style={{ position: 'relative' }}>
@@ -459,12 +462,14 @@ export default function ReviewReader({
     }
   }, [results, pending])
 
-  // 悬浮卡片：跟随选中错误的位置（用 ref 直接操作 DOM，绕过 React 渲染周期避免卡顿）
+  // 悬浮卡片：跟随选中错误的位置（滚动停止后平滑淡入，解决动效追赶与剧烈跳跃问题）
   useEffect(() => {
     const container = flowRef.current
     if (!container || !selectedId) { setShowFloatCard(false); return }
     setShowFloatCard(true)
     let rafId
+    let scrollTimer = null
+
     const updatePos = () => {
       const el = floatCardElRef.current
       if (!el) return
@@ -487,12 +492,40 @@ export default function ReviewReader({
       }
       el.style.top = `${top}px`
       el.style.left = `${left}px`
+      // 定位完成后平滑淡入
+      el.style.opacity = '1'
+      el.style.transform = 'translateY(0)'
     }
-    updatePos()
-    const onScroll = () => { rafId = requestAnimationFrame(updatePos) }
+
+    const hideCard = () => {
+      const el = floatCardElRef.current
+      if (el) {
+        el.style.opacity = '0'
+        el.style.transform = 'translateY(3px)'
+      }
+    }
+
+    // 切换 ID 时先隐藏
+    hideCard()
+
+    const onScroll = () => {
+      hideCard()
+      clearTimeout(scrollTimer)
+      // 滚动停止 80ms 后重新抓取准确坐标并快速淡入
+      scrollTimer = setTimeout(() => {
+        rafId = requestAnimationFrame(updatePos)
+      }, 80)
+    }
+
+    // 初始等待正文 scrollIntoView 开始或定位
+    scrollTimer = setTimeout(() => {
+      rafId = requestAnimationFrame(updatePos)
+    }, 100)
+
     container.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onScroll, { passive: true })
     return () => {
+      clearTimeout(scrollTimer)
       cancelAnimationFrame(rafId)
       container.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onScroll)
