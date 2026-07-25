@@ -1,4 +1,5 @@
 import json
+from json_repair import repair_json
 from app.core.llm import call_llm
 from app.core.database import get_setting
 
@@ -79,30 +80,15 @@ def proofread_chapter(chapter_id: str, chapter_content: str, model_id: str) -> l
 def _robust_json_load(raw: str | None) -> dict | None:
     if not raw:
         return None
-    s = raw.strip()
-    if s.startswith("```"):
-        s = s.split("\n", 1)[1] if "\n" in s else s
-        if s.rstrip().endswith("```"):
-            s = s.rstrip()[:-3]
-        s = s.strip()
-    start = s.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    end = -1
-    for i in range(start, len(s)):
-        if s[i] == "{":
-            depth += 1
-        elif s[i] == "}":
-            depth -= 1
-            if depth == 0:
-                end = i
-                break
-    if end == -1:
-        return None
     try:
-        return json.loads(s[start:end + 1])
-    except json.JSONDecodeError:
+        # repair_json 会自动剥离 Markdown 围栏 (```json)，定位 json 主体，
+        # 并自动补全缺失括号、转义非法双引号，输出标准合法的 JSON 字符串
+        repaired = repair_json(raw.strip())
+        if not repaired:
+            return None
+        data = json.loads(repaired)
+        return data if isinstance(data, dict) else None
+    except Exception:
         return None
 
 

@@ -69,6 +69,14 @@ PROVIDERS = {
             {"id": "@cf/moonshotai/kimi-k2.6", "name": "Kimi K2.6"},
         ],
     },
+    "openrouter": {
+        "name": "OpenRouter",
+        "env_key": "OPENROUTER_API_KEY",
+        "litellm_prefix": "openrouter",
+        "models": [
+            {"id": "moonshotai/kimi-k2.6", "name": "Kimi K2.6"},
+        ],
+    },
 }
 
 

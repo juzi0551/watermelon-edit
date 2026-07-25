@@ -362,8 +362,8 @@ export default function ReviewReader({
     [errors],
   )
   const pending = useMemo(() => flatErrors.filter(e => e.user_status === 'pending'), [flatErrors])
-  const accepted = useMemo(() => flatErrors.filter(e => e.user_status === 'accepted'), [flatErrors])
-  const rejected = useMemo(() => flatErrors.filter(e => e.user_status === 'rejected'), [flatErrors])
+  const accepted = useMemo(() => flatErrors.filter(e => e.user_status === 'accepted').reverse(), [flatErrors])
+  const rejected = useMemo(() => flatErrors.filter(e => e.user_status === 'rejected').reverse(), [flatErrors])
   const unmatchedIds = useMemo(() => {
     const ids = new Set()
     errors.forEach(e => {
@@ -846,7 +846,7 @@ export default function ReviewReader({
               open={showOptions}
               onOpenChange={setShowOptions}
               placement="topLeft"
-              styles={{ body: { padding: '12px 16px', width: 400 } }}
+              styles={{ body: { padding: '12px 16px', width: 440 } }}
               content={
                 <ControlsRow
                   showOptions={true}
@@ -860,9 +860,14 @@ export default function ReviewReader({
               <Button
                 type="text"
                 size="middle"
-                style={{ color: color.textTertiary, fontSize: 14, whiteSpace: 'nowrap' }}
+                style={{ color: color.textTertiary, fontSize: 13, whiteSpace: 'nowrap' }}
               >
-                {showOptions ? '◀' : '▶'} 校对配置
+                {showOptions ? '◀' : '▶'} 校对配置 ({
+                  (() => {
+                    const m = models.find(x => x.model_id === selectedModel)
+                    return m ? `${m.provider_name || m.provider} · ${m.name}` : selectedModel
+                  })()
+                })
               </Button>
             </Popover>
           )}
@@ -1054,7 +1059,8 @@ function ControlsRow({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>模型</span>
         <Select
-          style={{ width: 300 }}
+          style={{ flex: 1 }}
+          popupMatchSelectWidth={false}
           value={selectedModel}
           disabled={inProgress}
           onChange={onModelChange}
@@ -1062,23 +1068,26 @@ function ControlsRow({
           size="small"
         />
       </div>
-      <Select
-        mode="multiple"
-        style={{ width: '100%' }}
-        value={selectedTypes}
-        disabled={inProgress}
-        onChange={onTypesChange}
-        options={TYPE_OPTIONS}
-        size="small"
-        tagRender={(props) => {
-          const { label, closable, onClose } = props
-          return (
-            <Tag closable={closable} onClose={onClose} style={{ margin: 0, fontSize: 11 }}>
-              {label}
-            </Tag>
-          )
-        }}
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>分类</span>
+        <Select
+          mode="multiple"
+          style={{ flex: 1 }}
+          value={selectedTypes}
+          disabled={inProgress}
+          onChange={onTypesChange}
+          options={TYPE_OPTIONS}
+          size="small"
+          tagRender={(props) => {
+            const { label, closable, onClose } = props
+            return (
+              <Tag closable={closable} onClose={onClose} style={{ margin: 0, fontSize: 11 }}>
+                {label}
+              </Tag>
+            )
+          }}
+        />
+      </div>
     </div>
   )
 }

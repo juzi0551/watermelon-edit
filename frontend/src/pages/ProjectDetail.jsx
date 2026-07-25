@@ -318,34 +318,32 @@ export default function ProjectDetail() {
           </Space>
         }
         extra={
-          results && (
-            <Space>
-              <Button
-                icon={<UnorderedListOutlined />}
-                onClick={() => setPanelOpen(v => !v)}
-                type={panelOpen ? 'primary' : 'default'}
-                shape="round"
-              >
-                 问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
-              </Button>
-              <Button
-                icon={<EyeOutlined />}
-                onClick={() => setLlmMonitorOpen(true)}
-                shape="round"
-              >
-                LLM 实时
-              </Button>
-              <Button
-                type="primary"
-                shape="round"
-                icon={<DownloadOutlined />}
-                disabled={inProgress}
-                onClick={handleExport}
-              >
-                导出校稿版
-              </Button>
-            </Space>
-          )
+          <Space>
+            <Button
+              icon={<UnorderedListOutlined />}
+              onClick={() => setPanelOpen(v => !v)}
+              type={panelOpen ? 'primary' : 'default'}
+              shape="round"
+            >
+               问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
+            </Button>
+            <Button
+              icon={<EyeOutlined />}
+              onClick={() => setLlmMonitorOpen(true)}
+              shape="round"
+            >
+              LLM 实时
+            </Button>
+            <Button
+              type="primary"
+              shape="round"
+              icon={<DownloadOutlined />}
+              disabled={inProgress}
+              onClick={handleExport}
+            >
+              导出校稿版
+            </Button>
+          </Space>
         }
         style={{ marginBottom: 16 }}
       >
