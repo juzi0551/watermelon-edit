@@ -402,6 +402,7 @@ export default function ReviewReader({
   const positionSavedRef = useRef(false)
   const autoSelectRef = useRef(false)
   const hasAutoSelectedRef = useRef(false)
+  const isAutoScrollingRef = useRef(false)
 
   useEffect(() => {
     const el = flowRef.current
@@ -475,7 +476,7 @@ export default function ReviewReader({
     }
   }, [selectedId])
 
-  // 悬浮卡片：跟随选中错误的位置（精准一次性淡入，杜绝中途二次显隐闪烁）
+  // 悬浮卡片：跟随选中错误的位置（在平滑滚动停稳后一次性淡入，完美平滑且无闪烁）
   useEffect(() => {
     const container = flowRef.current
     if (!container || !selectedId) { setShowFloatCard(false); return }
@@ -524,14 +525,19 @@ export default function ReviewReader({
     const onScroll = () => {
       hideCard()
       clearTimeout(scrollTimer)
-      // 用户手动滚动时，停止 60ms 后重新抓取准确坐标并淡入
+      // 平滑滚动过程中保持隐藏，直到滚动完全停稳 70ms 后精确定位显现
       scrollTimer = setTimeout(() => {
+        isAutoScrollingRef.current = false
         rafId = requestAnimationFrame(updatePos)
-      }, 60)
+      }, 70)
     }
 
-    // 正文对齐后直接在下一帧抓取坐标呈现，无需等待中间定时器
-    rafId = requestAnimationFrame(updatePos)
+    // 兜底补救：如果目标已经在视野中央无滚动产生，在 100ms 后自动定位显现
+    scrollTimer = setTimeout(() => {
+      if (!isAutoScrollingRef.current) {
+        rafId = requestAnimationFrame(updatePos)
+      }
+    }, 100)
 
     container.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onScroll, { passive: true })
@@ -549,7 +555,10 @@ export default function ReviewReader({
     const err = flatErrors.find(e => e.id === selectedId)
     if (!err) return
     const el = flowRef.current.querySelector(`[data-para="${err.paragraph_index}"]`)
-    if (el) el.scrollIntoView({ behavior: 'auto', block: 'center' })
+    if (el) {
+      isAutoScrollingRef.current = true
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
     autoSelectRef.current = false
   }, [selectedId, flatErrors])
 
