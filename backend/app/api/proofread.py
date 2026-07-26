@@ -16,7 +16,10 @@ from app.core.database import (
     delete_chapters_in_range, set_proofread_progress,
     get_document_progress, update_project_status,
     set_document_error, clear_document_error,
-    insert_llm_log,
+    insert_llm_log, get_setting,
+    # batch 模式专用
+    create_batch, get_batch, get_batch_windows, update_batch_window,
+    finish_batch, batch_insert_errors, batch_insert_chapters,
 )
 from app.utils.helpers import generate_id
 
@@ -25,6 +28,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 WINDOW_SIZE = 30
+
+
+def get_max_concurrent() -> int:
+    try:
+        val = int(get_setting("batch_max_concurrent", "2"))
+        return max(1, min(val, 20))
+    except (ValueError, TypeError):
+        return 2
+
 
 _RUNNING = set()
 
@@ -35,6 +47,8 @@ class ProofreadRequest(BaseModel):
     types: list[str] | None = None
     chapter_id: str | None = None
     paragraph_indices: list[int] | None = None
+    batch_id: str | None = None  # batch 模式时由后端自动填充
+    max_concurrent: int | None = None
 
 
 @router.post("/projects/{project_id}/proofread")
@@ -53,7 +67,7 @@ async def start_proofread(project_id: str, req: ProofreadRequest):
     if total == 0:
         return {"error": "文档暂无段落，请重新上传"}
 
-    if req.mode not in ("continue", "chapter", "selection"):
+    if req.mode not in ("continue", "chapter", "selection", "batch"):
         return {"error": f"未知模式：{req.mode}"}
 
     if req.mode == "selection":
@@ -79,9 +93,20 @@ async def start_proofread(project_id: str, req: ProofreadRequest):
     if doc_id in _RUNNING:
         return {"status": "running", "message": "该校对任务正在进行中，请稍候查看进度"}
 
+    # batch 模式：预先生成 batch_id (不需要入库，_proofread_job 里创建)
+    if req.mode == "batch":
+        progress_b = get_document_progress(doc_id)
+        if progress_b["proofread_upto"] >= total:
+            return {"status": "skipped", "message": "已校对至文末，无可继续段落",
+                    "proofread_upto": progress_b["proofread_upto"], "total": total}
+        req.batch_id = generate_id()
+
     _RUNNING.add(doc_id)
     asyncio.create_task(_proofread_job(project_id, doc_id, req))
-    return {"status": "started", "message": "校对已在后台开始，请在详情页查看进度"}
+    resp = {"status": "started", "message": "校对已在后台开始，请在详情页查看进度"}
+    if req.mode == "batch":
+        resp["batch_id"] = req.batch_id
+    return resp
 
 
 def _fix_error_paragraph(e: dict, window_paras: list[tuple[int, str]]) -> bool:
@@ -228,73 +253,187 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                         doc_id, req.paragraph_indices, found_errors)
             return
 
-        ch = next((c for c in get_chapters(doc_id) if c["id"] == req.chapter_id), None)
-        range_start, range_end = ch["start_idx"], ch["end_idx"]
-        types = req.types or progress["proofread_types"]
-        delete_errors_in_range(doc_id, range_start, range_end)
-        delete_chapters_in_range(doc_id, range_start, range_end)
-        sort_base = len(get_chapters(doc_id))
-        update_project_status(project_id, "proofreading")
-        # 只读整个章节范围内的段落，不读全文
-        chapter_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, range_start, range_end)
-        chapter_text_by_idx = {p["idx"]: p["text"] for p in chapter_rows}
-        found_errors = 0
-        found_chapters = 0
-        max_processed = range_start
-        for ws in range(range_start, range_end, WINDOW_SIZE):
-            we = min(ws + WINDOW_SIZE, range_end)
-            window_paras = [(i, chapter_text_by_idx[i]) for i in range(ws, we) if i in chapter_text_by_idx]
-            if not window_paras:
-                continue
-            system_prompt = build_proofread_system_prompt(types)
-            user_text = build_proofread_user_text(window_paras)
-            _last_log_ctx = dict(
-                model=req.model, mode=req.mode,
-                range_start=ws, range_end=we,
-                prompt=user_text, system_prompt=system_prompt,
-                selected_types=json.dumps(types, ensure_ascii=False),
-            )
-            _last_t0 = time.time()
-            errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
-            duration = int((time.time() - _last_t0) * 1000)
-            insert_llm_log(
-                generate_id(), project_id, doc_id,
-                **_last_log_ctx,
-                status="ok" if parse_ok else "parse_error",
-                duration_ms=duration, error_message=None if parse_ok else "JSON 解析失败",
-                response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
-                **token_info,
-            )
-            _last_log_ctx = None
-            if parse_ok:
-                for e in errs:
-                    if range_start <= e["paragraph_index"] < range_end:
-                        if not _fix_error_paragraph(e, window_paras):
+        if req.mode == "chapter":
+            ch = next((c for c in get_chapters(doc_id) if c["id"] == req.chapter_id), None)
+            if not ch:
+                update_project_status(project_id, "reviewing")
+                return
+            range_start, range_end = ch["start_idx"], ch["end_idx"]
+            types = req.types or progress["proofread_types"]
+            delete_errors_in_range(doc_id, range_start, range_end)
+            delete_chapters_in_range(doc_id, range_start, range_end)
+            sort_base = len(get_chapters(doc_id))
+            update_project_status(project_id, "proofreading")
+            chapter_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, range_start, range_end)
+            chapter_text_by_idx = {p["idx"]: p["text"] for p in chapter_rows}
+            found_errors = 0
+            found_chapters = 0
+            max_processed = range_start
+            for ws in range(range_start, range_end, WINDOW_SIZE):
+                we = min(ws + WINDOW_SIZE, range_end)
+                window_paras = [(i, chapter_text_by_idx[i]) for i in range(ws, we) if i in chapter_text_by_idx]
+                if not window_paras:
+                    continue
+                system_prompt = build_proofread_system_prompt(types)
+                user_text = build_proofread_user_text(window_paras)
+                _last_log_ctx = dict(
+                    model=req.model, mode=req.mode,
+                    range_start=ws, range_end=we,
+                    prompt=user_text, system_prompt=system_prompt,
+                    selected_types=json.dumps(types, ensure_ascii=False),
+                )
+                _last_t0 = time.time()
+                errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt)
+                duration = int((time.time() - _last_t0) * 1000)
+                insert_llm_log(
+                    generate_id(), project_id, doc_id,
+                    **_last_log_ctx,
+                    status="ok" if parse_ok else "parse_error",
+                    duration_ms=duration, error_message=None if parse_ok else "JSON 解析失败",
+                    response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
+                    **token_info,
+                )
+                _last_log_ctx = None
+                if parse_ok:
+                    for e in errs:
+                        if range_start <= e["paragraph_index"] < range_end:
+                            if not _fix_error_paragraph(e, window_paras):
+                                continue
+                            e.pop("chapter_id", None)
+                            logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
+                            insert_error(doc_id, e)
+                            found_errors += 1
+                    for c in chs:
+                        tip = c["title_paragraph_idx"]
+                        if tip is None or not (range_start <= tip < range_end):
                             continue
-                        e.pop("chapter_id", None)
-                        logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
-                        insert_error(doc_id, e)
-                        found_errors += 1
-                for c in chs:
-                    tip = c["title_paragraph_idx"]
-                    if tip is None or not (range_start <= tip < range_end):
-                        continue
-                    insert_chapter(
-                        generate_id(), doc_id, c["title"], tip, c["level"],
-                        c["parent_idx"], c["start_idx"] or range_start,
-                        c["end_idx"] or range_end, sort_base + found_chapters,
+                        insert_chapter(
+                            generate_id(), doc_id, c["title"], tip, c["level"],
+                            c["parent_idx"], c["start_idx"] or range_start,
+                            c["end_idx"] or range_end, sort_base + found_chapters,
+                        )
+                        found_chapters += 1
+                max_processed = max(max_processed, we)
+                set_proofread_progress(doc_id, max_processed)
+            new_upto = max(progress["proofread_upto"], range_end)
+            set_proofread_progress(doc_id, new_upto, req.types)
+            clear_document_error(doc_id)
+            update_project_status(project_id, "reviewing")
+            logger.info("章节校对完成 doc=%s chapter=%s errors=%s chapters=%s upto=%s",
+                        doc_id, req.chapter_id, found_errors, found_chapters, new_upto)
+            return
+
+        # ── batch 模式：并行执行可配置的并发窗口 ─────────────────
+        if req.mode == "batch":
+            max_concurrent = req.max_concurrent or get_max_concurrent()
+            batch_id = req.batch_id
+            progress = await asyncio.to_thread(get_document_progress, doc_id)
+            types = req.types or progress["proofread_types"]
+            range_start = progress["proofread_upto"]
+
+            windows: list[tuple[int, int]] = []
+            ws = range_start
+            while ws < total and len(windows) < max_concurrent:
+                we = min(ws + WINDOW_SIZE, total)
+                windows.append((ws, we))
+                ws = we
+
+            if not windows:
+                update_project_status(project_id, "reviewing")
+                return
+
+            range_end = windows[-1][1]
+            await asyncio.to_thread(
+                create_batch, batch_id, doc_id, range_start, range_end, windows
+            )
+            await asyncio.to_thread(delete_errors_in_range, doc_id, range_start, range_end)
+            await asyncio.to_thread(delete_chapters_in_range, doc_id, range_start, range_end)
+            sort_base = len(await asyncio.to_thread(get_chapters, doc_id))
+            update_project_status(project_id, "proofreading")
+
+            semaphore = asyncio.Semaphore(max_concurrent)
+
+            async def _run_window(win_idx: int, ws: int, we: int):
+                async with semaphore:
+                    window_rows = await asyncio.to_thread(
+                        get_paragraphs_in_range, doc_id, ws, we
                     )
-                    found_chapters += 1
-            max_processed = max(max_processed, we)
-            set_proofread_progress(doc_id, max_processed)
-        new_upto = max(progress["proofread_upto"], range_end)
-        set_proofread_progress(doc_id, new_upto, req.types)
-        clear_document_error(doc_id)
-        update_project_status(project_id, "reviewing")
-        logger.info("章节校对完成 doc=%s chapter=%s errors=%s chapters=%s upto=%s",
-                    doc_id, req.chapter_id, found_errors, found_chapters, new_upto)
+                    window_paras = [(p["idx"], p["text"]) for p in window_rows]
+                    if not window_paras:
+                        return [], []
+                    system_prompt = build_proofread_system_prompt(types)
+                    user_text = build_proofread_user_text(window_paras)
+                    log_ctx = dict(
+                        model=req.model, mode="batch",
+                        range_start=ws, range_end=we,
+                        prompt=user_text, system_prompt=system_prompt,
+                        selected_types=json.dumps(types, ensure_ascii=False),
+                    )
+                    t0 = time.time()
+                    errs, chs, raw, token_info, parse_ok = await proofread_window(
+                        user_text, req.model, types, "batch", system_prompt=system_prompt
+                    )
+                    duration = int((time.time() - t0) * 1000)
+                    insert_llm_log(
+                        generate_id(), project_id, doc_id,
+                        **log_ctx,
+                        status="ok" if parse_ok else "parse_error",
+                        duration_ms=duration,
+                        error_message=None if parse_ok else "JSON 解析失败",
+                        response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
+                        **token_info,
+                    )
+                    if not parse_ok:
+                        raise ValueError(f"JSON 解析失败 window={ws}-{we}")
+                    valid_errs = []
+                    for e in errs:
+                        if ws <= e["paragraph_index"] < we:
+                            if _fix_error_paragraph(e, window_paras):
+                                e.pop("chapter_id", None)
+                                valid_errs.append(e)
+                    valid_chs = [
+                        c for c in chs
+                        if c["title_paragraph_idx"] is not None
+                        and ws <= c["title_paragraph_idx"] < we
+                    ]
+                    return valid_errs, valid_chs
+
+            tasks = [_run_window(i, ws, we) for i, (ws, we) in enumerate(windows)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            all_errors: list[dict] = []
+            all_chapters: list[dict] = []
+            done_count = 0
+            failed_count = 0
+            for i, result in enumerate(results):
+                ws_i, we_i = windows[i]
+                if isinstance(result, Exception):
+                    failed_count += 1
+                    await asyncio.to_thread(
+                        update_batch_window, batch_id, i, "failed", str(result)
+                    )
+                    logger.warning("batch window 失败 doc=%s idx=%d range=%d-%d err=%s",
+                                   doc_id, i, ws_i, we_i, result)
+                else:
+                    done_count += 1
+                    errs_i, chs_i = result
+                    all_errors.extend(errs_i)
+                    all_chapters.extend(chs_i)
+                    await asyncio.to_thread(update_batch_window, batch_id, i, "ok")
+
+            await asyncio.to_thread(batch_insert_errors, doc_id, all_errors)
+            await asyncio.to_thread(batch_insert_chapters, doc_id, all_chapters, sort_base)
+            await asyncio.to_thread(finish_batch, batch_id, done_count, failed_count)
+            set_proofread_progress(doc_id, range_end, req.types)
+            clear_document_error(doc_id)
+            update_project_status(project_id, "reviewing")
+            logger.info(
+                "批量校对完成 doc=%s range=%d-%d done=%d failed=%d errors=%d",
+                doc_id, range_start, range_end, done_count, failed_count, len(all_errors),
+            )
+            return
+
     except LLMCallError as e:
-        # 记录失败的 LLM 调用
         if _last_log_ctx is not None and _last_t0 is not None:
             duration = int((time.time() - _last_t0) * 1000)
             insert_llm_log(
@@ -303,7 +442,6 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 status="error", duration_ms=duration, error_message=str(e),
                 response_raw=None, errors_found=0, chapters_found=0,
             )
-        # 保存已完成的进度，状态置 reviewing，记录错误供前端提示，允许稍后重试
         try:
             new_upto = get_document_progress(doc_id)["proofread_upto"]
             set_proofread_progress(doc_id, new_upto)
@@ -321,5 +459,163 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             set_document_error(doc_id, f"校对异常：{e}")
         except Exception:
             pass
+    finally:
+        _RUNNING.discard(doc_id)
+
+
+# ── 批量校对进度查询 ─────────────────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/proofread/batch/{batch_id}")
+async def get_batch_status(project_id: str, batch_id: str):
+    """查询某次批量校对的进度（前端轮询窗口级状态用）。"""
+    batch = get_batch(batch_id)
+    if not batch:
+        return {"error": "batch 不存在"}
+    windows = get_batch_windows(batch_id)
+    return {
+        "batch_id": batch_id,
+        "status": batch["status"],
+        "range_start": batch["range_start"],
+        "range_end": batch["range_end"],
+        "total_windows": batch["total_windows"],
+        "done_windows": batch["done_windows"],
+        "failed_windows": batch["failed_windows"],
+        "windows": [
+            {
+                "window_index": w["window_index"],
+                "range_start": w["range_start"],
+                "range_end": w["range_end"],
+                "status": w["status"],
+                "error_message": w["error_message"],
+                "retry_count": w["retry_count"],
+            }
+            for w in windows
+        ],
+    }
+
+
+# ── 失败窗口重试 ─────────────────────────────────────────────────────────────
+
+class RetryWindowRequest(BaseModel):
+    batch_id: str
+    window_index: int
+    model: str = "deepseek-v4-flash"
+    types: list[str] | None = None
+
+
+@router.post("/projects/{project_id}/proofread/retry-window")
+async def retry_window(project_id: str, req: RetryWindowRequest):
+    """重试 batch 中某个失败的 window。"""
+    project = get_project(project_id)
+    if not project:
+        return {"error": "项目不存在"}
+
+    doc = get_current_document(project_id)
+    if not doc:
+        return {"error": "项目尚未上传文档"}
+    doc_id = doc["id"]
+
+    if doc_id in _RUNNING:
+        return {"error": "当前有校对任务正在进行，请等待完成后再重试"}
+
+    batch = get_batch(req.batch_id)
+    if not batch:
+        return {"error": "batch 不存在"}
+    if batch["document_id"] != doc_id:
+        return {"error": "batch 不属于当前文档"}
+
+    windows = get_batch_windows(req.batch_id)
+    win = next((w for w in windows if w["window_index"] == req.window_index), None)
+    if not win:
+        return {"error": f"window_index {req.window_index} 不存在"}
+    if win["status"] not in ("failed",):
+        return {"error": f"该窗口状态为 {win['status']}，无需重试"}
+
+    ws, we = win["range_start"], win["range_end"]
+    types = req.types or json.loads(doc.get("proofread_types", '["typo","grammar","punctuation","format"]'))
+
+    _RUNNING.add(doc_id)
+    try:
+        update_project_status(project_id, "proofreading")
+        # 将 window 状态重置为 pending（+retry_count）
+        update_batch_window(req.batch_id, req.window_index, "pending")
+
+        window_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, ws, we)
+        window_paras = [(p["idx"], p["text"]) for p in window_rows]
+        if not window_paras:
+            update_batch_window(req.batch_id, req.window_index, "ok")
+            all_wins = get_batch_windows(req.batch_id)
+            done = sum(1 for w in all_wins if w["status"] == "ok")
+            failed = sum(1 for w in all_wins if w["status"] == "failed")
+            finish_batch(req.batch_id, done, failed)
+            return {"status": "ok", "message": "窗口无段落，已标记为完成"}
+
+        system_prompt = build_proofread_system_prompt(types)
+        user_text = build_proofread_user_text(window_paras)
+
+        t0 = time.time()
+        errs, chs, raw, token_info, parse_ok = await proofread_window(
+            user_text, req.model, types, "batch", system_prompt=system_prompt
+        )
+        duration = int((time.time() - t0) * 1000)
+        insert_llm_log(
+            generate_id(), project_id, doc_id,
+            model=req.model, mode="batch_retry",
+            range_start=ws, range_end=we,
+            prompt=user_text, system_prompt=system_prompt,
+            selected_types=json.dumps(types, ensure_ascii=False),
+            status="ok" if parse_ok else "parse_error",
+            duration_ms=duration,
+            error_message=None if parse_ok else "JSON 解析失败",
+            response_raw=raw, errors_found=len(errs), chapters_found=len(chs),
+            **token_info,
+        )
+
+        if not parse_ok:
+            update_batch_window(req.batch_id, req.window_index, "failed", "JSON 解析失败")
+            update_project_status(project_id, "reviewing")
+            return {"status": "error", "message": "模型返回格式异常，重试失败"}
+
+        # 清理该 window 范围内的旧数据
+        delete_errors_in_range(doc_id, ws, we)
+        delete_chapters_in_range(doc_id, ws, we)
+        sort_base = len(get_chapters(doc_id))
+
+        valid_errs = []
+        for e in errs:
+            if ws <= e["paragraph_index"] < we:
+                if _fix_error_paragraph(e, window_paras):
+                    e.pop("chapter_id", None)
+                    valid_errs.append(e)
+        valid_chs = [
+            c for c in chs
+            if c["title_paragraph_idx"] is not None
+            and ws <= c["title_paragraph_idx"] < we
+        ]
+
+        batch_insert_errors(doc_id, valid_errs)
+        batch_insert_chapters(doc_id, valid_chs, sort_base)
+        update_batch_window(req.batch_id, req.window_index, "ok")
+
+        # 重新汇总 batch 状态
+        all_wins = get_batch_windows(req.batch_id)
+        done = sum(1 for w in all_wins if w["status"] == "ok")
+        failed = sum(1 for w in all_wins if w["status"] == "failed")
+        finish_batch(req.batch_id, done, failed)
+
+        update_project_status(project_id, "reviewing")
+        logger.info("重试窗口成功 doc=%s batch=%s win=%d range=%d-%d errors=%d",
+                    doc_id, req.batch_id, req.window_index, ws, we, len(valid_errs))
+        return {
+            "status": "ok",
+            "message": f"重试成功，找到 {len(valid_errs)} 个问题",
+            "errors_found": len(valid_errs),
+        }
+    except Exception as e:
+        update_batch_window(req.batch_id, req.window_index, "failed", str(e))
+        update_project_status(project_id, "reviewing")
+        logger.exception("重试窗口异常 doc=%s batch=%s win=%d: %s",
+                         doc_id, req.batch_id, req.window_index, e)
+        return {"status": "error", "message": f"重试失败：{e}"}
     finally:
         _RUNNING.discard(doc_id)

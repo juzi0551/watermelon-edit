@@ -56,21 +56,32 @@ async def remove_key(provider: str):
 @router.get("/settings/prompts")
 async def get_prompts():
     all_s = get_all_settings()
+    try:
+        max_concurrent = int(all_s.get("batch_max_concurrent", "2"))
+    except (ValueError, TypeError):
+        max_concurrent = 2
     return {
         "system_prompt_general": all_s.get("system_prompt_general", ""),
         "system_prompt_proofread": all_s.get("system_prompt_proofread", ""),
+        "batch_max_concurrent": max_concurrent,
     }
 
 
 class UpdatePromptsRequest(BaseModel):
-    system_prompt_general: str
-    system_prompt_proofread: str
+    system_prompt_general: str | None = None
+    system_prompt_proofread: str | None = None
+    batch_max_concurrent: int | None = None
 
 
 @router.put("/settings/prompts")
 async def update_prompts(req: UpdatePromptsRequest):
-    set_setting("system_prompt_general", req.system_prompt_general)
-    set_setting("system_prompt_proofread", req.system_prompt_proofread)
+    if req.system_prompt_general is not None:
+        set_setting("system_prompt_general", req.system_prompt_general)
+    if req.system_prompt_proofread is not None:
+        set_setting("system_prompt_proofread", req.system_prompt_proofread)
+    if req.batch_max_concurrent is not None:
+        val = max(1, min(req.batch_max_concurrent, 20))
+        set_setting("batch_max_concurrent", str(val))
     return {"status": "ok"}
 
 

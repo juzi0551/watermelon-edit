@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, forwardRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
-  Select, Radio, Progress, Input, Badge, Popover, Tooltip, message,
+  Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
   Checkbox,
 } from 'antd'
 import {
@@ -350,6 +350,9 @@ export default function ReviewReader({
   bannerText = '',
   projectError = null, onRetry, onChapterChange,
   selectedParas, onSelectionChange, onStartSelectionProofread,
+  // batch 模式专用
+  onStartBatchProofread, batchInfo = null, batchPolling = false, onRetryWindow, retryingWindow = null,
+  batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
 }) {
   const errors = results?.errors || []
   const paras = results?.paragraphs || []
@@ -886,6 +889,7 @@ export default function ReviewReader({
                   selectedModel={selectedModel} onModelChange={onModelChange}
                   models={models}
                   selectedTypes={selectedTypes} onTypesChange={onTypesChange}
+                  batchMaxConcurrent={batchMaxConcurrent} onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
                   inProgress={inProgress}
                 />
               }
@@ -1005,10 +1009,92 @@ export default function ReviewReader({
             >
               {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
             </Button>
+            <Button
+              shape="round"
+              size="large"
+              icon={<ThunderboltOutlined />}
+              loading={proofreading}
+              onClick={onStartBatchProofread}
+              disabled={inProgress}
+              style={{ height: 52, paddingInline: 28, fontSize: 16, marginLeft: 8 }}
+              title="批量并行校对多窗口（每个窗口 30 段，并发数可在设置中调整）"
+            >
+              批量校对
+            </Button>
             <ShortcutHint />
           </>
         )}
         </div>
+
+        {/* 批量校对进度区块（仅批量校对触发时显示） */}
+        {batchInfo && (
+          <div style={{
+            margin: '12px 0 0',
+            padding: '12px 16px',
+            borderRadius: 10,
+            background: batchInfo.failed_windows > 0
+              ? 'rgba(255,77,79,0.06)'
+              : batchInfo.status === 'ok'
+              ? 'rgba(82,196,26,0.06)'
+              : 'rgba(22,119,255,0.06)',
+            border: `1px solid ${
+              batchInfo.failed_windows > 0 ? 'rgba(255,77,79,0.2)'
+              : batchInfo.status === 'ok' ? 'rgba(82,196,26,0.2)'
+              : 'rgba(22,119,255,0.2)'}`,
+          }}>
+            {/* 标题行 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {batchInfo.status === 'running' ? '🔄 批量校对中'
+                : batchInfo.status === 'ok' ? '✓ 批量完成'
+                : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
+                : '✖ 全部失败'}
+              </span>
+              <span style={{ fontSize: 12, opacity: 0.6 }}>
+                第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
+                {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
+                {batchInfo.failed_windows > 0 ? `，${batchInfo.failed_windows} 个失败` : ''}
+              </span>
+            </div>
+
+            {/* 窗口状态点 */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {(batchInfo.windows || []).map(w => {
+                const isRetrying = retryingWindow === w.window_index
+                return (
+                  <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 18,
+                      color: isRetrying ? '#1677ff'
+                        : w.status === 'ok' ? '#52c41a'
+                        : w.status === 'failed' ? '#ff4d4f'
+                        : '#1677ff' }}>
+                      {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
+                    </span>
+                    <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
+                    {w.status === 'failed' && (
+                      <Button
+                        size="small"
+                        type="link"
+                        danger
+                        loading={isRetrying}
+                        style={{ padding: 0, height: 'auto', fontSize: 11 }}
+                        disabled={inProgress || retryingWindow !== null}
+                        onClick={() => onRetryWindow?.(batchInfo.batch_id, w.window_index)}
+                      >
+                        {isRetrying ? '重试中' : '重试'}
+                      </Button>
+                    )}
+                    {w.status === 'failed' && w.error_message && !isRetrying && (
+                      <span style={{ fontSize: 10, color: '#ff4d4f', maxWidth: 80, wordBreak: 'break-all', textAlign: 'center' }}>
+                        {w.error_message.slice(0, 40)}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* right: 字号调节 */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1084,6 +1170,7 @@ function ControlsRow({
   showOptions,
   selectedModel, onModelChange, models,
   selectedTypes, onTypesChange,
+  batchMaxConcurrent, onBatchMaxConcurrentChange,
   inProgress,
 }) {
   if (!showOptions) return null
@@ -1120,6 +1207,21 @@ function ControlsRow({
             )
           }}
         />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>并发</span>
+        <InputNumber
+          min={1}
+          max={20}
+          size="small"
+          style={{ width: 80 }}
+          value={batchMaxConcurrent}
+          disabled={inProgress}
+          onChange={(val) => onBatchMaxConcurrentChange?.(val || 1)}
+        />
+        <span style={{ fontSize: 11, color: color.textSecondary }}>
+          窗口（批量并发处理 {(batchMaxConcurrent || 1) * 30} 段）
+        </span>
       </div>
     </div>
   )

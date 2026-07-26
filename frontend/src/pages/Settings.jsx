@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Form, Input, Button, List, Tag, Typography, Space, message, Popconfirm } from 'antd'
-import { KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined, ApiOutlined, ArrowLeftOutlined, EditOutlined } from '@ant-design/icons'
+import { Card, Form, Input, InputNumber, Button, List, Tag, Typography, Space, message, Popconfirm } from 'antd'
+import { KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined, ApiOutlined, ArrowLeftOutlined, EditOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { getProviders, saveApiKey, deleteApiKey, testApiKey, getPrompts, savePrompts } from '../services/api'
 
@@ -18,6 +18,10 @@ export default function Settings() {
   const [promptProofread, setPromptProofread] = useState('')
   const [promptSaving, setPromptSaving] = useState(false)
 
+  // batch concurrency state
+  const [batchMaxConcurrent, setBatchMaxConcurrent] = useState(2)
+  const [batchSaving, setBatchSaving] = useState(false)
+
   const navigate = useNavigate()
 
   const load = async () => {
@@ -30,6 +34,7 @@ export default function Settings() {
       setProviders(providersData)
       setPromptGeneral(promptsData.system_prompt_general)
       setPromptProofread(promptsData.system_prompt_proofread)
+      setBatchMaxConcurrent(promptsData.batch_max_concurrent || 2)
     } finally {
       setLoading(false)
     }
@@ -242,7 +247,7 @@ export default function Settings() {
           onClick={async () => {
             setPromptSaving(true)
             try {
-              await savePrompts(promptGeneral, promptProofread)
+              await savePrompts(promptGeneral, promptProofread, batchMaxConcurrent)
               message.success('系统提示词已保存')
             } catch {
               message.error('保存失败')
@@ -252,6 +257,46 @@ export default function Settings() {
           }}
         >
           保存提示词
+        </Button>
+      </Card>
+
+      <Card title={<Space><ThunderboltOutlined /> 批量校对并发设置</Space>} style={{ marginTop: 16 }}>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          设置“批量校对”触发时同时运行的并行窗口数量上限。每个窗口包含 30 个段落。
+        </Text>
+
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Text strong>最大并发窗口数：</Text>
+          <InputNumber
+            min={1}
+            max={20}
+            value={batchMaxConcurrent}
+            onChange={(val) => setBatchMaxConcurrent(val || 1)}
+            style={{ width: 120 }}
+          />
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            （推荐：2 ~ 5。设为 {batchMaxConcurrent} 时，每次点击批量校对 {batchMaxConcurrent * 30} 段落）
+          </Text>
+        </div>
+
+        <Button
+          type="primary"
+          shape="round"
+          icon={<SaveOutlined />}
+          loading={batchSaving}
+          onClick={async () => {
+            setBatchSaving(true)
+            try {
+              await savePrompts(promptGeneral, promptProofread, batchMaxConcurrent)
+              message.success('并发数设置已保存')
+            } catch {
+              message.error('保存失败')
+            } finally {
+              setBatchSaving(false)
+            }
+          }}
+        >
+          保存并发设置
         </Button>
       </Card>
     </div>

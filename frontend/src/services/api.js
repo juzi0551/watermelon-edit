@@ -66,11 +66,17 @@ export async function getPrompts() {
   return data
 }
 
-export async function savePrompts(general, proofread) {
-  const { data } = await api.put('/settings/prompts', {
-    system_prompt_general: general,
-    system_prompt_proofread: proofread,
-  })
+export async function savePrompts(general, proofread, batchMaxConcurrent) {
+  const payload = {}
+  if (general !== undefined) payload.system_prompt_general = general
+  if (proofread !== undefined) payload.system_prompt_proofread = proofread
+  if (batchMaxConcurrent !== undefined) payload.batch_max_concurrent = batchMaxConcurrent
+  const { data } = await api.put('/settings/prompts', payload)
+  return data
+}
+
+export async function saveBatchConcurrency(batchMaxConcurrent) {
+  const { data } = await api.put('/settings/prompts', { batch_max_concurrent: batchMaxConcurrent })
   return data
 }
 
@@ -130,5 +136,17 @@ export async function acceptAll(projectId) {
 
 export async function exportDoc(projectId) {
   const { data } = await api.post(`/projects/${projectId}/export`, {}, { responseType: 'blob' })
+  return data
+}
+
+// ==================== Batch Proofread ====================
+
+export async function getBatchStatus(projectId, batchId) {
+  const { data } = await api.get(`/projects/${projectId}/proofread/batch/${batchId}`)
+  return data
+}
+
+export async function retryWindow(projectId, payload) {
+  const { data } = await api.post(`/projects/${projectId}/proofread/retry-window`, payload)
   return data
 }

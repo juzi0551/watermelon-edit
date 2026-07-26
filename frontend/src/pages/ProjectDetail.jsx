@@ -11,7 +11,7 @@ import {
 import {
   getProject, uploadToProject, getModels, startProofread,
   getResults, setErrorStatus, acceptAll, exportDoc,
-  getLLMLog,
+  getLLMLog, getBatchStatus, retryWindow, getPrompts, saveBatchConcurrency,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
 import { color } from '../design-tokens'
@@ -50,6 +50,15 @@ export default function ProjectDetail() {
   const [llmCalls, setLlmCalls] = useState([])
   const [llmMonitorLoading, setLlmMonitorLoading] = useState(false)
   const llmTimerRef = useRef(null)
+  // batch 模式专用 state
+  const [batchInfo, setBatchInfo] = useState(null)   // 当前 batch 的窗口状态
+  const [batchPolling, setBatchPolling] = useState(false)
+  const [retryingWindow, setRetryingWindow] = useState(null)
+  const [batchMaxConcurrent, setBatchMaxConcurrent] = useState(
+    () => {
+      try { return parseInt(localStorage.getItem('batch_max_concurrent') || '2', 10) || 2 } catch { return 2 }
+    }
+  )
 
   const loadLlmCalls = useCallback(async () => {
     setLlmMonitorLoading(true)
@@ -132,6 +141,23 @@ export default function ProjectDetail() {
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
   useEffect(() => { localStorage.setItem('proofread_types', JSON.stringify(selectedTypes)) }, [selectedTypes])
 
+  // sync batch concurrency from backend DB setting
+  useEffect(() => {
+    getPrompts().then(data => {
+      if (data && data.batch_max_concurrent) {
+        setBatchMaxConcurrent(data.batch_max_concurrent)
+        localStorage.setItem('batch_max_concurrent', String(data.batch_max_concurrent))
+      }
+    }).catch(() => {})
+  }, [])
+
+  const handleBatchMaxConcurrentChange = (val) => {
+    const num = Math.max(1, Math.min(val || 1, 20))
+    setBatchMaxConcurrent(num)
+    localStorage.setItem('batch_max_concurrent', String(num))
+    saveBatchConcurrency(num).catch(() => {})
+  }
+
   const handleUpload = async (file) => {
     setLoading(true)
     try {
@@ -213,6 +239,81 @@ export default function ProjectDetail() {
         message.success(`校对完成：已校对至 ${d.proofread_upto || 0}/${d.paragraph_count || 0} 段`)
       }
     } catch {}
+  }
+
+  // ── 批量校对专用逻辑 ──────────────────────
+  const handleBatchProofread = async () => {
+    setProofreading(true)
+    setBatchInfo(null)
+    try {
+      const res = await startProofread(projectId, {
+        mode: 'batch',
+        model: selectedModel,
+        types: selectedTypes,
+        max_concurrent: batchMaxConcurrent,
+      })
+      if (res.error) { message.error(res.error); setProofreading(false); return }
+      if (res.status === 'skipped') { message.info(res.message); setProofreading(false); loadProject(); return }
+      if (res.status === 'running') { message.info(res.message); setProofreading(false); return }
+      // 启动两路轮询：1) project.status（2) batch 窗口进度
+      await Promise.all([
+        pollBatch(res.batch_id),
+        pollProofread(null),
+      ])
+    } catch (e) {
+      message.error('批量校对失败：' + (e.response?.data?.detail || e.message))
+      setProofreading(false)
+    }
+  }
+
+  const pollBatch = async (batchId) => {
+    setBatchPolling(true)
+    let failStreak = 0
+    for (let i = 0; i < 600; i++) {
+      await new Promise((r) => setTimeout(r, 2000))
+      try {
+        const data = await getBatchStatus(projectId, batchId)
+        if (!data.error) {
+          setBatchInfo(data)
+          failStreak = 0
+          if (data.status !== 'running') break
+        }
+      } catch {
+        failStreak++
+        if (failStreak >= 5) {
+          message.warning('网络异常，已暂停轮询进度，请手动刷新')
+          break
+        }
+      }
+    }
+    setBatchPolling(false)
+  }
+
+  const handleRetryWindow = async (batchId, windowIndex) => {
+    setRetryingWindow(windowIndex)
+    try {
+      const res = await retryWindow(projectId, {
+        batch_id: batchId,
+        window_index: windowIndex,
+        model: selectedModel,
+        types: selectedTypes,
+      })
+      if (res.status === 'ok') {
+        message.success(res.message)
+        const data = await getBatchStatus(projectId, batchId)
+        if (!data.error) setBatchInfo(data)
+        loadResults()
+        loadProject()
+      } else {
+        message.error(res.message || '重试失败')
+        const data = await getBatchStatus(projectId, batchId)
+        if (!data.error) setBatchInfo(data)
+      }
+    } catch (e) {
+      message.error('重试失败：' + (e.response?.data?.detail || e.message))
+    } finally {
+      setRetryingWindow(null)
+    }
   }
 
   const handleSelectionProofread = async (indices) => {
@@ -458,6 +559,13 @@ export default function ProjectDetail() {
                     selectedParas={selectedParas}
                     onSelectionChange={setSelectedParas}
                     onStartSelectionProofread={handleSelectionProofread}
+                    onStartBatchProofread={handleBatchProofread}
+                    batchInfo={batchInfo}
+                    batchPolling={batchPolling}
+                    onRetryWindow={handleRetryWindow}
+                    retryingWindow={retryingWindow}
+                    batchMaxConcurrent={batchMaxConcurrent}
+                    onBatchMaxConcurrentChange={handleBatchMaxConcurrentChange}
                   />
               )}
             </div>

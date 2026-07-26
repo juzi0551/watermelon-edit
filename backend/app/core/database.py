@@ -156,6 +156,38 @@ def _migrate_schema(conn):
             conn.execute(f"ALTER TABLE llm_logs ADD COLUMN {col}")
         except sqlite3.OperationalError:
             pass
+    if version < 5:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS proofread_batches (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                range_start INTEGER NOT NULL,
+                range_end INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',
+                total_windows INTEGER NOT NULL DEFAULT 0,
+                done_windows INTEGER NOT NULL DEFAULT 0,
+                failed_windows INTEGER NOT NULL DEFAULT 0,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (document_id) REFERENCES documents(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_batches_doc ON proofread_batches(document_id);
+
+            CREATE TABLE IF NOT EXISTS batch_windows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id TEXT NOT NULL,
+                window_index INTEGER NOT NULL,
+                range_start INTEGER NOT NULL,
+                range_end INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                error_message TEXT,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (batch_id) REFERENCES proofread_batches(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_bw_batch ON batch_windows(batch_id);
+        """)
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '5')")
 
 
 def init_db():
@@ -774,6 +806,152 @@ def list_llm_logs(project_id: str | None, limit: int = 50, offset: int = 0) -> l
                 (limit, offset),
             ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ==================== Batch（批量并行校对） ====================
+
+def create_batch(batch_id: str, document_id: str, range_start: int, range_end: int,
+                 windows: list[tuple[int, int]]) -> dict:
+    """创建一个 batch 及其所有 window 记录。
+    windows: [(ws, we), ...] 每个 window 的段落范围。
+    """
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO proofread_batches
+               (id, document_id, range_start, range_end, status, total_windows)
+               VALUES (?, ?, ?, ?, 'running', ?)""",
+            (batch_id, document_id, range_start, range_end, len(windows)),
+        )
+        conn.executemany(
+            """INSERT INTO batch_windows
+               (batch_id, window_index, range_start, range_end, status)
+               VALUES (?, ?, ?, ?, 'pending')""",
+            [(batch_id, i, ws, we) for i, (ws, we) in enumerate(windows)],
+        )
+        row = conn.execute(
+            "SELECT * FROM proofread_batches WHERE id = ?", (batch_id,)
+        ).fetchone()
+        return dict(row)
+
+
+def get_batch(batch_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM proofread_batches WHERE id = ?", (batch_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_batch_windows(batch_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM batch_windows WHERE batch_id = ? ORDER BY window_index",
+            (batch_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_latest_batch(document_id: str) -> dict | None:
+    """获取该文档最近一次 batch 记录（用于前端展示上次批量进度）。"""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM proofread_batches WHERE document_id = ? ORDER BY created_at DESC LIMIT 1",
+            (document_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_batch_window(batch_id: str, window_index: int, status: str,
+                        error_message: str | None = None):
+    """更新单个 window 的状态（在并行结束后统一调用）。"""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE batch_windows
+               SET status = ?, error_message = ?,
+                   retry_count = retry_count + CASE WHEN ? = 'pending' THEN 1 ELSE 0 END
+               WHERE batch_id = ? AND window_index = ?""",
+            (status, error_message,
+             status,  # retry_count 只在重试（status 回到 pending）时 +1
+             batch_id, window_index),
+        )
+
+
+def finish_batch(batch_id: str, done: int, failed: int):
+    """batch 所有 window 执行完毕后，更新汇总计数和最终状态。"""
+    final_status = 'failed' if done == 0 else ('partial' if failed > 0 else 'ok')
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE proofread_batches
+               SET done_windows = ?, failed_windows = ?, status = ?,
+                   updated_at = datetime('now', 'localtime')
+               WHERE id = ?""",
+            (done, failed, final_status, batch_id),
+        )
+
+
+def get_document_batches(document_id: str, limit: int = 5) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM proofread_batches WHERE document_id = ? ORDER BY created_at DESC LIMIT ?",
+            (document_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ==================== 批量写入（batch 模式专用，不替换现有逐条 insert） ====================
+
+def batch_insert_errors(document_id: str, errors: list[dict]):
+    """批量写入 errors，供 batch 模式在所有 window 完成后统一调用。"""
+    if not errors:
+        return
+    with get_conn() as conn:
+        conn.executemany(
+            """INSERT INTO errors
+               (document_id, type, paragraph_index, original_text, suggested_text,
+                severity, description, chapter_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    document_id,
+                    e.get("type", "typo"),
+                    e.get("paragraph_index", 0),
+                    e.get("original_text", ""),
+                    e.get("suggested_text", ""),
+                    e.get("severity", "medium"),
+                    e.get("description", ""),
+                    e.get("chapter_id", ""),
+                )
+                for e in errors
+            ],
+        )
+
+
+def batch_insert_chapters(document_id: str, chapters: list[dict], sort_base: int):
+    """批量写入 chapters，sort_order 从 sort_base 起自增。"""
+    if not chapters:
+        return
+    from app.utils.helpers import generate_id
+    with get_conn() as conn:
+        conn.executemany(
+            """INSERT INTO chapters
+               (id, document_id, title, title_paragraph_idx, level, parent_idx,
+                start_idx, end_idx, sort_order)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    generate_id(),
+                    document_id,
+                    c["title"],
+                    c["title_paragraph_idx"],
+                    c["level"],
+                    c.get("parent_idx"),
+                    c["start_idx"],
+                    c["end_idx"],
+                    sort_base + i,
+                )
+                for i, c in enumerate(chapters)
+            ],
+        )
 
 
 # 启动时初始化表 + 设置缓存
