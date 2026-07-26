@@ -454,20 +454,25 @@ export default function ReviewReader({
 
   const currentBodyFontSize = fontSize.body + fontSizeOffset
 
-  // 自动选中第一条待处理错误
+  // 自动选中第一条待处理错误（仅在尚未选中任何有效错误时触发，防止后台刷新结果导致卡片二次触发）
   useEffect(() => {
     if (results && results !== resultsRef.current) {
       resultsRef.current = results
       if (pending.length > 0) {
-        hasAutoSelectedRef.current = true
-        autoSelectRef.current = true
-        positionSavedRef.current = false
-        setSelectedId(pending[0].id)
+        const stillPending = pending.some(e => e.id === selectedIdRef.current)
+        if (!stillPending) {
+          hasAutoSelectedRef.current = true
+          autoSelectRef.current = true
+          positionSavedRef.current = false
+          setSelectedId(pending[0].id)
+        }
       }
     }
   }, [results, pending])
 
-  // 切换 selectedId 时，在 Paint 之前同步隐藏卡片，绝对避免旧坐标闪烁新内容
+  const isScrollingRef = useRef(false)
+
+  // 切换 selectedId 时，在 Paint 之前同步隐去卡片，防止旧坐标闪烁
   useLayoutEffect(() => {
     const el = floatCardElRef.current
     if (el) {
@@ -476,11 +481,12 @@ export default function ReviewReader({
     }
   }, [selectedId])
 
-  // 悬浮卡片：跟随选中错误的位置（在平滑滚动停稳后一次性淡入，完美平滑且无闪烁）
+  // 悬浮卡片控制与段落对齐：物理视口精准单向状态机
   useEffect(() => {
     const container = flowRef.current
     if (!container || !selectedId) { setShowFloatCard(false); return }
     setShowFloatCard(true)
+
     let rafId
     let scrollTimer = null
 
@@ -506,7 +512,6 @@ export default function ReviewReader({
       }
       el.style.top = `${top}px`
       el.style.left = `${left}px`
-      // 定位完成后平滑淡入
       el.style.opacity = '1'
       el.style.transform = 'translateY(0)'
     }
@@ -519,25 +524,40 @@ export default function ReviewReader({
       }
     }
 
-    // 切换 ID 时先隐藏
     hideCard()
 
+    // 滚动过程中绝对保持隐藏，停稳 80ms 后一次性淡入
     const onScroll = () => {
       hideCard()
       clearTimeout(scrollTimer)
-      // 平滑滚动过程中保持隐藏，直到滚动完全停稳 70ms 后精确定位显现
       scrollTimer = setTimeout(() => {
-        isAutoScrollingRef.current = false
         rafId = requestAnimationFrame(updatePos)
-      }, 70)
+      }, 80)
     }
 
-    // 兜底补救：如果目标已经在视野中央无滚动产生，在 100ms 后自动定位显现
-    scrollTimer = setTimeout(() => {
-      if (!isAutoScrollingRef.current) {
-        rafId = requestAnimationFrame(updatePos)
+    // 智能判定目标段落是否已经在视口中央
+    if (!positionSavedRef.current) {
+      const err = flatErrors.find(e => e.id === selectedId)
+      if (err) {
+        const paraEl = container.querySelector(`[data-para="${err.paragraph_index}"]`)
+        if (paraEl) {
+          const cRect = container.getBoundingClientRect()
+          const pRect = paraEl.getBoundingClientRect()
+          // 目标段落已在可视区域（上下各留有 20px 余量）
+          const isCentered = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 20
+          if (isCentered) {
+            // 分支 A：原地 / 连着的问题，无需滚动，零延迟直接在下一帧精确定位显现
+            rafId = requestAnimationFrame(updatePos)
+          } else {
+            // 分支 B：远端段落，触发平滑滚动，卡片保持隐藏直至 scroll 结束停稳
+            paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }
       }
-    }, 100)
+    } else {
+      positionSavedRef.current = false
+      rafId = requestAnimationFrame(updatePos)
+    }
 
     container.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onScroll, { passive: true })
@@ -547,19 +567,6 @@ export default function ReviewReader({
       container.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onScroll)
     }
-  }, [selectedId])
-
-  useEffect(() => {
-    if (!selectedId || !flowRef.current) return
-    if (positionSavedRef.current) { positionSavedRef.current = false; return }
-    const err = flatErrors.find(e => e.id === selectedId)
-    if (!err) return
-    const el = flowRef.current.querySelector(`[data-para="${err.paragraph_index}"]`)
-    if (el) {
-      isAutoScrollingRef.current = true
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-    autoSelectRef.current = false
   }, [selectedId, flatErrors])
 
   useEffect(() => {
