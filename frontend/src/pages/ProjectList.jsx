@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Button, Table, Tag, Space, Modal, Input, Popconfirm, Upload, message } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, FileTextOutlined } from '@ant-design/icons'
+import { Card, Button, Table, Tag, Space, Modal, Input, Popconfirm, Upload, message, Tooltip } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { listProjects, createProject, deleteProject, renameProject, uploadToProject } from '../services/api'
+import { listProjects, createProject, deleteProject, renameProject, uploadToProject, toggleProjectLock } from '../services/api'
 
 export default function ProjectList() {
   const [projects, setProjects] = useState([])
@@ -29,6 +29,17 @@ export default function ProjectList() {
     await deleteProject(id)
     message.success('项目已删除')
     load()
+  }
+
+  const handleToggleLock = async (record) => {
+    const nextLocked = record.is_locked !== 1
+    try {
+      await toggleProjectLock(record.id, nextLocked)
+      message.success(nextLocked ? '项目已锁定（已开启防误删）' : '项目已解锁')
+      load()
+    } catch (e) {
+      message.error(e.message || '操作失败')
+    }
   }
 
   const handleRename = async () => {
@@ -69,7 +80,10 @@ export default function ProjectList() {
       dataIndex: 'name',
       key: 'name',
       render: (text, record) => (
-        <a onClick={() => navigate(`/project/${record.id}`)}>{text}</a>
+        <Space>
+          <a onClick={() => navigate(`/project/${record.id}`)}>{text}</a>
+          {record.is_locked === 1 && <Tag color="gold" icon={<LockOutlined />}>已锁定</Tag>}
+        </Space>
       ),
     },
     {
@@ -114,14 +128,27 @@ export default function ProjectList() {
       key: 'actions',
       render: (_, record) => (
         <Space>
+          <Tooltip title={record.is_locked === 1 ? '解开锁定' : '锁定项目（防误删）'}>
+            <Button
+              type="link"
+              icon={record.is_locked === 1 ? <LockOutlined style={{ color: '#faad14', fontSize: 16 }} /> : <UnlockOutlined style={{ color: '#bfbfbf', fontSize: 16 }} />}
+              onClick={() => handleToggleLock(record)}
+            />
+          </Tooltip>
           <Button
             type="link"
             icon={<EditOutlined />}
             onClick={() => setRenameModal({ open: true, id: record.id, name: record.name })}
           />
-          <Popconfirm title="确定删除此项目？" onConfirm={() => handleDelete(record.id)}>
-            <Button type="link" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          {record.is_locked === 1 ? (
+            <Tooltip title="项目已锁定，禁止删除">
+              <Button type="link" danger disabled icon={<DeleteOutlined />} />
+            </Tooltip>
+          ) : (
+            <Popconfirm title="确定删除此项目？" onConfirm={() => handleDelete(record.id)}>
+              <Button type="link" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },

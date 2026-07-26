@@ -138,11 +138,24 @@ export async function acceptAll(projectId) {
   return data
 }
 
+export async function cleanEmptyParagraphs(projectId) {
+  const { data } = await api.post(`/projects/${projectId}/clean-empty-paragraphs`)
+  return data
+}
+
 // ==================== Export ====================
 
 export async function exportDoc(projectId) {
-  const { data } = await api.post(`/projects/${projectId}/export`, {}, { responseType: 'blob' })
-  return data
+  const response = await api.post(`/projects/${projectId}/export`, {}, { responseType: 'blob' })
+  const disposition = response.headers['content-disposition']
+  let filename = ''
+  if (disposition && disposition.includes('filename=')) {
+    const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i)
+    if (match && match[1]) {
+      filename = decodeURIComponent(match[1].replace(/['"]/g, ''))
+    }
+  }
+  return { blob: response.data, filename }
 }
 
 // ==================== Batch Proofread ====================
@@ -154,5 +167,39 @@ export async function getBatchStatus(projectId, batchId) {
 
 export async function retryWindow(projectId, payload) {
   const { data } = await api.post(`/projects/${projectId}/proofread/retry-window`, payload)
+  return data
+}
+
+// ==================== Paragraph & Chapter Editing ====================
+
+export async function updateParagraph(projectId, idx, text) {
+  const { data } = await api.patch(`/projects/${projectId}/paragraphs/${idx}`, { text })
+  return data
+}
+
+export async function deleteParagraph(projectId, idx) {
+  const { data } = await api.delete(`/projects/${projectId}/paragraphs/${idx}`)
+  return data
+}
+
+export async function togglePageBreak(projectId, idx, pageBreakType) {
+  const payload = typeof pageBreakType === 'string'
+    ? { page_break_type: pageBreakType }
+    : { has_page_break_before: !!pageBreakType }
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/${idx}/page_break`, payload)
+  return data
+}
+
+export async function setChapter(projectId, idx, isChapter = true, level = 1, title = null) {
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/${idx}/chapter`, {
+    is_chapter: isChapter,
+    level,
+    title,
+  })
+  return data
+}
+
+export async function toggleProjectLock(projectId, isLocked) {
+  const { data } = await api.post(`/projects/${projectId}/lock`, { is_locked: isLocked })
   return data
 }

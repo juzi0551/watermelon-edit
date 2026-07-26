@@ -2,16 +2,17 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Card, Button, Upload, Tag, Space, List, Typography, Spin, message,
-  Empty, Drawer,
+  Empty, Drawer, Tooltip, Popconfirm,
 } from 'antd'
 import {
   InboxOutlined, ArrowLeftOutlined, DownloadOutlined, UnorderedListOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, EyeOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, EyeOutlined, LockOutlined, UnlockOutlined, ClearOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
   getResults, setErrorStatus, acceptAll, exportDoc,
   getLLMLog, getBatchStatus, retryWindow, getPrompts, saveBatchConcurrency, saveWindowSize,
+  toggleProjectLock, cleanEmptyParagraphs,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
 import { color } from '../design-tokens'
@@ -386,11 +387,13 @@ export default function ProjectDetail() {
   const handleExport = async () => {
     setExporting(true)
     try {
-      const blob = await exportDoc(projectId)
+      const res = await exportDoc(projectId)
+      const blob = res.blob || res
+      const filename = res.filename || `${project?.name || '校稿'}_校稿版_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15)}.docx`
       const url = window.URL.createObjectURL(new Blob([blob]))
       const a = document.createElement('a')
       a.href = url
-      a.download = `${project?.name || '校稿'}_校稿版.docx`
+      a.download = filename
       a.click()
       window.URL.revokeObjectURL(url)
       message.success('已导出校稿版 docx')
@@ -398,6 +401,27 @@ export default function ProjectDetail() {
       message.error('导出失败：' + (e.response?.data?.detail || e.message))
     } finally {
       setExporting(false)
+    }
+  }
+
+  const [cleaningEmpty, setCleaningEmpty] = useState(false)
+
+  const handleCleanEmptyParagraphs = async () => {
+    if (!project) return
+    setCleaningEmpty(true)
+    try {
+      const res = await cleanEmptyParagraphs(projectId)
+      if (res.error) {
+        message.error(res.error)
+      } else {
+        message.success(`已成功清理 ${res.deleted_count || 0} 个空白段落，并完成序号重排！`)
+        loadProject()
+        loadResults()
+      }
+    } catch (e) {
+      message.error('清理失败：' + e.message)
+    } finally {
+      setCleaningEmpty(false)
     }
   }
 
@@ -430,6 +454,28 @@ export default function ProjectDetail() {
           <Space>
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
             <span style={{ fontWeight: 600, fontSize: 18 }}>{project?.name || '加载中...'}</span>
+            <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目/段落防误删）' : '锁定项目（开启项目/段落防误删）'}>
+              <Button
+                type={project?.is_locked === 1 ? 'primary' : 'default'}
+                danger={project?.is_locked === 1}
+                size="small"
+                shape="round"
+                icon={project?.is_locked === 1 ? <LockOutlined /> : <UnlockOutlined />}
+                onClick={async () => {
+                  if (!project) return
+                  const nextState = project.is_locked !== 1
+                  try {
+                    await toggleProjectLock(project.id, nextState)
+                    message.success(nextState ? '项目已锁定（已防误删）' : '项目已解锁')
+                    loadProject()
+                  } catch (e) {
+                    message.error(e.message || '操作失败')
+                  }
+                }}
+              >
+                {project?.is_locked === 1 ? '已锁定 🔒' : '未锁定'}
+              </Button>
+            </Tooltip>
             {total > 0 && (
               <Text type="secondary" style={{ fontSize: 13 }}>
                 {upto}/{total} 段
@@ -444,6 +490,25 @@ export default function ProjectDetail() {
         }
         extra={
           <Space>
+            <Popconfirm
+              title="确定清理所有空白段落？"
+              description="系统将自动清理所有无意义空行，并重新连续编排段号。"
+              onConfirm={handleCleanEmptyParagraphs}
+              okText="确定清理"
+              cancelText="取消"
+              disabled={project?.is_locked === 1 || inProgress}
+            >
+              <Tooltip title={project?.is_locked === 1 ? '项目已锁定，无法清理空行' : '一键清除所有空行并自动重排段落序号'}>
+                <Button
+                  icon={<ClearOutlined />}
+                  loading={cleaningEmpty}
+                  disabled={project?.is_locked === 1 || inProgress}
+                  shape="round"
+                >
+                  🧹 清理所有空行
+                </Button>
+              </Tooltip>
+            </Popconfirm>
             <Button
               icon={<UnorderedListOutlined />}
               onClick={() => setPanelOpen(v => !v)}
@@ -583,6 +648,7 @@ export default function ProjectDetail() {
                     onChapterChange={setSelectedChapter}
                     selectedParas={selectedParas}
                     onSelectionChange={setSelectedParas}
+                    onReloadProject={loadProject}
                     onStartSelectionProofread={handleSelectionProofread}
                     onStartBatchProofread={handleBatchProofread}
                     batchInfo={batchInfo}

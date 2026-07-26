@@ -112,6 +112,18 @@ def _migrate_schema(conn):
         conn.execute("ALTER TABLE documents ADD COLUMN last_error TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE paragraphs ADD COLUMN has_page_break_before INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE paragraphs ADD COLUMN page_break_type TEXT DEFAULT 'none'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE projects ADD COLUMN is_locked INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     if version < 3:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -202,6 +214,7 @@ def init_db():
                 name TEXT NOT NULL,
                 status TEXT DEFAULT 'new',  -- new|uploaded|parsed|proofreading|reviewing|completed
                 current_document_id TEXT,
+                is_locked INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT (datetime('now', 'localtime')),
                 updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
@@ -229,6 +242,8 @@ def init_db():
                 revised_text TEXT,
                 style_name TEXT,
                 char_count INTEGER,
+                has_page_break_before INTEGER DEFAULT 0,
+                page_break_type TEXT DEFAULT 'none',
                 UNIQUE (document_id, idx),
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
@@ -330,6 +345,16 @@ def update_project_document(project_id: str, document_id: str):
         conn.execute(
             "UPDATE projects SET current_document_id = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
             (document_id, project_id),
+        )
+
+
+def toggle_project_lock(project_id: str, is_locked: bool):
+    """切换项目锁定/解锁状态。"""
+    val = 1 if is_locked else 0
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE projects SET is_locked = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (val, project_id),
         )
 
 
@@ -450,15 +475,193 @@ def copy_chapters(src_doc_id: str, dst_doc_id: str):
 # ==================== Paragraphs（原始段落，唯一真相源） ====================
 
 def insert_paragraphs(document_id: str, rows: list[tuple]):
-    """批量写入段落。rows: [(idx, text, style_name), ...]"""
+    """批量写入段落。rows: [(idx, text, style_name, [page_break_type / has_page_break_before]), ...]"""
+    formatted = []
+    for item in rows:
+        page_break_type = "none"
+        has_break = 0
+        if len(item) == 4:
+            idx, text, style_name, pb_val = item
+            if isinstance(pb_val, str):
+                page_break_type = pb_val
+                has_break = 1 if pb_val != "none" else 0
+            else:
+                has_break = 1 if pb_val else 0
+                page_break_type = "auto_chapter" if pb_val else "none"
+        else:
+            idx, text, style_name = item
+            
+        formatted.append((f"{document_id}:{idx}", document_id, idx, text, style_name, len(text), has_break, page_break_type))
+
     with get_conn() as conn:
         conn.executemany(
-            """INSERT OR REPLACE INTO paragraphs (id, document_id, idx, text, style_name, char_count)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            [
-                (f"{document_id}:{idx}", document_id, idx, text, style_name, len(text))
-                for (idx, text, style_name) in rows
-            ],
+            """INSERT OR REPLACE INTO paragraphs (id, document_id, idx, text, style_name, char_count, has_page_break_before, page_break_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            formatted,
+        )
+
+
+def update_paragraph_text(document_id: str, idx: int, new_text: str):
+    """更新段落文本并重算字符数。"""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE paragraphs 
+               SET text = ?, char_count = ?
+               WHERE document_id = ? AND idx = ?""",
+            (new_text, len(new_text), document_id, idx),
+        )
+
+
+def toggle_paragraph_page_break(document_id: str, idx: int, pb_val: str | bool):
+    """切换段落前置分页符状态 ('original' | 'auto_chapter' | 'manual' | 'none')。"""
+    if isinstance(pb_val, bool):
+        page_break_type = "manual" if pb_val else "none"
+    else:
+        page_break_type = pb_val
+    has_break = 1 if page_break_type != "none" else 0
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE paragraphs SET has_page_break_before = ?, page_break_type = ? WHERE document_id = ? AND idx = ?",
+            (has_break, page_break_type, document_id, idx),
+        )
+
+
+def delete_paragraph_and_reorder(document_id: str, idx: int):
+    """删除指定段落，平移后续段落 idx（全减 1），并同步重排章节范围边界。"""
+    with get_conn() as conn:
+        # 1. 删除指定段落
+        conn.execute("DELETE FROM paragraphs WHERE document_id = ? AND idx = ?", (document_id, idx))
+        
+        # 2. 对大于被删 idx 的所有段落进行 idx 减 1 和 id 重构
+        rows_to_update = conn.execute(
+            "SELECT idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type FROM paragraphs WHERE document_id = ? AND idx > ? ORDER BY idx ASC",
+            (document_id, idx)
+        ).fetchall()
+
+        for r in rows_to_update:
+            old_idx = r["idx"]
+            new_idx = old_idx - 1
+            old_id = f"{document_id}:{old_idx}"
+            new_id = f"{document_id}:{new_idx}"
+            conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
+            conn.execute(
+                """INSERT INTO paragraphs (id, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (new_id, document_id, new_idx, r["text"], r["revised_text"], r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"])
+            )
+
+        # 3. 更新章节表中的 title_paragraph_idx, start_idx, end_idx
+        chapters = conn.execute("SELECT * FROM chapters WHERE document_id = ?", (document_id,)).fetchall()
+        for ch in chapters:
+            t_idx = ch["title_paragraph_idx"]
+            s_idx = ch["start_idx"]
+            e_idx = ch["end_idx"]
+            
+            new_t_idx = t_idx
+            if t_idx is not None:
+                if t_idx > idx:
+                    new_t_idx = t_idx - 1
+                elif t_idx == idx:
+                    new_t_idx = None
+
+            new_s_idx = (s_idx - 1) if s_idx > idx else s_idx
+            new_e_idx = (e_idx - 1) if e_idx >= idx and e_idx > 0 else e_idx
+            
+            conn.execute(
+                """UPDATE chapters 
+                   SET title_paragraph_idx = ?, start_idx = ?, end_idx = ?
+                   WHERE id = ?""",
+                (new_t_idx, new_s_idx, new_e_idx, ch["id"])
+            )
+
+
+def clean_empty_paragraphs(document_id: str) -> int:
+    """清理所有空白段落，从 0 重新连续编排所有剩余段落 idx，并重算章节、错误索引与总数。"""
+    with get_conn() as conn:
+        proj = conn.execute(
+            "SELECT p.is_locked FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
+            (document_id,)
+        ).fetchone()
+        if proj and proj["is_locked"] == 1:
+            raise ValueError("项目已锁定，禁止清理段落")
+
+        all_paras = conn.execute(
+            "SELECT * FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
+            (document_id,)
+        ).fetchall()
+        
+        non_empty = [p for p in all_paras if p["text"] and p["text"].strip()]
+        deleted_count = len(all_paras) - len(non_empty)
+        if deleted_count == 0:
+            return 0
+        
+        old_to_new = {}
+        for new_i, p in enumerate(non_empty):
+            old_to_new[p["idx"]] = new_i
+
+        conn.execute("DELETE FROM paragraphs WHERE document_id = ?", (document_id,))
+        
+        for new_i, p in enumerate(non_empty):
+            new_id = f"{document_id}:{new_i}"
+            conn.execute(
+                """INSERT INTO paragraphs (id, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (new_id, document_id, new_i, p["text"], p["revised_text"], p["style_name"], p["char_count"], p["has_page_break_before"], p["page_break_type"])
+            )
+            
+        chapters = conn.execute("SELECT * FROM chapters WHERE document_id = ?", (document_id,)).fetchall()
+        for ch in chapters:
+            old_t = ch["title_paragraph_idx"]
+            old_s = ch["start_idx"]
+            old_e = ch["end_idx"]
+            
+            new_t = old_to_new.get(old_t)
+            new_s = old_to_new.get(old_s, 0)
+            new_e = old_to_new.get(old_e, len(non_empty) - 1)
+            
+            conn.execute(
+                """UPDATE chapters SET title_paragraph_idx = ?, start_idx = ?, end_idx = ? WHERE id = ?""",
+                (new_t, new_s, new_e, ch["id"])
+            )
+            
+        errs = conn.execute("SELECT id, paragraph_index FROM errors WHERE document_id = ?", (document_id,)).fetchall()
+        for e in errs:
+            old_pi = e["paragraph_index"]
+            new_pi = old_to_new.get(old_pi, 0)
+            conn.execute("UPDATE errors SET paragraph_index = ? WHERE id = ?", (new_pi, e["id"]))
+            
+        return deleted_count
+
+
+def set_paragraph_as_chapter(document_id: str, idx: int, level: int = 1, title: str | None = None) -> str:
+    """人工设置某个段落为章节。"""
+    with get_conn() as conn:
+        if not title:
+            row = conn.execute("SELECT text FROM paragraphs WHERE document_id = ? AND idx = ?", (document_id, idx)).fetchone()
+            title = row["text"] if row and row["text"] else f"第 {idx+1} 段"
+        
+        max_sort = conn.execute("SELECT MAX(sort_order) AS m FROM chapters WHERE document_id = ?", (document_id,)).fetchone()
+        sort_order = (max_sort["m"] + 1) if max_sort and max_sort["m"] is not None else 0
+
+        max_idx_row = conn.execute("SELECT MAX(idx) AS m FROM paragraphs WHERE document_id = ?", (document_id,)).fetchone()
+        total_max = max_idx_row["m"] if max_idx_row and max_idx_row["m"] is not None else idx
+
+        ch_id = f"manual_{document_id}_{idx}"
+        conn.execute(
+            """INSERT OR REPLACE INTO chapters
+               (id, document_id, title, title_paragraph_idx, level, start_idx, end_idx, sort_order, detected_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')""",
+            (ch_id, document_id, title, idx, level, idx, total_max, sort_order)
+        )
+        return ch_id
+
+
+def unset_chapter(document_id: str, chapter_id_or_idx: str | int):
+    """取消某个章节。"""
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM chapters WHERE document_id = ? AND (id = ? OR title_paragraph_idx = ?)",
+            (document_id, str(chapter_id_or_idx), chapter_id_or_idx)
         )
 
 
@@ -945,8 +1148,8 @@ def batch_insert_chapters(document_id: str, chapters: list[dict], sort_base: int
                     c["title_paragraph_idx"],
                     c["level"],
                     c.get("parent_idx"),
-                    c["start_idx"],
-                    c["end_idx"],
+                    c.get("start_idx", c.get("title_paragraph_idx", 0)),
+                    c.get("end_idx", c.get("title_paragraph_idx", 0)),
                     sort_base + i,
                 )
                 for i, c in enumerate(chapters)

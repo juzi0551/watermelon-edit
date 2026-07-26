@@ -2,14 +2,18 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, forwardRe
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
-  Checkbox,
+  Checkbox, Modal,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
   ThunderboltOutlined, LoadingOutlined, CloseOutlined,
-  MinusOutlined, PlusOutlined,
+  MinusOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
+  ScissorOutlined, BookOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons'
 import { color, radius, spacing, fontSize } from '../design-tokens'
+import {
+  updateParagraph, deleteParagraph, togglePageBreak, setChapter,
+} from '../services/api'
 
 const TYPE_LABEL = {
   typo: '错别字', grammar: '语法', punctuation: '标点', format: '格式',
@@ -350,6 +354,7 @@ export default function ReviewReader({
   bannerText = '',
   projectError = null, onRetry, onChapterChange,
   selectedParas, onSelectionChange, onStartSelectionProofread,
+  onReloadProject,
   // batch 模式专用
   onStartBatchProofread, batchInfo = null, batchPolling = false, onRetryWindow, retryingWindow = null,
   batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
@@ -385,6 +390,146 @@ export default function ReviewReader({
   const [selectedId, setSelectedId] = useState(null)
   const [panelTab, setPanelTab] = useState('pending')
   const [customEdit, setCustomEdit] = useState('')
+
+  const [editingIdx, setEditingIdx] = useState(null)
+  const [editingText, setEditingText] = useState('')
+  const [savingPara, setSavingPara] = useState(false)
+  const [hoverIdx, setHoverIdx] = useState(null)
+  const [activeIdx, setActiveIdx] = useState(null)
+  const [toolbarPos, setToolbarPos] = useState(null)
+
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      if (!e.target.closest('[data-para]')) {
+        setActiveIdx(null)
+        setToolbarPos(null)
+      }
+    }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setActiveIdx(null)
+        setToolbarPos(null)
+      }
+    }
+    window.addEventListener('click', handleGlobalClick)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('click', handleGlobalClick)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
+  const handleParaClick = (e, paraIdx) => {
+    e.stopPropagation()
+    if (activeIdx === paraIdx) {
+      setActiveIdx(null)
+      setToolbarPos(null)
+      return
+    }
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const containerWidth = rect.width || 600
+
+    // Align the center of [✏️ 编辑] button (first item in toolbar) directly with cursor X (x - 25)
+    const clampedLeft = Math.max(8, Math.min(x - 25, containerWidth - 230))
+
+    let clampedTop = y - 38
+    if (clampedTop < -10 && paraIdx === 0) {
+      clampedTop = y + 22
+    }
+
+    setToolbarPos({ x: clampedLeft, y: clampedTop })
+    setActiveIdx(paraIdx)
+  }
+
+  const handleStartEdit = (para) => {
+    setEditingIdx(para.idx)
+    setEditingText(para.text || '')
+  }
+
+  const handleSaveEdit = async (paraIdx) => {
+    if (!project?.id) return
+    setSavingPara(true)
+    try {
+      await updateParagraph(project.id, paraIdx, editingText)
+      message.success('段落已更新')
+      setEditingIdx(null)
+      onReloadProject?.()
+    } catch (e) {
+      message.error(e.message || '更新失败')
+    } finally {
+      setSavingPara(false)
+    }
+  }
+
+  const handleDeletePara = (para) => {
+    if (!project?.id) return
+    if (project?.is_locked === 1) {
+      message.warning('项目已锁定，无法删除段落')
+      return
+    }
+    const isBlank = !para.text || para.text.trim() === ''
+    if (isBlank) {
+      deleteParagraph(project.id, para.idx).then(() => {
+        message.success('已删除空段落')
+        onReloadProject?.()
+      }).catch(e => message.error(e.message || '删除失败'))
+      return
+    }
+
+    Modal.confirm({
+      title: '确认删除非空段落？',
+      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+      content: (
+        <div>
+          <p style={{ margin: '8px 0', color: '#666' }}>
+            段落内容：“{para.text.length > 50 ? para.text.slice(0, 50) + '...' : para.text}”
+          </p>
+          <p style={{ color: '#ff4d4f', fontWeight: 600, margin: 0 }}>
+            ⚠️ 此操作不可撤销，删除后该段落及关联校对标注将一并清除。
+          </p>
+        </div>
+      ),
+      okText: '确认删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await deleteParagraph(project.id, para.idx)
+          message.success('段落已删除')
+          onReloadProject?.()
+        } catch (e) {
+          message.error(e.message || '删除失败')
+        }
+      },
+    })
+  }
+
+  const handleTogglePageBreak = async (para) => {
+    if (!project?.id) return
+    const curType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
+    const nextType = curType === 'none' ? 'manual' : 'none'
+    try {
+      await togglePageBreak(project.id, para.idx, nextType)
+      message.success(nextType !== 'none' ? '已插入新增硬分页' : '已移除硬分页')
+      onReloadProject?.()
+    } catch (e) {
+      message.error(e.message || '设置失败')
+    }
+  }
+
+  const handleToggleChapter = async (para) => {
+    if (!project?.id) return
+    const isCh = chapters.some(c => c.title_paragraph_idx === para.idx)
+    try {
+      await setChapter(project.id, para.idx, !isCh, 1, para.text.trim())
+      message.success(!isCh ? '已将该段设为章节标题' : '已取消章节标题')
+      onReloadProject?.()
+    } catch (e) {
+      message.error(e.message || '操作失败')
+    }
+  }
 
   const [showOptions, setShowOptions] = useState(false)
   const [fontSizeOffset, setFontSizeOffset] = useState(() => {
@@ -762,39 +907,212 @@ export default function ReviewReader({
             >
               {[...paras].sort((a, b) => a.idx - b.idx).map(para => {
                 const paraErrs = errors.filter(e => e.paragraph_index === para.idx)
-                const checked = selectedParas?.has(para.idx)
+                const isCh = chapters.some(c => c.title_paragraph_idx === para.idx)
+                const chapterObj = chapters.find(c => c.title_paragraph_idx === para.idx)
+                const isEditing = editingIdx === para.idx
+                const isHover = hoverIdx === para.idx
+                const isBlank = !para.text || para.text.trim() === ''
+
+                const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
+                const pbInfo = {
+                  original: { label: '📄 原文硬分页', border: '#e8e8e8', color: '#8c8c8c' },
+                  auto_chapter: { label: '📖 章节开页', border: '#adc6ff', color: '#2f54eb' },
+                  manual: { label: '✂️ 新增硬分页', border: '#ffd591', color: '#d46b08' },
+                }[pbType]
+
+                const isActive = activeIdx === para.idx
+                const showToolbar = isActive && !isEditing && toolbarPos !== null
+
                 return (
-                    <div key={para.idx} data-para={para.idx} style={{ marginBottom: 24, display: 'flex', gap: 8 }}>
-                    {showCheckboxes && (
-                      <Checkbox
-                        checked={selectedParas?.has(para.idx)}
-                        onChange={() => {
-                          const next = new Set(selectedParas || [])
-                          if (next.has(para.idx)) next.delete(para.idx)
-                          else next.add(para.idx)
-                          onSelectionChange?.(next)
-                        }}
-                        style={{ lineHeight: '1.9', paddingTop: 2 }}
-                      />
+                  <React.Fragment key={para.idx}>
+                    {pbInfo && (
+                      <div style={{
+                        margin: '12px 0 8px 0',
+                        position: 'relative',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        userSelect: 'none',
+                      }}>
+                        <div style={{
+                          position: 'absolute',
+                          left: 0,
+                          right: 0,
+                          top: '50%',
+                          borderTop: `1px dashed ${pbInfo.border}`,
+                          zIndex: 0,
+                        }} />
+                        <span style={{
+                          position: 'relative',
+                          zIndex: 1,
+                          background: '#fff',
+                          padding: '0 10px',
+                          color: pbInfo.color,
+                          fontSize: 11,
+                          fontWeight: 400,
+                        }}>
+                          {pbInfo.label}
+                        </span>
+                      </div>
                     )}
-                    <span style={{
-                      color: para?.revised_text ? color.success : color.textTertiary,
-                      fontWeight: para?.revised_text ? 600 : 400,
-                      fontVariantNumeric: 'tabular-nums',
-                      display: 'inline-block',
-                      fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 36, textAlign: 'right', userSelect: 'none',
-                    }}>
-                      {para.idx}
-                    </span>
-                    <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize, flex: 1 }}>
-                      <ParagraphView
-                        text={para.text}
-                        paraErrors={paraErrs}
-                        selectedId={selectedId}
-                        onSelect={setSelectedId}
-                      />
+                    <div
+                      data-para={para.idx}
+                      onMouseEnter={() => setHoverIdx(para.idx)}
+                      onMouseLeave={() => setHoverIdx(null)}
+                      onClick={(e) => handleParaClick(e, para.idx)}
+                      style={{
+                        marginBottom: 16,
+                        display: 'flex',
+                        gap: 8,
+                        position: 'relative',
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        transition: 'all 0.15s ease',
+                        background: isActive
+                          ? 'rgba(24, 144, 255, 0.08)'
+                          : isHover
+                          ? 'rgba(0, 0, 0, 0.025)'
+                          : isCh
+                          ? 'rgba(24, 144, 255, 0.03)'
+                          : 'transparent',
+                        borderLeft: isActive
+                          ? '4px solid #1890ff'
+                          : isHover
+                          ? '4px solid #69b1ff'
+                          : isCh
+                          ? '4px solid #adc6ff'
+                          : '4px solid transparent',
+                      }}
+                    >
+                      {showCheckboxes && (
+                        <Checkbox
+                          checked={selectedParas?.has(para.idx)}
+                          onChange={() => {
+                            const next = new Set(selectedParas || [])
+                            if (next.has(para.idx)) next.delete(para.idx)
+                            else next.add(para.idx)
+                            onSelectionChange?.(next)
+                          }}
+                          style={{ lineHeight: '1.9', paddingTop: 2 }}
+                        />
+                      )}
+                      <span style={{
+                        color: para?.revised_text ? color.success : color.textTertiary,
+                        fontWeight: para?.revised_text ? 600 : 400,
+                        fontVariantNumeric: 'tabular-nums',
+                        display: 'inline-block',
+                        fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 36, textAlign: 'right', userSelect: 'none',
+                      }}>
+                        {para.idx}
+                      </span>
+
+                      <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize, flex: 1 }}>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Input.TextArea
+                              value={editingText}
+                              onChange={e => setEditingText(e.target.value)}
+                              autoSize={{ minRows: 1, maxRows: 8 }}
+                              style={{ fontSize: currentBodyFontSize }}
+                            />
+                            <Space size="small">
+                              <Button type="primary" size="small" loading={savingPara} onClick={() => handleSaveEdit(para.idx)}>
+                                保存
+                              </Button>
+                              <Button size="small" onClick={() => setEditingIdx(null)}>
+                                取消
+                              </Button>
+                            </Space>
+                          </div>
+                        ) : (
+                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer' }}>
+                            {isCh && (
+                              <Tag color="blue" style={{ marginBottom: 4, marginRight: 6 }}>
+                                📖 章节 ({chapterObj?.level === 2 ? '节' : '章'})
+                              </Tag>
+                            )}
+                            {isBlank ? (
+                              <span style={{ color: '#bfbfbf', fontStyle: 'italic', fontSize: 13, userSelect: 'none' }}>
+                                [ 空段落 ]
+                              </span>
+                            ) : (
+                              <ParagraphView
+                                text={para.text}
+                                paraErrors={paraErrs}
+                                selectedId={selectedId}
+                                onSelect={setSelectedId}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Follow-Cursor / Click-Location Dynamic Floating Bubble Bar with Boundary Guard */}
+                      {showToolbar && (
+                        <div style={{
+                          position: 'absolute',
+                          top: (isActive && toolbarPos) ? toolbarPos.y : -30,
+                          left: (isActive && toolbarPos) ? toolbarPos.x : 'auto',
+                          right: (isActive && toolbarPos) ? 'auto' : 12,
+                          zIndex: 10,
+                          background: '#ffffff',
+                          padding: '3px 8px',
+                          borderRadius: 20,
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.06)',
+                          border: '1px solid #e8e8e8',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}>
+                          <Tooltip title="编辑段落文本">
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<EditOutlined />}
+                              onClick={(e) => { e.stopPropagation(); handleStartEdit(para); }}
+                              style={{ fontSize: 12 }}
+                            >
+                              编辑
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title={para.has_page_break_before === 1 ? '移除硬分页' : '在段前插入硬分页'}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<ScissorOutlined />}
+                              danger={para.has_page_break_before === 1}
+                              onClick={(e) => { e.stopPropagation(); handleTogglePageBreak(para); }}
+                              style={{ fontSize: 12 }}
+                            >
+                              硬分页
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title={isCh ? '取消章节标题' : '设为章节标题'}>
+                            <Button
+                              type={isCh ? 'primary' : 'text'}
+                              size="small"
+                              icon={<BookOutlined />}
+                              onClick={(e) => { e.stopPropagation(); handleToggleChapter(para); }}
+                              style={{ fontSize: 12 }}
+                            >
+                              {isCh ? '已设章节' : '设章节'}
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title={project?.is_locked === 1 ? '项目已锁定，禁止删除段落' : '删除该段落'}>
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              disabled={project?.is_locked === 1}
+                              icon={<DeleteOutlined />}
+                              onClick={(e) => { e.stopPropagation(); handleDeletePara(para); }}
+                              style={{ fontSize: 12 }}
+                            />
+                          </Tooltip>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  </React.Fragment>
                 )
               })}
             </div>
