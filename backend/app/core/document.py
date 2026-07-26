@@ -27,10 +27,10 @@ def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict]]:
         raw_text = para.text or ""
         text = raw_text.rstrip("\r\n")
 
-        # 1. 检查物理分页符类型
+        # 1. 检查物理硬分页符类型（排查软分页 w:lastRenderedPageBreak）
         xml_str = para._element.xml if hasattr(para, "_element") else ""
         has_original_break = False
-        if 'w:type="page"' in xml_str or "w:lastRenderedPageBreak" in xml_str or "w:sectPr" in xml_str:
+        if 'w:type="page"' in xml_str or "w:pageBreakBefore" in xml_str or "w:sectPr" in xml_str:
             has_original_break = True
 
         # 2. 识别章节级别

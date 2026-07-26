@@ -35,7 +35,7 @@ export default function ProjectDetail() {
   const [selectedChapter, setSelectedChapter] = useState(null)
   const [selectedTypes, setSelectedTypes] = useState(
     () => {
-      try { return JSON.parse(localStorage.getItem('proofread_types') || ''); } catch {}
+      try { return JSON.parse(localStorage.getItem('proofread_types') || ''); } catch { }
       return ['typo', 'grammar', 'punctuation', 'format']
     }
   )
@@ -119,7 +119,7 @@ export default function ProjectDetail() {
     try {
       const data = await getResults(projectId)
       if (!data.error) setResults(data)
-    } catch {}
+    } catch { }
   }
 
   const loadModels = async () => {
@@ -130,7 +130,7 @@ export default function ProjectDetail() {
       if (proofreadModels.length && !proofreadModels.find(m => m.model_id === selectedModel)) {
         setSelectedModel(proofreadModels[0].model_id)
       }
-    } catch {}
+    } catch { }
   }
 
   useEffect(() => {
@@ -164,21 +164,21 @@ export default function ProjectDetail() {
           localStorage.setItem('proofread_window_size', String(data.proofread_window_size))
         }
       }
-    }).catch(() => {})
+    }).catch(() => { })
   }, [])
 
   const handleBatchMaxConcurrentChange = (val) => {
     const num = Math.max(1, Math.min(val || 1, 20))
     setBatchMaxConcurrent(num)
     localStorage.setItem('batch_max_concurrent', String(num))
-    saveBatchConcurrency(num).catch(() => {})
+    saveBatchConcurrency(num).catch(() => { })
   }
 
   const handleWindowSizeChange = (val) => {
     const num = Math.max(5, Math.min(val || 5, 100))
     setProofreadWindowSize(num)
     localStorage.setItem('proofread_window_size', String(num))
-    saveWindowSize(num).catch(() => {})
+    saveWindowSize(num).catch(() => { })
   }
 
   const handleUpload = async (file) => {
@@ -262,7 +262,7 @@ export default function ProjectDetail() {
       } else {
         message.success(`校对完成：已校对至 ${d.proofread_upto || 0}/${d.paragraph_count || 0} 段`)
       }
-    } catch {}
+    } catch { }
   }
 
   // ── 批量校对专用逻辑 ──────────────────────
@@ -505,7 +505,7 @@ export default function ProjectDetail() {
                   disabled={project?.is_locked === 1 || inProgress}
                   shape="round"
                 >
-                  🧹 清理所有空行
+                  清空行
                 </Button>
               </Tooltip>
             </Popconfirm>
@@ -515,7 +515,7 @@ export default function ProjectDetail() {
               type={panelOpen ? 'primary' : 'default'}
               shape="round"
             >
-               问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
+              问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
             </Button>
             <Button
               icon={<EyeOutlined />}
@@ -622,44 +622,44 @@ export default function ProjectDetail() {
 
             <div style={{ flex: 1, minWidth: 0 }}>
               {results && (
-                  <ReviewReader
-                    results={results}
-                    project={project}
-                    inProgress={inProgress}
-                    onSetStatus={handleSetStatus}
-                    onAcceptAll={handleAcceptAll}
-                    panelOpen={panelOpen}
-                    onTogglePanel={() => setPanelOpen(v => !v)}
-                    chapters={chapters}
-                    selectedChapter={selectedChapter}
-                    onStartProofread={handleProofread}
-                    selectedModel={selectedModel}
-                    onModelChange={setSelectedModel}
-                    models={models}
-                    selectedTypes={selectedTypes}
-                    onTypesChange={setSelectedTypes}
-                    percent={percent}
-                    proofreading={proofreading}
-                    total={total}
-                    upto={upto}
-                    bannerText={bannerText}
-                    projectError={project?.last_error}
-                    onRetry={handleProofread}
-                    onChapterChange={setSelectedChapter}
-                    selectedParas={selectedParas}
-                    onSelectionChange={setSelectedParas}
-                    onReloadProject={loadProject}
-                    onStartSelectionProofread={handleSelectionProofread}
-                    onStartBatchProofread={handleBatchProofread}
-                    batchInfo={batchInfo}
-                    batchPolling={batchPolling}
-                    onRetryWindow={handleRetryWindow}
-                    retryingWindow={retryingWindow}
-                    batchMaxConcurrent={batchMaxConcurrent}
-                    onBatchMaxConcurrentChange={handleBatchMaxConcurrentChange}
-                    proofreadWindowSize={proofreadWindowSize}
-                    onWindowSizeChange={handleWindowSizeChange}
-                  />
+                <ReviewReader
+                  results={results}
+                  project={project}
+                  inProgress={inProgress}
+                  onSetStatus={handleSetStatus}
+                  onAcceptAll={handleAcceptAll}
+                  panelOpen={panelOpen}
+                  onTogglePanel={() => setPanelOpen(v => !v)}
+                  chapters={chapters}
+                  selectedChapter={selectedChapter}
+                  onStartProofread={handleProofread}
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                  models={models}
+                  selectedTypes={selectedTypes}
+                  onTypesChange={setSelectedTypes}
+                  percent={percent}
+                  proofreading={proofreading}
+                  total={total}
+                  upto={upto}
+                  bannerText={bannerText}
+                  projectError={project?.last_error}
+                  onRetry={handleProofread}
+                  onChapterChange={setSelectedChapter}
+                  selectedParas={selectedParas}
+                  onSelectionChange={setSelectedParas}
+                  onReloadProject={loadProject}
+                  onStartSelectionProofread={handleSelectionProofread}
+                  onStartBatchProofread={handleBatchProofread}
+                  batchInfo={batchInfo}
+                  batchPolling={batchPolling}
+                  onRetryWindow={handleRetryWindow}
+                  retryingWindow={retryingWindow}
+                  batchMaxConcurrent={batchMaxConcurrent}
+                  onBatchMaxConcurrentChange={handleBatchMaxConcurrentChange}
+                  proofreadWindowSize={proofreadWindowSize}
+                  onWindowSizeChange={handleWindowSizeChange}
+                />
               )}
             </div>
           </div>
@@ -681,13 +681,13 @@ export default function ProjectDetail() {
 ───────────────────────────────────────────── */
 const STATUS_CFG = {
   running: { color: '#3b82f6', bg: '#eff6ff', label: '进行中', dot: true },
-  ok:      { color: '#22c55e', bg: '#f0fdf4', label: '完成',   dot: false },
-  error:   { color: '#ef4444', bg: '#fef2f2', label: '失败',   dot: false },
+  ok: { color: '#22c55e', bg: '#f0fdf4', label: '完成', dot: false },
+  error: { color: '#ef4444', bg: '#fef2f2', label: '失败', dot: false },
 }
 const THINKING_CFG = {
   thinking: { color: '#7c3aed', bg: '#f5f3ff', label: '思考中', pulse: true },
-  done:     { color: '#16a34a', bg: '#f0fdf4', label: '思考完毕', pulse: false },
-  idle:     null,
+  done: { color: '#16a34a', bg: '#f0fdf4', label: '思考完毕', pulse: false },
+  idle: null,
 }
 
 function LLMMonitor({ open, onClose, calls, loading }) {
@@ -698,7 +698,7 @@ function LLMMonitor({ open, onClose, calls, loading }) {
       width={680}
       styles={{
         header: { borderBottom: '1px solid #f0f0f0', padding: '14px 20px' },
-        body:   { padding: '16px 20px', background: '#f8fafc' },
+        body: { padding: '16px 20px', background: '#f8fafc' },
       }}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -751,16 +751,16 @@ function LLMMonitor({ open, onClose, calls, loading }) {
 
 function LLMCallCard({ call: c }) {
   const [thinkOpen, setThinkOpen] = useState(true)
-  const [respOpen,  setRespOpen]  = useState(true)
+  const [respOpen, setRespOpen] = useState(true)
   const thinkRef = useRef(null)
-  const respRef  = useRef(null)
+  const respRef = useRef(null)
 
   const sCfg = STATUS_CFG[c.status] || STATUS_CFG.error
   const tCfg = THINKING_CFG[c.thinking_status] || null
-  const isRunning  = c.status === 'running'
+  const isRunning = c.status === 'running'
   const isThinking = c.thinking_status === 'thinking'
-  const hasThink   = c.thinking && c.thinking.length > 0
-  const hasResp    = c.response && c.response.length > 0
+  const hasThink = c.thinking && c.thinking.length > 0
+  const hasResp = c.response && c.response.length > 0
 
   useEffect(() => {
     if (thinkRef.current && isThinking) thinkRef.current.scrollTop = thinkRef.current.scrollHeight

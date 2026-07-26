@@ -189,6 +189,17 @@ async def export_document(project_id: str):
                 pPr = para._element.get_or_add_pPr()
                 if pPr.find(qn("w:pageBreakBefore")) is None:
                     pPr.append(parse_xml(r'<w:pageBreakBefore %s/>' % nsdecls("w")))
+            elif pb_type == "none" and not is_ch_l1:
+                # 用户主动删除了该段落的硬分页：物理擦除 XML 中的 pageBreakBefore 与 w:type="page"
+                pPr = para._element.find(qn("w:pPr"))
+                if pPr is not None:
+                    pbb = pPr.find(qn("w:pageBreakBefore"))
+                    if pbb is not None:
+                        pPr.remove(pbb)
+                for r in para._element.findall(qn("w:r")):
+                    for br in r.findall(qn("w:br")):
+                        if br.get(qn("w:type")) == "page":
+                            r.remove(br)
 
             # 替换段落文本，保留首 run 格式（零干扰原 Word 排版）
             first = True

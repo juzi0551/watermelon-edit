@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, forwardRe
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
-  Checkbox, Modal,
+  Checkbox, Modal, Popconfirm,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
@@ -397,6 +397,7 @@ export default function ReviewReader({
   const [hoverIdx, setHoverIdx] = useState(null)
   const [activeIdx, setActiveIdx] = useState(null)
   const [toolbarPos, setToolbarPos] = useState(null)
+  const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
 
   useEffect(() => {
     const handleGlobalClick = (e) => {
@@ -508,14 +509,21 @@ export default function ReviewReader({
 
   const handleTogglePageBreak = async (para) => {
     if (!project?.id) return
-    const curType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
-    const nextType = curType === 'none' ? 'manual' : 'none'
+    const curType = para.page_break_type || (para.has_page_break_before === 1 ? 'original' : 'none')
+    const hasHardBreak = curType === 'original' || curType === 'manual'
+    const nextType = hasHardBreak ? 'none' : 'manual'
+
+    // 0ms 极速本地乐观 UI 更新
+    para.page_break_type = nextType
+    para.has_page_break_before = nextType !== 'none' ? 1 : 0
+
     try {
       await togglePageBreak(project.id, para.idx, nextType)
-      message.success(nextType !== 'none' ? '已插入新增硬分页' : '已移除硬分页')
+      message.success(nextType !== 'none' ? '已插入新增硬分页' : '已移除硬分页', 2)
       onReloadProject?.()
     } catch (e) {
       message.error(e.message || '设置失败')
+      onReloadProject?.()
     }
   }
 
@@ -942,17 +950,51 @@ export default function ReviewReader({
                           borderTop: `1px dashed ${pbInfo.border}`,
                           zIndex: 0,
                         }} />
-                        <span style={{
-                          position: 'relative',
-                          zIndex: 1,
-                          background: '#fff',
-                          padding: '0 10px',
-                          color: pbInfo.color,
-                          fontSize: 11,
-                          fontWeight: 400,
-                        }}>
-                          {pbInfo.label}
-                        </span>
+                        {(pbType === 'original' || pbType === 'manual') ? (
+                          <Popconfirm
+                            title="确定移除该硬分页？"
+                            description="移除后该段落导出时将不再另起新页。"
+                            onConfirm={() => handleTogglePageBreak(para)}
+                            okText="确定移除"
+                            okButtonProps={{ danger: true }}
+                            cancelText="取消"
+                          >
+                            <Tooltip open={pbTooltipIdx === para.idx} title="点击移除硬分页" mouseLeaveDelay={0.1}>
+                              <span
+                                onMouseEnter={() => setPbTooltipIdx(para.idx)}
+                                onMouseLeave={() => setPbTooltipIdx(null)}
+                                onClick={() => setPbTooltipIdx(null)}
+                                style={{
+                                position: 'relative',
+                                zIndex: 1,
+                                background: '#fff',
+                                padding: '2px 12px',
+                                borderRadius: 12,
+                                border: `1px solid ${pbInfo.border}`,
+                                color: pbInfo.color,
+                                fontSize: 11,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                                transition: 'all 0.15s ease',
+                              }}>
+                                {pbInfo.label}
+                              </span>
+                            </Tooltip>
+                          </Popconfirm>
+                        ) : (
+                          <span style={{
+                            position: 'relative',
+                            zIndex: 1,
+                            background: '#fff',
+                            padding: '0 10px',
+                            color: pbInfo.color,
+                            fontSize: 11,
+                            fontWeight: 400,
+                          }}>
+                            {pbInfo.label}
+                          </span>
+                        )}
                       </div>
                     )}
                     <div
@@ -1055,7 +1097,9 @@ export default function ReviewReader({
                           left: (isActive && toolbarPos) ? toolbarPos.x : 'auto',
                           right: (isActive && toolbarPos) ? 'auto' : 12,
                           zIndex: 10,
-                          background: '#ffffff',
+                          background: 'rgba(255, 255, 255, 0.60)',
+                          backdropFilter: 'blur(2px)',
+                          WebkitBackdropFilter: 'blur(2px)',
                           padding: '3px 8px',
                           borderRadius: 20,
                           boxShadow: '0 4px 16px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.06)',
@@ -1075,18 +1119,47 @@ export default function ReviewReader({
                               编辑
                             </Button>
                           </Tooltip>
-                          <Tooltip title={para.has_page_break_before === 1 ? '移除硬分页' : '在段前插入硬分页'}>
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<ScissorOutlined />}
-                              danger={para.has_page_break_before === 1}
-                              onClick={(e) => { e.stopPropagation(); handleTogglePageBreak(para); }}
-                              style={{ fontSize: 12 }}
-                            >
-                              硬分页
-                            </Button>
-                          </Tooltip>
+                          {(() => {
+                            const hasHardBreak = pbType === 'original' || pbType === 'manual'
+                            if (hasHardBreak) {
+                              return (
+                                <Popconfirm
+                                  title="确定移除该硬分页？"
+                                  description="移除后该段落导出时将不再另起新页。"
+                                  onConfirm={() => handleTogglePageBreak(para)}
+                                  okText="确定移除"
+                                  okButtonProps={{ danger: true }}
+                                  cancelText="取消"
+                                >
+                                  <Tooltip title="移除该硬分页">
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      icon={<ScissorOutlined />}
+                                      danger
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{ fontSize: 12 }}
+                                    >
+                                      移除硬分页
+                                    </Button>
+                                  </Tooltip>
+                                </Popconfirm>
+                              )
+                            }
+                            return (
+                              <Tooltip title="在段前插入硬分页">
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<ScissorOutlined />}
+                                  onClick={(e) => { e.stopPropagation(); handleTogglePageBreak(para); }}
+                                  style={{ fontSize: 12 }}
+                                >
+                                  硬分页
+                                </Button>
+                              </Tooltip>
+                            )
+                          })()}
                           <Tooltip title={isCh ? '取消章节标题' : '设为章节标题'}>
                             <Button
                               type={isCh ? 'primary' : 'text'}
