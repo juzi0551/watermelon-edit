@@ -39,7 +39,14 @@ export default function ProjectDetail() {
     }
   )
   const [exporting, setExporting] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(true)
+  const [panelOpen, setPanelOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('reading_panel_open')
+      return saved !== null ? JSON.parse(saved) : false
+    } catch {
+      return false
+    }
+  })
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
@@ -134,11 +141,10 @@ export default function ProjectDetail() {
     document.title = project?.name || 'Watermelon Edit'
   }, [project])
 
-  // 有未处理的问题时自动打开问题列表
+  // 持久化面板开合状态到 localStorage
   useEffect(() => {
-    const pending = results?.errors?.filter(e => e.user_status === 'pending').length
-    if (pending > 0) setPanelOpen(true)
-  }, [results])
+    localStorage.setItem('reading_panel_open', JSON.stringify(panelOpen))
+  }, [panelOpen])
 
   // persist proofread config across refreshes
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
@@ -458,6 +464,7 @@ export default function ProjectDetail() {
               shape="round"
               icon={<DownloadOutlined />}
               disabled={inProgress}
+              loading={exporting}
               onClick={handleExport}
             >
               导出校稿版

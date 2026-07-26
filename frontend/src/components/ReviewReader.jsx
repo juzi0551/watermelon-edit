@@ -397,7 +397,6 @@ export default function ReviewReader({
   const resultsRef = useRef(results)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
-  const [showFloatCard, setShowFloatCard] = useState(false)
   const floatCardElRef = useRef(null)
   const positionSavedRef = useRef(false)
   const autoSelectRef = useRef(false)
@@ -484,8 +483,7 @@ export default function ReviewReader({
   // 悬浮卡片控制与段落对齐：物理视口精准单向状态机
   useEffect(() => {
     const container = flowRef.current
-    if (!container || !selectedId) { setShowFloatCard(false); return }
-    setShowFloatCard(true)
+    if (!container || !selectedId) return
 
     let rafId
     let scrollTimer = null
@@ -494,22 +492,41 @@ export default function ReviewReader({
       const el = floatCardElRef.current
       if (!el) return
       const id = selectedIdRef.current
-      if (!id) { setShowFloatCard(false); return }
+      if (!id) return
       const strId = String(id)
       const span = Array.from(container.querySelectorAll('[data-error-id]'))
         .find(el => el.dataset.errorId.split(',').includes(strId))
-      if (!span) { setShowFloatCard(false); return }
+      if (!span) return
+
       const rect = span.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
       const cardW = 380
-      const cardH = 170
+      const cardH = el.offsetHeight || 170
+
+      const bottomBarHeight = 72 // 扣除 64px 底栏并留出 8px 绝对安全间隔
+      const maxBottom = window.innerHeight - bottomBarHeight
+      const minTop = Math.max(8, containerRect.top + 8)
+
+      // 1. 默认置于高亮文本下方
       let top = rect.bottom + 6
-      if (top + cardH > window.innerHeight - 16) {
-        top = Math.max(8, rect.top - cardH - 6)
+
+      // 2. 若下方触及底栏安全线，优先翻转至文本上方
+      if (top + cardH > maxBottom) {
+        const topSpace = rect.top - minTop
+        if (topSpace >= cardH + 6) {
+          top = rect.top - cardH - 6
+        } else {
+          // 上下空间吃紧时，贴于底栏上方安全线，且绝不压盖当前高亮词
+          top = Math.max(minTop, maxBottom - cardH)
+        }
       }
+
+      // 3. 水平方向防右侧屏幕溢出
       let left = rect.left
-      if (left + cardW > window.innerWidth - 16) {
-        left = Math.max(8, window.innerWidth - cardW - 16)
+      if (left + cardW > window.innerWidth - 24) {
+        left = Math.max(12, window.innerWidth - cardW - 24)
       }
+
       el.style.top = `${top}px`
       el.style.left = `${left}px`
       el.style.opacity = '1'
@@ -760,7 +777,13 @@ export default function ReviewReader({
                         style={{ lineHeight: '1.9', paddingTop: 2 }}
                       />
                     )}
-                    <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 32, textAlign: 'right', userSelect: 'none' }}>
+                    <span style={{
+                      color: para?.revised_text ? color.success : color.textTertiary,
+                      fontWeight: para?.revised_text ? 600 : 400,
+                      fontVariantNumeric: 'tabular-nums',
+                      display: 'inline-block',
+                      fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 36, textAlign: 'right', userSelect: 'none',
+                    }}>
                       {para.idx}
                     </span>
                     <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize, flex: 1 }}>
@@ -770,11 +793,6 @@ export default function ReviewReader({
                         selectedId={selectedId}
                         onSelect={setSelectedId}
                       />
-                      {para?.revised_text && (
-                        <span style={{ color: color.success, fontSize: fontSize.bodyXs, marginLeft: spacing.sm }}>
-                          （已修订）
-                        </span>
-                      )}
                     </div>
                   </div>
                 )
@@ -818,7 +836,7 @@ export default function ReviewReader({
                 items={[
                   {
                     key: 'pending',
-                    label: <span>待处理 <Badge count={pending.length} size="small" style={{ backgroundColor: color.warning }} /></span>,
+                    label: <span>待处理 ({pending.length})</span>,
                     children: pending.length === 0
                       ? <Empty description="暂无待处理问题" />
                       : (
@@ -833,7 +851,7 @@ export default function ReviewReader({
                   },
                   {
                     key: 'accepted',
-                    label: <span>已采纳 <Badge count={accepted.length} size="small" style={{ backgroundColor: color.success }} /></span>,
+                    label: <span>已采纳 ({accepted.length})</span>,
                     children: accepted.length === 0
                       ? <Empty description="暂无已采纳问题" />
                       : (
@@ -848,7 +866,7 @@ export default function ReviewReader({
                   },
                   {
                     key: 'rejected',
-                    label: <span>已拒绝 <Badge count={rejected.length} size="small" /></span>,
+                    label: <span>已拒绝 ({rejected.length})</span>,
                     children: rejected.length === 0
                       ? <Empty description="暂无已拒绝问题" />
                       : (
@@ -870,7 +888,7 @@ export default function ReviewReader({
 
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 24px', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 16px', gap: 12 }}>
         {/* left: 选段模式切换 | 选段操作 | 校对配置 */}
         {!(inProgress || proofreading) && <>
           <Button
@@ -879,13 +897,13 @@ export default function ReviewReader({
             onClick={() => setShowCheckboxes(v => !v)}
             style={{
               fontSize: 13, color: showCheckboxes ? color.warning : color.textTertiary,
-              whiteSpace: 'nowrap',
+              whiteSpace: 'nowrap', flexShrink: 0,
             }}
           >
             {showCheckboxes ? '☑' : '☐'} 选段
           </Button>
           {showCheckboxes && selectedParas?.size > 0 && (
-            <Space size={4}>
+            <Space size={4} style={{ flexShrink: 0 }}>
               <Tag style={{ fontSize: 12, margin: 0 }}>已选 {selectedParas.size} 段</Tag>
               <Button
                 type="text"
@@ -930,7 +948,10 @@ export default function ReviewReader({
               <Button
                 type="text"
                 size="middle"
-                style={{ color: color.textTertiary, fontSize: 13, whiteSpace: 'nowrap' }}
+                style={{
+                  color: color.textTertiary, fontSize: 13, whiteSpace: 'nowrap',
+                  maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
+                }}
               >
                 {showOptions ? '◀' : '▶'} 校对配置 ({
                   (() => {
@@ -943,8 +964,70 @@ export default function ReviewReader({
           )}
         </>}
 
+        {/* 批量校对状态胶囊 Tag（弹出 Popover 详情） */}
+        {batchInfo && (
+          <Popover
+            trigger="click"
+            placement="top"
+            styles={{ body: { padding: '12px 16px', maxWidth: 380 } }}
+            content={
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    {batchInfo.status === 'running' ? '🔄 批量校对中'
+                    : batchInfo.status === 'ok' ? '✓ 批量完成'
+                    : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
+                    : '✖ 全部失败'}
+                  </span>
+                  <span style={{ fontSize: 12, opacity: 0.6 }}>
+                    第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
+                    {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {(batchInfo.windows || []).map(w => {
+                    const isRetrying = retryingWindow === w.window_index
+                    return (
+                      <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: 16,
+                          color: isRetrying ? '#1677ff'
+                            : w.status === 'ok' ? '#52c41a'
+                            : w.status === 'failed' ? '#ff4d4f'
+                            : '#1677ff' }}>
+                          {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
+                        </span>
+                        <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
+                        {w.status === 'failed' && (
+                          <Button
+                            size="small"
+                            type="link"
+                            danger
+                            loading={isRetrying}
+                            style={{ padding: 0, height: 'auto', fontSize: 11 }}
+                            disabled={inProgress || retryingWindow !== null}
+                            onClick={() => onRetryWindow?.(batchInfo.batch_id, w.window_index)}
+                          >
+                            {isRetrying ? '重试中' : '重试'}
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            }
+          >
+            <Tag
+              color={batchInfo.failed_windows > 0 ? 'error' : batchInfo.status === 'ok' ? 'success' : 'processing'}
+              style={{ cursor: 'pointer', padding: '4px 8px', fontSize: 12, borderRadius: 6, margin: 0, flexShrink: 0 }}
+            >
+              {batchInfo.status === 'running' ? '🔄 批量中' : batchInfo.status === 'ok' ? '✓ 批量完成' : '⚠ 部分失败'} ({batchInfo.done_windows}/{batchInfo.total_windows}) ▾
+            </Tag>
+          </Popover>
+        )}
+
         {/* center: main content */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, position: 'relative' }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, minWidth: 0 }}>
         {inProgress || proofreading ? (
           <>
             <Progress
@@ -953,7 +1036,7 @@ export default function ReviewReader({
               style={{ width: 200, margin: 0 }}
               size="small"
             />
-            <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs }}>
+            <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, whiteSpace: 'nowrap' }}>
               <LoadingOutlined spin style={{ marginRight: 6 }} />
               {bannerText || '正在校对，请稍候…'}
             </span>
@@ -965,7 +1048,7 @@ export default function ReviewReader({
                 <Input
                   value={customEdit}
                   onChange={(e) => setCustomEdit(e.target.value)}
-                  style={{ width: 420, fontSize: 16 }}
+                  style={{ maxWidth: 360, minWidth: 160, flex: '1 1 240px', fontSize: 15 }}
                   size="large"
                   placeholder="修改结果…"
                 />
@@ -986,7 +1069,7 @@ export default function ReviewReader({
                   onClick={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
                   disabled={inProgress}
                   style={{
-                    height: 48, paddingInline: 32, fontSize: 16,
+                    height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
                     background: flashSide === 'accepted' ? '#52c41a' : undefined,
                     boxShadow: flashSide === 'accepted' ? '0 0 0 3px rgba(82,196,26,0.3)' : undefined,
                   }}
@@ -1000,7 +1083,7 @@ export default function ReviewReader({
                   onClick={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
                   disabled={inProgress}
                   style={{
-                    height: 48, paddingInline: 32, fontSize: 16,
+                    height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
                     background: flashSide === 'rejected' ? '#ff4d4f' : undefined,
                     color: flashSide === 'rejected' ? '#fff' : undefined,
                     borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
@@ -1009,7 +1092,7 @@ export default function ReviewReader({
                 >
                   拒绝 →
                 </Button>
-                <Tag style={{ marginLeft: 4, fontSize: 16, padding: '4px 12px', borderRadius: 999 }}>
+                <Tag style={{ marginLeft: 4, fontSize: 15, padding: '4px 10px', borderRadius: 999, flexShrink: 0 }}>
                   {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
                 </Tag>
                 <ShortcutHint />
@@ -1031,7 +1114,7 @@ export default function ReviewReader({
               loading={proofreading}
               onClick={() => onStartSelectionProofread?.([...selectedParas])}
               disabled={inProgress}
-              style={{ height: 52, paddingInline: 40, fontSize: 18 }}
+              style={{ height: 52, paddingInline: 36, fontSize: 17 }}
             >
               校对选中（{selectedParas.size} 段）
             </Button>
@@ -1048,7 +1131,7 @@ export default function ReviewReader({
               loading={proofreading}
               onClick={onStartProofread}
               disabled={inProgress}
-              style={{ height: 52, paddingInline: 40, fontSize: 18 }}
+              style={{ height: 52, paddingInline: 36, fontSize: 17 }}
             >
               {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
             </Button>
@@ -1060,7 +1143,7 @@ export default function ReviewReader({
               loading={proofreading}
               onClick={onStartBatchProofread}
               disabled={inProgress}
-              style={{ height: 52, paddingInline: 28, fontSize: 16, marginLeft: 8 }}
+              style={{ height: 52, paddingInline: 24, fontSize: 16, marginLeft: 8 }}
               title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
             >
               批量校对
@@ -1069,76 +1152,6 @@ export default function ReviewReader({
           </>
         )}
         </div>
-
-        {/* 批量校对进度区块（仅批量校对触发时显示） */}
-        {batchInfo && (
-          <div style={{
-            margin: '12px 0 0',
-            padding: '12px 16px',
-            borderRadius: 10,
-            background: batchInfo.failed_windows > 0
-              ? 'rgba(255,77,79,0.06)'
-              : batchInfo.status === 'ok'
-              ? 'rgba(82,196,26,0.06)'
-              : 'rgba(22,119,255,0.06)',
-            border: `1px solid ${
-              batchInfo.failed_windows > 0 ? 'rgba(255,77,79,0.2)'
-              : batchInfo.status === 'ok' ? 'rgba(82,196,26,0.2)'
-              : 'rgba(22,119,255,0.2)'}`,
-          }}>
-            {/* 标题行 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {batchInfo.status === 'running' ? '🔄 批量校对中'
-                : batchInfo.status === 'ok' ? '✓ 批量完成'
-                : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
-                : '✖ 全部失败'}
-              </span>
-              <span style={{ fontSize: 12, opacity: 0.6 }}>
-                第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
-                {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
-                {batchInfo.failed_windows > 0 ? `，${batchInfo.failed_windows} 个失败` : ''}
-              </span>
-            </div>
-
-            {/* 窗口状态点 */}
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {(batchInfo.windows || []).map(w => {
-                const isRetrying = retryingWindow === w.window_index
-                return (
-                  <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 18,
-                      color: isRetrying ? '#1677ff'
-                        : w.status === 'ok' ? '#52c41a'
-                        : w.status === 'failed' ? '#ff4d4f'
-                        : '#1677ff' }}>
-                      {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
-                    </span>
-                    <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
-                    {w.status === 'failed' && (
-                      <Button
-                        size="small"
-                        type="link"
-                        danger
-                        loading={isRetrying}
-                        style={{ padding: 0, height: 'auto', fontSize: 11 }}
-                        disabled={inProgress || retryingWindow !== null}
-                        onClick={() => onRetryWindow?.(batchInfo.batch_id, w.window_index)}
-                      >
-                        {isRetrying ? '重试中' : '重试'}
-                      </Button>
-                    )}
-                    {w.status === 'failed' && w.error_message && !isRetrying && (
-                      <span style={{ fontSize: 10, color: '#ff4d4f', maxWidth: 80, wordBreak: 'break-all', textAlign: 'center' }}>
-                        {w.error_message.slice(0, 40)}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* right: 字号调节 */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1172,7 +1185,7 @@ export default function ReviewReader({
         </div>
         </div>
       </div>
-      {selectedError && showFloatCard && (
+      {selectedError && (
         <ErrorDetailCard
           ref={floatCardElRef}
           error={selectedError}
