@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, forwardRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, forwardRef } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
@@ -353,6 +353,7 @@ export default function ReviewReader({
   // batch 模式专用
   onStartBatchProofread, batchInfo = null, batchPolling = false, onRetryWindow, retryingWindow = null,
   batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
+  proofreadWindowSize = 30, onWindowSizeChange,
 }) {
   const errors = results?.errors || []
   const paras = results?.paragraphs || []
@@ -465,7 +466,16 @@ export default function ReviewReader({
     }
   }, [results, pending])
 
-  // 悬浮卡片：跟随选中错误的位置（滚动停止后平滑淡入，解决动效追赶与剧烈跳跃问题）
+  // 切换 selectedId 时，在 Paint 之前同步隐藏卡片，绝对避免旧坐标闪烁新内容
+  useLayoutEffect(() => {
+    const el = floatCardElRef.current
+    if (el) {
+      el.style.opacity = '0'
+      el.style.transform = 'translateY(3px)'
+    }
+  }, [selectedId])
+
+  // 悬浮卡片：跟随选中错误的位置（精准一次性淡入，杜绝中途二次显隐闪烁）
   useEffect(() => {
     const container = flowRef.current
     if (!container || !selectedId) { setShowFloatCard(false); return }
@@ -514,16 +524,14 @@ export default function ReviewReader({
     const onScroll = () => {
       hideCard()
       clearTimeout(scrollTimer)
-      // 滚动停止 80ms 后重新抓取准确坐标并快速淡入
+      // 用户手动滚动时，停止 60ms 后重新抓取准确坐标并淡入
       scrollTimer = setTimeout(() => {
         rafId = requestAnimationFrame(updatePos)
-      }, 80)
+      }, 60)
     }
 
-    // 初始等待正文 scrollIntoView 开始或定位
-    scrollTimer = setTimeout(() => {
-      rafId = requestAnimationFrame(updatePos)
-    }, 100)
+    // 正文对齐后直接在下一帧抓取坐标呈现，无需等待中间定时器
+    rafId = requestAnimationFrame(updatePos)
 
     container.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onScroll, { passive: true })
@@ -534,13 +542,14 @@ export default function ReviewReader({
       window.removeEventListener('resize', onScroll)
     }
   }, [selectedId])
+
   useEffect(() => {
     if (!selectedId || !flowRef.current) return
     if (positionSavedRef.current) { positionSavedRef.current = false; return }
     const err = flatErrors.find(e => e.id === selectedId)
     if (!err) return
     const el = flowRef.current.querySelector(`[data-para="${err.paragraph_index}"]`)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (el) el.scrollIntoView({ behavior: 'auto', block: 'center' })
     autoSelectRef.current = false
   }, [selectedId, flatErrors])
 
@@ -579,12 +588,14 @@ export default function ReviewReader({
     prevPendingCount.current = pending.length
   }, [pending.length, flatErrors])
 
-  const handleStatus = async (status) => {
+  const handleStatus = (status) => {
     if (!selectedId) return
+    const curId = selectedId
     const custom = status === 'accepted' && customEdit !== selectedError?.suggested_text
       ? customEdit : undefined
-    await onSetStatus(selectedId, status, custom)
-    const idx = pending.findIndex(e => e.id === selectedId)
+
+    // 0ms 瞬间切换到下一个问题（乐观更新，完全消除 HTTP 延迟导致的切题卡顿）
+    const idx = pending.findIndex(e => e.id === curId)
     if (idx >= 0 && idx + 1 < pending.length) {
       setSelectedId(pending[idx + 1].id)
     } else if (idx > 0) {
@@ -592,6 +603,11 @@ export default function ReviewReader({
     } else {
       setSelectedId(null)
     }
+
+    // 异步提交，不阻塞 UI 渲染
+    onSetStatus(curId, status, custom).catch(() => {
+      message.error('操作保存失败，请刷新重试')
+    })
   }
 
   useEffect(() => {
@@ -890,6 +906,7 @@ export default function ReviewReader({
                   models={models}
                   selectedTypes={selectedTypes} onTypesChange={onTypesChange}
                   batchMaxConcurrent={batchMaxConcurrent} onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
+                  proofreadWindowSize={proofreadWindowSize} onWindowSizeChange={onWindowSizeChange}
                   inProgress={inProgress}
                 />
               }
@@ -936,16 +953,24 @@ export default function ReviewReader({
                   size="large"
                   placeholder="修改结果…"
                 />
+                <style>{`
+                  .bar-action-btn {
+                    transition: transform 0.08s cubic-bezier(0, 0, 0.2, 1), background 0.15s, box-shadow 0.15s !important;
+                  }
+                  .bar-action-btn:active:not(:disabled) {
+                    transform: scale(0.95) !important;
+                  }
+                `}</style>
                 <Button
                   type="primary"
                   shape="round"
                   size="large"
+                  className="bar-action-btn"
                   icon={<CheckCircleOutlined />}
                   onClick={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
                   disabled={inProgress}
                   style={{
                     height: 48, paddingInline: 32, fontSize: 16,
-                    transition: 'background 0.15s, box-shadow 0.15s',
                     background: flashSide === 'accepted' ? '#52c41a' : undefined,
                     boxShadow: flashSide === 'accepted' ? '0 0 0 3px rgba(82,196,26,0.3)' : undefined,
                   }}
@@ -954,12 +979,12 @@ export default function ReviewReader({
                 </Button>
                 <Button
                   size="large"
+                  className="bar-action-btn"
                   icon={<CloseCircleOutlined />}
                   onClick={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
                   disabled={inProgress}
                   style={{
                     height: 48, paddingInline: 32, fontSize: 16,
-                    transition: 'background 0.15s, box-shadow 0.15s',
                     background: flashSide === 'rejected' ? '#ff4d4f' : undefined,
                     color: flashSide === 'rejected' ? '#fff' : undefined,
                     borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
@@ -985,6 +1010,7 @@ export default function ReviewReader({
               type="primary"
               shape="round"
               size="large"
+              className="bar-action-btn"
               icon={<ThunderboltOutlined />}
               loading={proofreading}
               onClick={() => onStartSelectionProofread?.([...selectedParas])}
@@ -1001,6 +1027,7 @@ export default function ReviewReader({
               type="primary"
               shape="round"
               size="large"
+              className="bar-action-btn"
               icon={<ThunderboltOutlined />}
               loading={proofreading}
               onClick={onStartProofread}
@@ -1012,12 +1039,13 @@ export default function ReviewReader({
             <Button
               shape="round"
               size="large"
+              className="bar-action-btn"
               icon={<ThunderboltOutlined />}
               loading={proofreading}
               onClick={onStartBatchProofread}
               disabled={inProgress}
               style={{ height: 52, paddingInline: 28, fontSize: 16, marginLeft: 8 }}
-              title="批量并行校对多窗口（每个窗口 30 段，并发数可在设置中调整）"
+              title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
             >
               批量校对
             </Button>
@@ -1171,6 +1199,7 @@ function ControlsRow({
   selectedModel, onModelChange, models,
   selectedTypes, onTypesChange,
   batchMaxConcurrent, onBatchMaxConcurrentChange,
+  proofreadWindowSize, onWindowSizeChange,
   inProgress,
 }) {
   if (!showOptions) return null
@@ -1209,6 +1238,21 @@ function ControlsRow({
         />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>窗口</span>
+        <InputNumber
+          min={5}
+          max={100}
+          size="small"
+          style={{ width: 80 }}
+          value={proofreadWindowSize}
+          disabled={inProgress}
+          onChange={(val) => onWindowSizeChange?.(val || 5)}
+        />
+        <span style={{ fontSize: 11, color: color.textSecondary }}>
+          段/窗口
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>并发</span>
         <InputNumber
           min={1}
@@ -1220,7 +1264,7 @@ function ControlsRow({
           onChange={(val) => onBatchMaxConcurrentChange?.(val || 1)}
         />
         <span style={{ fontSize: 11, color: color.textSecondary }}>
-          窗口（批量并发处理 {(batchMaxConcurrent || 1) * 30} 段）
+          窗口（单次批量并发处理 {(batchMaxConcurrent || 1) * (proofreadWindowSize || 30)} 段）
         </span>
       </div>
     </div>

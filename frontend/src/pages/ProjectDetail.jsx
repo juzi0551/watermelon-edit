@@ -11,15 +11,13 @@ import {
 import {
   getProject, uploadToProject, getModels, startProofread,
   getResults, setErrorStatus, acceptAll, exportDoc,
-  getLLMLog, getBatchStatus, retryWindow, getPrompts, saveBatchConcurrency,
+  getLLMLog, getBatchStatus, retryWindow, getPrompts, saveBatchConcurrency, saveWindowSize,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
 import { color } from '../design-tokens'
 
 const { Title, Text } = Typography
 const { Dragger } = Upload
-
-const WINDOW = 30
 
 export default function ProjectDetail() {
   const { projectId } = useParams()
@@ -57,6 +55,11 @@ export default function ProjectDetail() {
   const [batchMaxConcurrent, setBatchMaxConcurrent] = useState(
     () => {
       try { return parseInt(localStorage.getItem('batch_max_concurrent') || '2', 10) || 2 } catch { return 2 }
+    }
+  )
+  const [proofreadWindowSize, setProofreadWindowSize] = useState(
+    () => {
+      try { return parseInt(localStorage.getItem('proofread_window_size') || '30', 10) || 30 } catch { return 30 }
     }
   )
 
@@ -141,12 +144,18 @@ export default function ProjectDetail() {
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
   useEffect(() => { localStorage.setItem('proofread_types', JSON.stringify(selectedTypes)) }, [selectedTypes])
 
-  // sync batch concurrency from backend DB setting
+  // sync settings from backend DB
   useEffect(() => {
     getPrompts().then(data => {
-      if (data && data.batch_max_concurrent) {
-        setBatchMaxConcurrent(data.batch_max_concurrent)
-        localStorage.setItem('batch_max_concurrent', String(data.batch_max_concurrent))
+      if (data) {
+        if (data.batch_max_concurrent) {
+          setBatchMaxConcurrent(data.batch_max_concurrent)
+          localStorage.setItem('batch_max_concurrent', String(data.batch_max_concurrent))
+        }
+        if (data.proofread_window_size) {
+          setProofreadWindowSize(data.proofread_window_size)
+          localStorage.setItem('proofread_window_size', String(data.proofread_window_size))
+        }
       }
     }).catch(() => {})
   }, [])
@@ -156,6 +165,13 @@ export default function ProjectDetail() {
     setBatchMaxConcurrent(num)
     localStorage.setItem('batch_max_concurrent', String(num))
     saveBatchConcurrency(num).catch(() => {})
+  }
+
+  const handleWindowSizeChange = (val) => {
+    const num = Math.max(5, Math.min(val || 5, 100))
+    setProofreadWindowSize(num)
+    localStorage.setItem('proofread_window_size', String(num))
+    saveWindowSize(num).catch(() => {})
   }
 
   const handleUpload = async (file) => {
@@ -180,6 +196,7 @@ export default function ProjectDetail() {
         model: selectedModel,
         types: selectedTypes,
         chapter_id: mode === 'chapter' ? selectedChapter : undefined,
+        window_size: proofreadWindowSize,
       }
       const res = await startProofread(projectId, payload)
       if (res.error) {
@@ -197,7 +214,7 @@ export default function ProjectDetail() {
         message.info(res.message)
       }
       const runBatch = mode === 'continue'
-        ? Math.floor((project?.proofread_upto || 0) / WINDOW) + 1
+        ? Math.floor((project?.proofread_upto || 0) / proofreadWindowSize) + 1
         : null
       setRunningBatch(runBatch)
       await pollProofread(runBatch)
@@ -251,6 +268,7 @@ export default function ProjectDetail() {
         model: selectedModel,
         types: selectedTypes,
         max_concurrent: batchMaxConcurrent,
+        window_size: proofreadWindowSize,
       })
       if (res.error) { message.error(res.error); setProofreading(false); return }
       if (res.status === 'skipped') { message.info(res.message); setProofreading(false); loadProject(); return }
@@ -382,7 +400,7 @@ export default function ProjectDetail() {
   const chapters = results?.chapters || []
 
   const windowStart = upto
-  const windowEnd = Math.min(upto + WINDOW, total)
+  const windowEnd = Math.min(upto + proofreadWindowSize, total)
   const inProgress = proofreading || project?.status === 'proofreading'
   const percent = total > 0 ? Math.round((upto / total) * 100) : 0
   const bannerText = mode === 'continue' && runningBatch
@@ -566,6 +584,8 @@ export default function ProjectDetail() {
                     retryingWindow={retryingWindow}
                     batchMaxConcurrent={batchMaxConcurrent}
                     onBatchMaxConcurrentChange={handleBatchMaxConcurrentChange}
+                    proofreadWindowSize={proofreadWindowSize}
+                    onWindowSizeChange={handleWindowSizeChange}
                   />
               )}
             </div>

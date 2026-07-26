@@ -38,6 +38,14 @@ def get_max_concurrent() -> int:
         return 2
 
 
+def get_window_size() -> int:
+    try:
+        val = int(get_setting("proofread_window_size", "30"))
+        return max(5, min(val, 100))
+    except (ValueError, TypeError):
+        return 30
+
+
 _RUNNING = set()
 
 
@@ -49,6 +57,7 @@ class ProofreadRequest(BaseModel):
     paragraph_indices: list[int] | None = None
     batch_id: str | None = None  # batch 模式时由后端自动填充
     max_concurrent: int | None = None
+    window_size: int | None = None
 
 
 @router.post("/projects/{project_id}/proofread")
@@ -136,10 +145,11 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
     try:
         total = await asyncio.to_thread(get_paragraph_count, doc_id)
         progress = await asyncio.to_thread(get_document_progress, doc_id)
+        window_size = req.window_size or get_window_size()
         # 不再全量读取所有段落，按各模式实际需要的范围查询
 
         if req.mode == "continue":
-            # 只处理「下一个窗口」（WINDOW_SIZE 段），发完即停；等用户手动点「继续校对」再发下一批
+            # 只处理「下一个窗口」（window_size 段），发完即停；等用户手动点「继续校对」再发下一批
             range_start = progress["proofread_upto"]
             range_end = total
             types = req.types or progress["proofread_types"]
@@ -148,7 +158,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             delete_chapters_in_range(doc_id, range_start, total)
             sort_base = len(get_chapters(doc_id))
             ws = range_start
-            we = min(ws + WINDOW_SIZE, range_end)
+            we = min(ws + window_size, range_end)
             # 只读当前窗口的 30 段，不读全文
             window_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, ws, we)
             window_paras = [(p["idx"], p["text"]) for p in window_rows]
@@ -210,8 +220,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             update_project_status(project_id, "proofreading")
             delete_errors_by_indices(doc_id, req.paragraph_indices)
             found_errors = 0
-            for ws in range(0, len(req.paragraph_indices), WINDOW_SIZE):
-                batch = req.paragraph_indices[ws:ws + WINDOW_SIZE]
+            for ws in range(0, len(req.paragraph_indices), window_size):
+                batch = req.paragraph_indices[ws:ws + window_size]
                 # 只查询这一批选中的段落，不读全文
                 batch_rows = await asyncio.to_thread(get_paragraphs_by_indices, doc_id, batch)
                 window_paras = [(p["idx"], p["text"]) for p in batch_rows]
@@ -269,8 +279,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             found_errors = 0
             found_chapters = 0
             max_processed = range_start
-            for ws in range(range_start, range_end, WINDOW_SIZE):
-                we = min(ws + WINDOW_SIZE, range_end)
+            for ws in range(range_start, range_end, window_size):
+                we = min(ws + window_size, range_end)
                 window_paras = [(i, chapter_text_by_idx[i]) for i in range(ws, we) if i in chapter_text_by_idx]
                 if not window_paras:
                     continue
@@ -334,7 +344,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             windows: list[tuple[int, int]] = []
             ws = range_start
             while ws < total and len(windows) < max_concurrent:
-                we = min(ws + WINDOW_SIZE, total)
+                we = min(ws + window_size, total)
                 windows.append((ws, we))
                 ws = we
 

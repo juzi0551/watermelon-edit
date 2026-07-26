@@ -18,8 +18,9 @@ export default function Settings() {
   const [promptProofread, setPromptProofread] = useState('')
   const [promptSaving, setPromptSaving] = useState(false)
 
-  // batch concurrency state
+  // batch concurrency & window size state
   const [batchMaxConcurrent, setBatchMaxConcurrent] = useState(2)
+  const [proofreadWindowSize, setProofreadWindowSize] = useState(30)
   const [batchSaving, setBatchSaving] = useState(false)
 
   const navigate = useNavigate()
@@ -35,6 +36,7 @@ export default function Settings() {
       setPromptGeneral(promptsData.system_prompt_general)
       setPromptProofread(promptsData.system_prompt_proofread)
       setBatchMaxConcurrent(promptsData.batch_max_concurrent || 2)
+      setProofreadWindowSize(promptsData.proofread_window_size || 30)
     } finally {
       setLoading(false)
     }
@@ -260,13 +262,27 @@ export default function Settings() {
         </Button>
       </Card>
 
-      <Card title={<Space><ThunderboltOutlined /> 批量校对并发设置</Space>} style={{ marginTop: 16 }}>
+      <Card title={<Space><ThunderboltOutlined /> 校对窗口与并发设置</Space>} style={{ marginTop: 16 }}>
         <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          设置“批量校对”触发时同时运行的并行窗口数量上限。每个窗口包含 30 个段落。
+          配置校对时的单个 LLM 窗口段落数量以及“批量校对”时的并行窗口并发数量。
         </Text>
 
         <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Text strong>最大并发窗口数：</Text>
+          <Text strong style={{ minWidth: 120 }}>单窗口段落数量：</Text>
+          <InputNumber
+            min={5}
+            max={100}
+            value={proofreadWindowSize}
+            onChange={(val) => setProofreadWindowSize(val || 5)}
+            style={{ width: 120 }}
+          />
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            （默认：30 段。范围：5 ~ 100 段）
+          </Text>
+        </div>
+
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Text strong style={{ minWidth: 120 }}>最大并发窗口数：</Text>
           <InputNumber
             min={1}
             max={20}
@@ -275,7 +291,7 @@ export default function Settings() {
             style={{ width: 120 }}
           />
           <Text type="secondary" style={{ fontSize: 13 }}>
-            （推荐：2 ~ 5。设为 {batchMaxConcurrent} 时，每次点击批量校对 {batchMaxConcurrent * 30} 段落）
+            （推荐：2 ~ 5。单次批量并发处理 {batchMaxConcurrent * proofreadWindowSize} 段）
           </Text>
         </div>
 
@@ -287,8 +303,8 @@ export default function Settings() {
           onClick={async () => {
             setBatchSaving(true)
             try {
-              await savePrompts(promptGeneral, promptProofread, batchMaxConcurrent)
-              message.success('并发数设置已保存')
+              await savePrompts(promptGeneral, promptProofread, batchMaxConcurrent, proofreadWindowSize)
+              message.success('窗口与并发设置已保存')
             } catch {
               message.error('保存失败')
             } finally {
@@ -296,7 +312,7 @@ export default function Settings() {
             }
           }}
         >
-          保存并发设置
+          保存窗口与并发设置
         </Button>
       </Card>
     </div>

@@ -84,6 +84,7 @@ PROVIDERS = {
         "api_base": "http://localhost:8045/v1",
         "models": [
             {"id": "gemini-3.6-flash-medium", "name": "Gemini 3.6 Flash Medium"},
+            {"id": "gemini-3.6-flash-high", "name": "Gemini 3.6 Flash High"},
         ],
     },
 }

@@ -60,10 +60,15 @@ async def get_prompts():
         max_concurrent = int(all_s.get("batch_max_concurrent", "2"))
     except (ValueError, TypeError):
         max_concurrent = 2
+    try:
+        window_size = int(all_s.get("proofread_window_size", "30"))
+    except (ValueError, TypeError):
+        window_size = 30
     return {
         "system_prompt_general": all_s.get("system_prompt_general", ""),
         "system_prompt_proofread": all_s.get("system_prompt_proofread", ""),
         "batch_max_concurrent": max_concurrent,
+        "proofread_window_size": window_size,
     }
 
 
@@ -71,6 +76,7 @@ class UpdatePromptsRequest(BaseModel):
     system_prompt_general: str | None = None
     system_prompt_proofread: str | None = None
     batch_max_concurrent: int | None = None
+    proofread_window_size: int | None = None
 
 
 @router.put("/settings/prompts")
@@ -82,6 +88,9 @@ async def update_prompts(req: UpdatePromptsRequest):
     if req.batch_max_concurrent is not None:
         val = max(1, min(req.batch_max_concurrent, 20))
         set_setting("batch_max_concurrent", str(val))
+    if req.proofread_window_size is not None:
+        ws = max(5, min(req.proofread_window_size, 100))
+        set_setting("proofread_window_size", str(ws))
     return {"status": "ok"}
 
 

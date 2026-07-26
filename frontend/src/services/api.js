@@ -66,17 +66,23 @@ export async function getPrompts() {
   return data
 }
 
-export async function savePrompts(general, proofread, batchMaxConcurrent) {
+export async function savePrompts(general, proofread, batchMaxConcurrent, proofreadWindowSize) {
   const payload = {}
   if (general !== undefined) payload.system_prompt_general = general
   if (proofread !== undefined) payload.system_prompt_proofread = proofread
   if (batchMaxConcurrent !== undefined) payload.batch_max_concurrent = batchMaxConcurrent
+  if (proofreadWindowSize !== undefined) payload.proofread_window_size = proofreadWindowSize
   const { data } = await api.put('/settings/prompts', payload)
   return data
 }
 
 export async function saveBatchConcurrency(batchMaxConcurrent) {
   const { data } = await api.put('/settings/prompts', { batch_max_concurrent: batchMaxConcurrent })
+  return data
+}
+
+export async function saveWindowSize(proofreadWindowSize) {
+  const { data } = await api.put('/settings/prompts', { proofread_window_size: proofreadWindowSize })
   return data
 }
 
