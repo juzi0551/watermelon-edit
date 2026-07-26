@@ -77,6 +77,15 @@ PROVIDERS = {
             {"id": "moonshotai/kimi-k2.6", "name": "Kimi K2.6"},
         ],
     },
+    "local": {
+        "name": "本地代理",
+        "env_key": "LOCAL_API_KEY",
+        "litellm_prefix": "openai",
+        "api_base": "http://localhost:8045/v1",
+        "models": [
+            {"id": "gemini-3.6-flash-medium", "name": "Gemini 3.6 Flash Medium"},
+        ],
+    },
 }
 
 
