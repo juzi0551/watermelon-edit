@@ -81,7 +81,7 @@ export default function ProjectList() {
       key: 'name',
       render: (text, record) => (
         <Space>
-          <a onClick={() => navigate(`/project/${record.id}`)}>{text}</a>
+          <a style={{ color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate(`/project/${record.id}`)}>{text}</a>
           {record.is_locked === 1 && <Tag color="gold" icon={<LockOutlined />}>已锁定</Tag>}
         </Space>
       ),

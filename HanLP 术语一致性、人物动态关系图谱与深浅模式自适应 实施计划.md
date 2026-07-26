@@ -18,7 +18,7 @@
 ## User Review Required
 
 > [!IMPORTANT]
-> 1. **HanLP 离线轻量化引擎**：HanLP 2.x / 静态国家异形词表将作为离线分析引擎模块引入 backend，无 Token 消费，100 毫秒级抓取全文术语冲突与异形词。
+> 1. **HanLP 离线轻量化引擎与分词存储策略**：HanLP 离线分析引擎模块引入 backend，无 Token 消费。全量分词为内存流式计算（不将数万 Token 序列落库 SQLite），仅将分析计算得出的专有名词/规范词写入 `glossary_terms` 表、将一致性冲突/标点错误写入 `errors` 表。
 > 2. **深浅模式自动适配（Dark / Light Theme Auto-Adaptation）**：使用 `antd` 的 `ConfigProvider` 配合 `theme.darkAlgorithm` / `theme.defaultAlgorithm`，自动响应系统 `prefers-color-scheme: dark`，并在顶部导航栏提供手动切换控制（`跟随系统` / `☀️ 浅色` / `🌙 深色`）。
 > 3. **第五种问题类型 `style` (润色建议)**：在校对界面中，除了原本的“错别字、语法、标点、格式”外，新增 **“润色建议 (style)”** 分类展示。
 

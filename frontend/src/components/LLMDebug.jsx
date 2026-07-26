@@ -181,7 +181,7 @@ function HistoryTab() {
               <Space wrap>
                 {detail.prompt_tokens != null && <Text type="secondary">输入 {detail.prompt_tokens} tokens</Text>}
                 {detail.completion_tokens != null && <Text type="secondary">输出 {detail.completion_tokens} tokens</Text>}
-                {detail.total_tokens != null && <Tag color="blue">{detail.total_tokens} tokens</Tag>}
+                {detail.total_tokens != null && <Tag color="gold">{detail.total_tokens} tokens</Tag>}
                 {detail.cost != null && <Text type="secondary">费用 ¥{Number(detail.cost).toFixed(6)}</Text>}
               </Space>
             )}

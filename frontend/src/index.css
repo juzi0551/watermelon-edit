@@ -1,0 +1,252 @@
+:root {
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: var(--color-bgPage, #ffffff);
+  color: var(--color-textPrimary, #333333);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* 全局 HTML 链接 0 蓝色强力重置 */
+a, .ant-btn-link, .ant-typography a {
+  color: var(--color-primary, #374151) !important;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+a:hover, .ant-btn-link:hover, .ant-typography a:hover {
+  color: var(--color-primary, #d4a359) !important;
+  text-decoration: underline;
+}
+
+[data-theme='dark'] a,
+[data-theme='dark'] .ant-btn-link,
+[data-theme='dark'] .ant-typography a {
+  color: var(--color-primary, #d4a359) !important;
+}
+
+/* 全局 Primary 主按钮 0 蓝色强力重置（新建项目、开始校对、导出校稿版等） */
+.ant-btn-primary {
+  background-color: var(--color-primary, #374151) !important;
+  border-color: var(--color-primary, #374151) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background-color: #4b5563 !important;
+  border-color: #4b5563 !important;
+  color: #ffffff !important;
+  opacity: 0.95;
+}
+
+[data-theme='dark'] .ant-btn-primary {
+  background-color: var(--color-primary, #d4a359) !important;
+  border-color: var(--color-primary, #d4a359) !important;
+  color: #141414 !important;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .ant-btn-primary:hover,
+[data-theme='dark'] .ant-btn-primary:focus {
+  background-color: #f5d089 !important;
+  border-color: #f5d089 !important;
+  color: #141414 !important;
+}
+
+/* Antd Modal, Drawer, Popover, Popconfirm, Dropdown 弹出窗口在深色模式下的完全统一 */
+[data-theme='dark'] .ant-modal-content,
+[data-theme='dark'] .ant-modal-header,
+[data-theme='dark'] .ant-drawer-content,
+[data-theme='dark'] .ant-drawer-header,
+[data-theme='dark'] .ant-popover-inner,
+[data-theme='dark'] .ant-popconfirm-inner,
+[data-theme='dark'] .ant-dropdown-menu {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+  border-color: var(--color-border, #303030) !important;
+}
+
+[data-theme='dark'] .ant-modal-title,
+[data-theme='dark'] .ant-drawer-title,
+[data-theme='dark'] .ant-popover-title,
+[data-theme='dark'] .ant-popconfirm-title,
+[data-theme='dark'] .ant-popconfirm-description,
+[data-theme='dark'] .ant-dropdown-menu-item {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+
+[data-theme='dark'] .ant-dropdown-menu-item:hover,
+[data-theme='dark'] .ant-dropdown-menu-item-active {
+  background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
+}
+
+[data-theme='dark'] .ant-modal-close,
+[data-theme='dark'] .ant-drawer-close {
+  color: var(--color-textSecondary, #a6a6a6) !important;
+}
+
+[data-theme='dark'] .ant-modal-close:hover,
+[data-theme='dark'] .ant-drawer-close:hover {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+
+/* 输入框、文本域与 Select 下拉框深色自适应 */
+[data-theme='dark'] .ant-input,
+[data-theme='dark'] .ant-input-affix-wrapper,
+[data-theme='dark'] .ant-input-number,
+[data-theme='dark'] .ant-select-selector,
+[data-theme='dark'] .ant-select-dropdown {
+  background-color: var(--color-bgPage, #141414) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+  border-color: var(--color-borderBar, #424242) !important;
+}
+
+[data-theme='dark'] .ant-select-item-option {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+[data-theme='dark'] .ant-select-item-option-active,
+[data-theme='dark'] .ant-select-item-option-selected {
+  background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
+}
+
+/* Antd Tabs 页签与指示条 */
+.ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--color-primary, #374151) !important;
+  font-weight: 600;
+}
+[data-theme='dark'] .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--color-primary, #d4a359) !important;
+}
+.ant-tabs-ink-bar {
+  background: var(--color-primary, #374151) !important;
+}
+[data-theme='dark'] .ant-tabs-ink-bar {
+  background: var(--color-primary, #d4a359) !important;
+}
+
+/* Radio / Checkbox 选中态 */
+.ant-radio-checked .ant-radio-inner {
+  border-color: var(--color-primary, #374151) !important;
+  background-color: var(--color-primary, #374151) !important;
+}
+.ant-checkbox-checked .ant-checkbox-inner {
+  background-color: var(--color-primary, #374151) !important;
+  border-color: var(--color-primary, #374151) !important;
+}
+[data-theme='dark'] .ant-radio-checked .ant-radio-inner {
+  border-color: var(--color-primary, #d4a359) !important;
+  background-color: var(--color-primary, #d4a359) !important;
+}
+[data-theme='dark'] .ant-checkbox-checked .ant-checkbox-inner {
+  background-color: var(--color-primary, #d4a359) !important;
+  border-color: var(--color-primary, #d4a359) !important;
+}
+
+/* 进度条 */
+.ant-progress-bg {
+  background-color: var(--color-primary, #374151) !important;
+}
+[data-theme='dark'] .ant-progress-bg {
+  background-color: var(--color-primary, #d4a359) !important;
+}
+
+/* 确保深色模式下所有文本、标题、按钮、表格、列表卡片无障碍高对比度渲染 */
+[data-theme='dark'] .ant-typography,
+[data-theme='dark'] .ant-card-head-title,
+[data-theme='dark'] .ant-list-item,
+[data-theme='dark'] .ant-table,
+[data-theme='dark'] .ant-table-cell,
+[data-theme='dark'] .ant-btn-text,
+[data-theme='dark'] .ant-btn-default {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+
+[data-theme='dark'] .ant-card {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
+  border-color: var(--color-border, #303030) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+
+[data-theme='dark'] .ant-card-head {
+  border-bottom-color: var(--color-border, #303030) !important;
+}
+
+/* 默认按钮在深色模式下的对比度 */
+[data-theme='dark'] .ant-btn-default {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
+  border-color: var(--color-borderBar, #424242) !important;
+}
+
+[data-theme='dark'] .ant-btn-default:hover {
+  background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
+  color: var(--color-primary, #d4a359) !important;
+  border-color: var(--color-primary, #d4a359) !important;
+}
+
+/* 上传拖拽框在深色模式下的外观 */
+[data-theme='dark'] .ant-upload-wrapper .ant-upload-drag {
+  background-color: var(--color-bgReader, #1e1c18) !important;
+  border-color: var(--color-borderBar, #424242) !important;
+}
+[data-theme='dark'] .ant-upload-wrapper .ant-upload-drag .ant-upload-text {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+
+/* 表格整体、Header、Row 与 Hover 状态 */
+[data-theme='dark'] .ant-table {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
+}
+
+[data-theme='dark'] .ant-table-wrapper .ant-table-thead > tr > th {
+  background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+  border-bottom-color: var(--color-border, #303030) !important;
+}
+
+[data-theme='dark'] .ant-table-wrapper .ant-table-tbody > tr {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
+}
+
+[data-theme='dark'] .ant-table-wrapper .ant-table-tbody > tr > td {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+  border-bottom-color: var(--color-border, #303030) !important;
+}
+
+[data-theme='dark'] .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td,
+[data-theme='dark'] .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
+}
+
+/* List 列表行背景色 */
+[data-theme='dark'] .ant-list-items .ant-list-item {
+  border-bottom-color: var(--color-border, #303030) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+
+/* 优雅滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-textMuted, #bbb);
+  border-radius: 3px;
+}
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: var(--color-borderBar, #424242);
+}

@@ -924,7 +924,7 @@ export default function ReviewReader({
                 const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
                 const pbInfo = {
                   original: { label: '📄 原文硬分页', border: '#e8e8e8', color: '#8c8c8c' },
-                  auto_chapter: { label: '📖 章节开页', border: '#adc6ff', color: '#2f54eb' },
+                  auto_chapter: { label: '📖 章节开页', border: '#ffe58f', color: '#d48806' },
                   manual: { label: '✂️ 新增硬分页', border: '#ffd591', color: '#d46b08' },
                 }[pbType]
 
@@ -967,7 +967,7 @@ export default function ReviewReader({
                                 style={{
                                 position: 'relative',
                                 zIndex: 1,
-                                background: '#fff',
+                                background: color.bgReader,
                                 padding: '2px 12px',
                                 borderRadius: 12,
                                 border: `1px solid ${pbInfo.border}`,
@@ -986,7 +986,7 @@ export default function ReviewReader({
                           <span style={{
                             position: 'relative',
                             zIndex: 1,
-                            background: '#fff',
+                            background: color.bgReader,
                             padding: '0 10px',
                             color: pbInfo.color,
                             fontSize: 11,
@@ -1011,18 +1011,18 @@ export default function ReviewReader({
                         borderRadius: 6,
                         transition: 'all 0.15s ease',
                         background: isActive
-                          ? 'rgba(24, 144, 255, 0.08)'
+                          ? 'rgba(212, 163, 89, 0.12)'
                           : isHover
                           ? 'rgba(0, 0, 0, 0.025)'
                           : isCh
-                          ? 'rgba(24, 144, 255, 0.03)'
+                          ? 'rgba(212, 163, 89, 0.04)'
                           : 'transparent',
                         borderLeft: isActive
-                          ? '4px solid #1890ff'
+                          ? '4px solid #d4a359'
                           : isHover
-                          ? '4px solid #69b1ff'
+                          ? '4px solid #f5d089'
                           : isCh
-                          ? '4px solid #adc6ff'
+                          ? '4px solid #ffe58f'
                           : '4px solid transparent',
                       }}
                     >
@@ -1048,7 +1048,7 @@ export default function ReviewReader({
                         {para.idx}
                       </span>
 
-                      <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize, flex: 1 }}>
+                      <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize, flex: 1, color: color.textPrimary }}>
                         {isEditing ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <Input.TextArea
@@ -1067,9 +1067,9 @@ export default function ReviewReader({
                             </Space>
                           </div>
                         ) : (
-                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer' }}>
+                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary }}>
                             {isCh && (
-                              <Tag color="blue" style={{ marginBottom: 4, marginRight: 6 }}>
+                              <Tag color="gold" style={{ marginBottom: 4, marginRight: 6 }}>
                                 📖 章节 ({chapterObj?.level === 2 ? '节' : '章'})
                               </Tag>
                             )}
@@ -1097,13 +1097,13 @@ export default function ReviewReader({
                           left: (isActive && toolbarPos) ? toolbarPos.x : 'auto',
                           right: (isActive && toolbarPos) ? 'auto' : 12,
                           zIndex: 10,
-                          background: 'rgba(255, 255, 255, 0.60)',
-                          backdropFilter: 'blur(2px)',
-                          WebkitBackdropFilter: 'blur(2px)',
+                          background: color.bgCard,
+                          backdropFilter: 'blur(4px)',
+                          WebkitBackdropFilter: 'blur(4px)',
                           padding: '3px 8px',
                           borderRadius: 20,
-                          boxShadow: '0 4px 16px rgba(0,0,0,0.14), 0 1px 4px rgba(0,0,0,0.06)',
-                          border: '1px solid #e8e8e8',
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.12)',
+                          border: `1px solid ${color.borderBar}`,
                           display: 'flex',
                           alignItems: 'center',
                           gap: 4,
@@ -1381,10 +1381,10 @@ export default function ReviewReader({
                     return (
                       <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ fontSize: 16,
-                          color: isRetrying ? '#1677ff'
+                          color: isRetrying ? '#d4a359'
                             : w.status === 'ok' ? '#52c41a'
                             : w.status === 'failed' ? '#ff4d4f'
-                            : '#1677ff' }}>
+                            : '#d4a359' }}>
                           {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
                         </span>
                         <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>

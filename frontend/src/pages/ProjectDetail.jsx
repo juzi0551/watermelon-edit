@@ -15,6 +15,7 @@ import {
   toggleProjectLock, cleanEmptyParagraphs,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
+import ThemeSwitcher from '../components/ThemeSwitcher'
 import { color } from '../design-tokens'
 
 const { Title, Text } = Typography
@@ -505,7 +506,7 @@ export default function ProjectDetail() {
                   disabled={project?.is_locked === 1 || inProgress}
                   shape="round"
                 >
-                  清空行
+                  一键清空行
                 </Button>
               </Tooltip>
             </Popconfirm>
@@ -524,6 +525,7 @@ export default function ProjectDetail() {
             >
               LLM 实时
             </Button>
+            <ThemeSwitcher buttonType="default" />
             <Button
               type="primary"
               shape="round"
@@ -557,10 +559,11 @@ export default function ProjectDetail() {
               width: chaptersOpen ? 260 : 0,
               overflow: 'hidden',
               flexShrink: 0,
-              transition: 'width 0.2s ease',
               height: '100%',
-              display: 'flex',
+              display: chaptersOpen ? 'flex' : 'none',
               flexDirection: 'column',
+              paddingRight: 12,
+              borderRight: '1px solid var(--color-border)',
             }}>
               <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
