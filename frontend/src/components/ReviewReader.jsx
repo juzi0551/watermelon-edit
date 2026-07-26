@@ -1340,8 +1340,8 @@ export default function ReviewReader({
                 type="text"
                 size="middle"
                 style={{
-                  color: color.textTertiary, fontSize: 13, whiteSpace: 'nowrap',
-                  maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
+                  color: color.textPrimary, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
+                  maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
                 }}
               >
                 {showOptions ? '◀' : '▶'} 校对配置 ({
@@ -1624,9 +1624,9 @@ function ControlsRow({
 }) {
   if (!showOptions) return null
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>模型</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>模型</span>
         <Select
           style={{ flex: 1 }}
           popupMatchSelectWidth={false}
@@ -1637,8 +1637,8 @@ function ControlsRow({
           size="small"
         />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>分类</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>分类</span>
         <Select
           mode="multiple"
           style={{ flex: 1 }}
@@ -1650,15 +1650,25 @@ function ControlsRow({
           tagRender={(props) => {
             const { label, closable, onClose } = props
             return (
-              <Tag closable={closable} onClose={onClose} style={{ margin: 0, fontSize: 11 }}>
+              <Tag
+                closable={closable}
+                onClose={onClose}
+                style={{
+                  margin: '1px 2px',
+                  fontSize: 11,
+                  background: 'var(--color-bgPage)',
+                  color: 'var(--color-textPrimary)',
+                  borderColor: 'var(--color-borderBar)',
+                }}
+              >
                 {label}
               </Tag>
             )
           }}
         />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>窗口</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>窗口</span>
         <InputNumber
           min={5}
           max={100}
@@ -1668,12 +1678,12 @@ function ControlsRow({
           disabled={inProgress}
           onChange={(val) => onWindowSizeChange?.(val || 5)}
         />
-        <span style={{ fontSize: 11, color: color.textSecondary }}>
+        <span style={{ fontSize: 12, color: color.textSecondary }}>
           段/窗口
         </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12, color: color.textSecondary, whiteSpace: 'nowrap' }}>并发</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>并发</span>
         <InputNumber
           min={1}
           max={20}
@@ -1683,8 +1693,8 @@ function ControlsRow({
           disabled={inProgress}
           onChange={(val) => onBatchMaxConcurrentChange?.(val || 1)}
         />
-        <span style={{ fontSize: 11, color: color.textSecondary }}>
-          窗口（单次批量并发处理 {(batchMaxConcurrent || 1) * (proofreadWindowSize || 30)} 段）
+        <span style={{ fontSize: 12, color: color.textSecondary }}>
+          窗口（单次并发处理 {(batchMaxConcurrent || 1) * (proofreadWindowSize || 30)} 段）
         </span>
       </div>
     </div>

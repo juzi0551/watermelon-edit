@@ -77,6 +77,17 @@ PROVIDERS = {
             {"id": "moonshotai/kimi-k2.6", "name": "Kimi K2.6"},
         ],
     },
+    "nvidia": {
+        "name": "NVIDIA Cloud AI",
+        "env_key": "NVIDIA_API_KEY",
+        "litellm_prefix": "openai",
+        "api_base": "https://integrate.api.nvidia.com/v1",
+        "models": [
+            {"id": "moonshotai/kimi-k2.6", "name": "Kimi K2.6 (NVIDIA)"},
+            {"id": "z-ai/glm-5.2", "name": "GLM 5.2 (NVIDIA)"},
+            {"id": "deepseek-ai/deepseek-v4-pro", "name": "DeepSeek V4 Pro (NVIDIA)"},
+        ],
+    },
     "local": {
         "name": "本地代理",
         "env_key": "LOCAL_API_KEY",

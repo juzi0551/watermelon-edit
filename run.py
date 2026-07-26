@@ -39,6 +39,11 @@ def ensure_user_data(base_dir):
 
 def main():
     base_dir = get_base_dir()
+    backend_dir = os.path.join(base_dir, 'backend')
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
+    if base_dir not in sys.path:
+        sys.path.insert(0, base_dir)
     user_data = ensure_user_data(base_dir)
 
     # === Patch 路径：让后端代码写数据到用户目录 ===

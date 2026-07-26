@@ -101,15 +101,28 @@ a:hover, .ant-btn-link:hover, .ant-typography a:hover {
   color: var(--color-textPrimary, #e6e6e6) !important;
 }
 
-/* 输入框、文本域与 Select 下拉框深色自适应 */
+/* 输入框、文本域、InputNumber 数字框、TextArea 与 Select 深色适配 */
 [data-theme='dark'] .ant-input,
+[data-theme='dark'] textarea.ant-input,
 [data-theme='dark'] .ant-input-affix-wrapper,
 [data-theme='dark'] .ant-input-number,
+[data-theme='dark'] .ant-input-number-input,
+[data-theme='dark'] .ant-input-number-handler-wrap,
 [data-theme='dark'] .ant-select-selector,
+[data-theme='dark'] .ant-select-selection-item,
 [data-theme='dark'] .ant-select-dropdown {
   background-color: var(--color-bgPage, #141414) !important;
   color: var(--color-textPrimary, #e6e6e6) !important;
   border-color: var(--color-borderBar, #424242) !important;
+}
+
+[data-theme='dark'] .ant-input::placeholder,
+[data-theme='dark'] textarea.ant-input::placeholder {
+  color: var(--color-textMuted, #737373) !important;
+}
+
+[data-theme='dark'] .ant-input-number-handler-wrap {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
 }
 
 [data-theme='dark'] .ant-select-item-option {
@@ -118,6 +131,25 @@ a:hover, .ant-btn-link:hover, .ant-typography a:hover {
 [data-theme='dark'] .ant-select-item-option-active,
 [data-theme='dark'] .ant-select-item-option-selected {
   background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
+}
+
+/* 标签 Tag 样式深色模式适配 */
+[data-theme='dark'] .ant-tag {
+  background-color: var(--color-bgChapterSelected, #2a2a2a);
+  border-color: var(--color-borderBar, #424242);
+  color: var(--color-textPrimary, #e6e6e6);
+}
+
+[data-theme='dark'] .ant-tag-success {
+  background-color: rgba(73, 170, 25, 0.2) !important;
+  border-color: #49aa19 !important;
+  color: #95de64 !important;
+}
+
+[data-theme='dark'] .ant-tag-warning {
+  background-color: rgba(216, 150, 20, 0.2) !important;
+  border-color: #d89614 !important;
+  color: #ffd666 !important;
 }
 
 /* Antd Tabs 页签与指示条 */
