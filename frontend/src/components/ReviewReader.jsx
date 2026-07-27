@@ -517,18 +517,34 @@ export default function ReviewReader({
     para.page_break_type = nextType
     para.has_page_break_before = nextType !== 'none' ? 1 : 0
 
+    const savedTop = flowRef.current?.scrollTop
+    if (savedTop != null && project?.id) {
+      localStorage.setItem(`reading_scrolltop_${project.id}`, savedTop)
+    }
+
     try {
       await togglePageBreak(project.id, para.idx, nextType)
       message.success(nextType !== 'none' ? '已插入新增硬分页' : '已移除硬分页', 2)
-      onReloadProject?.()
+      await onReloadProject?.()
     } catch (e) {
       message.error(e.message || '设置失败')
-      onReloadProject?.()
+      await onReloadProject?.()
+    } finally {
+      if (savedTop != null && flowRef.current) {
+        requestAnimationFrame(() => {
+          if (flowRef.current) flowRef.current.scrollTop = savedTop
+        })
+      }
     }
   }
 
   const handleSetChapter = async (para, level = 1, isRemove = false) => {
     if (!project?.id) return
+    const savedTop = flowRef.current?.scrollTop
+    if (savedTop != null && project?.id) {
+      localStorage.setItem(`reading_scrolltop_${project.id}`, savedTop)
+    }
+
     try {
       if (isRemove) {
         await setChapter(project.id, para.idx, false, 1, '')
@@ -537,9 +553,15 @@ export default function ReviewReader({
         await setChapter(project.id, para.idx, true, level, para.text.trim())
         message.success(level === 2 ? '已将该段设为副节标题' : '已将该段设为主章标题')
       }
-      onReloadProject?.()
+      await onReloadProject?.()
     } catch (e) {
       message.error(e.message || '操作失败')
+    } finally {
+      if (savedTop != null && flowRef.current) {
+        requestAnimationFrame(() => {
+          if (flowRef.current) flowRef.current.scrollTop = savedTop
+        })
+      }
     }
   }
 
@@ -743,8 +765,13 @@ export default function ReviewReader({
     }
   }, [selectedId, flatErrors])
 
+  const prevSelectedChapterRef = useRef(selectedChapter)
   useEffect(() => {
     if (!selectedChapter || !flowRef.current) return
+    // 仅当 selectedChapter 改变（用户手动点击菜单切换）时才触发平滑滚动，避免更新 chapters 数据时误触发置顶
+    if (prevSelectedChapterRef.current === selectedChapter) return
+    prevSelectedChapterRef.current = selectedChapter
+
     const ch = chapters.find(c => c.id === selectedChapter)
     if (!ch) return
     const target = errorParaIdxs.find(idx => idx >= (ch.title_paragraph_idx ?? 0))
@@ -1015,16 +1042,16 @@ export default function ReviewReader({
                         borderRadius: 6,
                         transition: 'all 0.15s ease',
                         background: isActive
-                          ? 'rgba(212, 163, 89, 0.12)'
+                          ? 'rgba(19, 194, 194, 0.09)'
                           : isHover
-                          ? 'rgba(0, 0, 0, 0.025)'
+                          ? 'rgba(19, 194, 194, 0.04)'
                           : isCh
                           ? 'rgba(212, 163, 89, 0.04)'
                           : 'transparent',
                         borderLeft: isActive
-                          ? '4px solid #d4a359'
+                          ? '4px solid #13c2c2'
                           : isHover
-                          ? '4px solid #f5d089'
+                          ? '4px solid #87e8de'
                           : isCh
                           ? '4px solid #ffe58f'
                           : '4px solid transparent',

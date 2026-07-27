@@ -579,7 +579,7 @@ def insert_chapter(
 def get_chapters(document_id: str) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM chapters WHERE document_id = ? ORDER BY sort_order",
+            "SELECT * FROM chapters WHERE document_id = ? ORDER BY title_paragraph_idx ASC, sort_order ASC",
             (document_id,),
         ).fetchall()
         res = []
@@ -589,6 +589,31 @@ def get_chapters(document_id: str) -> list[dict]:
                 d["detected_by"] = "original"
             res.append(d)
         return res
+
+
+def recompute_chapter_sort_orders(document_id: str):
+    """按正文物理段落位置 title_paragraph_idx 重新按从上到下的顺序校准所有章节的 sort_order 与起止范围。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM chapters WHERE document_id = ? ORDER BY title_paragraph_idx ASC",
+            (document_id,),
+        ).fetchall()
+        if not rows:
+            return
+
+        max_idx_row = conn.execute("SELECT MAX(idx) AS m FROM paragraphs WHERE document_id = ?", (document_id,)).fetchone()
+        total_max = max_idx_row["m"] if max_idx_row and max_idx_row["m"] is not None else 0
+
+        for i, r in enumerate(rows):
+            ch_id = r["id"]
+            start_i = r["title_paragraph_idx"]
+            end_i = rows[i + 1]["title_paragraph_idx"] - 1 if i + 1 < len(rows) else total_max
+            conn.execute(
+                """UPDATE chapters
+                   SET sort_order = ?, start_idx = ?, end_idx = ?
+                   WHERE id = ?""",
+                (i, start_i, end_i, ch_id),
+            )
 
 
 def delete_chapters(document_id: str):
@@ -815,7 +840,9 @@ def set_paragraph_as_chapter(document_id: str, idx: int, level: int = 1, title: 
                        WHERE document_id = ? AND idx = ? AND page_break_type = 'auto_chapter'""",
                     (document_id, idx),
                 )
-        return ch_id
+
+    recompute_chapter_sort_orders(document_id)
+    return ch_id
 
 
 def unset_chapter(document_id: str, chapter_id_or_idx: str | int):
@@ -838,6 +865,8 @@ def unset_chapter(document_id: str, chapter_id_or_idx: str | int):
                    WHERE document_id = ? AND idx = ? AND page_break_type = 'auto_chapter'""",
                 (document_id, row["title_paragraph_idx"]),
             )
+
+    recompute_chapter_sort_orders(document_id)
 
 
 def get_paragraphs(document_id: str) -> list[dict]:
@@ -1367,6 +1396,7 @@ def batch_insert_chapters(document_id: str, chapters: list[dict], sort_base: int
                        WHERE document_id = ? AND idx = ? AND page_break_type = 'none'""",
                     (document_id, tip),
                 )
+    recompute_chapter_sort_orders(document_id)
 
 
 def merge_and_save_chapters(document_id: str, new_chapters: list[dict]) -> tuple[int, int]:
@@ -1385,7 +1415,7 @@ def merge_and_save_chapters(document_id: str, new_chapters: list[dict]) -> tuple
 
     with get_conn() as conn:
         existing_rows = conn.execute(
-            "SELECT * FROM chapters WHERE document_id = ? ORDER BY sort_order ASC",
+            "SELECT * FROM chapters WHERE document_id = ? ORDER BY title_paragraph_idx ASC",
             (document_id,),
         ).fetchall()
         existing_map = {r["title_paragraph_idx"]: dict(r) for r in existing_rows}
@@ -1438,6 +1468,7 @@ def merge_and_save_chapters(document_id: str, new_chapters: list[dict]) -> tuple
             (document_id,),
         ).fetchone()["c"]
 
+    recompute_chapter_sort_orders(document_id)
     return total_count, newly_added_count
 
 

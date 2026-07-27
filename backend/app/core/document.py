@@ -1,5 +1,6 @@
 import re
 from docx import Document as DocxDocument
+from docx.oxml.ns import qn
 
 EMPTY_SKIP_STYLES = {"TOC", "Header", "Footer", "Footnote Text", "Endnote Text"}
 
@@ -27,11 +28,18 @@ def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict]]:
         raw_text = para.text or ""
         text = raw_text.rstrip("\r\n")
 
-        # 1. 检查物理硬分页符类型（排查软分页 w:lastRenderedPageBreak）
-        xml_str = para._element.xml if hasattr(para, "_element") else ""
+        # 1. 精准检测物理硬分页符类型（排查软分页与 w:sectPr 页面边距/分节符）
+        elem = para._element
         has_original_break = False
-        if 'w:type="page"' in xml_str or "w:pageBreakBefore" in xml_str or "w:sectPr" in xml_str:
-            has_original_break = True
+        if hasattr(elem, "pPr") and elem.pPr is not None:
+            if elem.pPr.find(qn("w:pageBreakBefore")) is not None:
+                has_original_break = True
+        if not has_original_break:
+            for br in elem.xpath(".//w:br"):
+                br_type = br.get(qn("w:type")) or br.get("type")
+                if br_type == "page":
+                    has_original_break = True
+                    break
 
         # 2. 识别章节级别
         chapter_level = None
@@ -55,9 +63,6 @@ def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict]]:
                 chapter_level = 2
 
         # 3. 确定最终 Page Break 属性 ('original' | 'auto_chapter' | 'none')
-        # 优先级：章节标题有分页 → auto_chapter（幂等，避免二次导入后漂移为 original）
-        #         非章节段落有分页 → original
-        #         章节标题无分页且 idx > 0 → auto_chapter（系统自动补开页）
         page_break_type = "none"
         if has_original_break and chapter_level == 1 and idx > 0:
             page_break_type = "auto_chapter"

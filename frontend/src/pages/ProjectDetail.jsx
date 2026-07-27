@@ -504,7 +504,7 @@ export default function ProjectDetail() {
     <div>
       <Card
         title={
-          <Space>
+          <Space wrap>
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
             <span style={{ fontWeight: 600, fontSize: 18 }}>{project?.name || '加载中...'}</span>
             <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目/段落防误删）' : '锁定项目（开启项目/段落防误删）'}>
@@ -534,6 +534,25 @@ export default function ProjectDetail() {
                 {upto}/{total} 段
               </Text>
             )}
+            <Button
+              icon={<EyeOutlined />}
+              onClick={() => setLlmMonitorOpen(true)}
+              shape="round"
+              size="small"
+            >
+              LLM 实时
+            </Button>
+            <Button
+              type="primary"
+              shape="round"
+              size="small"
+              icon={<DownloadOutlined />}
+              disabled={inProgress}
+              loading={exporting}
+              onClick={handleExport}
+            >
+              导出校稿版
+            </Button>
             {project?.last_error && (
               <Tag color="warning" style={{ fontSize: 12, marginLeft: 8 }}>
                 ⚠ {project.last_error}
@@ -542,7 +561,15 @@ export default function ProjectDetail() {
           </Space>
         }
         extra={
-          <Space>
+          <Space wrap>
+            <Button
+              icon={<UnorderedListOutlined />}
+              onClick={() => setPanelOpen(v => !v)}
+              type={panelOpen ? 'primary' : 'default'}
+              shape="round"
+            >
+              问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
+            </Button>
             <Popover
               trigger="click"
               open={toolsOpen}
@@ -679,14 +706,6 @@ export default function ProjectDetail() {
               </Button>
             </Popover>
             <Button
-              icon={<UnorderedListOutlined />}
-              onClick={() => setPanelOpen(v => !v)}
-              type={panelOpen ? 'primary' : 'default'}
-              shape="round"
-            >
-              问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
-            </Button>
-            <Button
               icon={<BookOutlined />}
               onClick={() => setProfileDrawerOpen(true)}
               shape="round"
@@ -700,24 +719,7 @@ export default function ProjectDetail() {
             >
               人物图谱
             </Button>
-            <Button
-              icon={<EyeOutlined />}
-              onClick={() => setLlmMonitorOpen(true)}
-              shape="round"
-            >
-              LLM 实时
-            </Button>
             <ThemeSwitcher buttonType="default" />
-            <Button
-              type="primary"
-              shape="round"
-              icon={<DownloadOutlined />}
-              disabled={inProgress}
-              loading={exporting}
-              onClick={handleExport}
-            >
-              导出校稿版
-            </Button>
           </Space>
         }
         style={{ marginBottom: 16 }}

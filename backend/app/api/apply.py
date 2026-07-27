@@ -11,6 +11,7 @@ from app.core.database import (
     get_project, get_current_document, get_errors, get_error,
     update_error_status, update_error_suggested, update_project_status,
     get_paragraph_by_idx, update_paragraph_revised, get_revised_paragraphs,
+    get_chapters,
 )
 
 router = APIRouter()
@@ -155,6 +156,9 @@ async def export_document(project_id: str):
         style_cfg = get_project_style_config(project_id)
         indent_enabled = style_cfg.get("first_line_indent_enabled", False)
 
+        chapters = get_chapters(doc_id)
+        ch_map = {c["title_paragraph_idx"]: c for c in chapters}
+
         # 按 DB idx 顺序逐段重建正文
         for p_data in paras:
             text = p_data.get("text") or ""
@@ -165,26 +169,32 @@ async def export_document(project_id: str):
             # 新建段落（python-docx 自动插入到 sectPr 之前）
             new_para = docx.add_paragraph()
 
-            # 按原始样式名应用样式，找不到则 fallback 到 Normal
-            try:
-                new_para.style = docx.styles[style_name]
-            except (KeyError, Exception):
+            ch_info = ch_map.get(idx)
+            if ch_info:
+                # 章节/副节：自动赋予标准的 Heading 1 / Heading 2 标题样式，确保 Word 导航大纲及二次导入完整识别
+                level = ch_info.get("level", 1)
+                _apply_heading_style(docx, new_para, level)
+            else:
+                # 按原始样式名应用样式，找不到则 fallback 到 Normal
                 try:
-                    new_para.style = docx.styles["Normal"]
-                except Exception:
-                    pass
+                    new_para.style = docx.styles[style_name]
+                except (KeyError, Exception):
+                    try:
+                        new_para.style = docx.styles["Normal"]
+                    except Exception:
+                        pass
 
             # 写入文字
             new_para.add_run(text)
 
             # 注入分页符（干净写入新建 pPr，不污染任何原有节点）
-            if pb_type != "none" and idx > 0:
+            if pb_type in ("original", "manual", "auto_chapter") and idx > 0:
                 pPr = new_para._element.get_or_add_pPr()
                 if pPr.find(qn("w:pageBreakBefore")) is None:
                     pPr.append(parse_xml(r'<w:pageBreakBefore %s/>' % nsdecls("w")))
 
-            # 若项目 XML 配置激活了段首缩进，为正文段落注入物理首行 2 字符缩进
-            if indent_enabled and "heading" not in style_name.lower() and "标题" not in style_name:
+            # 若项目 XML 配置激活了段首缩进，且该段落不是标题，为正文段落注入物理首行 2 字符缩进
+            if indent_enabled and not ch_info and "heading" not in style_name.lower() and "标题" not in style_name:
                 pPr = new_para._element.get_or_add_pPr()
                 if pPr.find(qn("w:ind")) is None:
                     pPr.append(parse_xml(r'<w:ind %s w:firstLineChars="200" w:firstLine="420"/>' % nsdecls("w")))
