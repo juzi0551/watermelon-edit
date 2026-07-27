@@ -2,20 +2,24 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Card, Button, Upload, Tag, Space, List, Typography, Spin, message,
-  Empty, Drawer, Tooltip, Popconfirm,
+  Empty, Drawer, Tooltip, Popconfirm, Dropdown, Modal, Popover,
 } from 'antd'
 import {
   InboxOutlined, ArrowLeftOutlined, DownloadOutlined, UnorderedListOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, EyeOutlined, LockOutlined, UnlockOutlined, ClearOutlined,
+  BookOutlined, TeamOutlined, ToolOutlined, ThunderboltOutlined,
+  SafetyOutlined, FormatPainterOutlined, BarChartOutlined, TagsOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
   getResults, setErrorStatus, acceptAll, exportDoc,
   getLLMLog, getBatchStatus, retryWindow, getPrompts, saveBatchConcurrency, saveWindowSize,
-  toggleProjectLock, cleanEmptyParagraphs,
+  toggleProjectLock, cleanEmptyParagraphs, scanProjectTerms, formatProjectIndent,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
 import ThemeSwitcher from '../components/ThemeSwitcher'
+import ProjectProfileDrawer from '../components/ProjectProfileDrawer'
+import CharacterGraph from '../components/CharacterGraph'
 import { color } from '../design-tokens'
 
 const { Title, Text } = Typography
@@ -54,6 +58,9 @@ export default function ProjectDetail() {
   const [runningBatch, setRunningBatch] = useState(null)
   const [selectedParas, setSelectedParas] = useState(new Set())
   const [llmMonitorOpen, setLlmMonitorOpen] = useState(false)
+  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false)
+  const [characterGraphOpen, setCharacterGraphOpen] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(false)
   const [llmCalls, setLlmCalls] = useState([])
   const [llmMonitorLoading, setLlmMonitorLoading] = useState(false)
   const llmTimerRef = useRef(null)
@@ -406,6 +413,7 @@ export default function ProjectDetail() {
   }
 
   const [cleaningEmpty, setCleaningEmpty] = useState(false)
+  const [scanningTerms, setScanningTerms] = useState(false)
 
   const handleCleanEmptyParagraphs = async () => {
     if (!project) return
@@ -423,6 +431,50 @@ export default function ProjectDetail() {
       message.error('清理失败：' + e.message)
     } finally {
       setCleaningEmpty(false)
+    }
+  }
+
+  const handleScanTerms = async () => {
+    if (!project?.id) return
+    setScanningTerms(true)
+    try {
+      const res = await scanProjectTerms(project.id)
+      if (res.error) {
+        message.error('扫描失败：' + res.error)
+      } else {
+        const newCount = res.new_issues ?? 0
+        if (newCount > 0) {
+          message.success(`规范检测完成！发现 ${newCount} 处新问题`)
+        } else {
+          message.info('规范检测完成！未发现新问题')
+        }
+        loadResults()
+      }
+    } catch (e) {
+      message.error('离线扫描失败：' + e.message)
+    } finally {
+      setScanningTerms(false)
+    }
+  }
+
+  const [formattingIndent, setFormattingIndent] = useState(false)
+
+  const handleFormatIndent = async () => {
+    if (!project?.id) return
+    setFormattingIndent(true)
+    try {
+      const res = await formatProjectIndent(project.id)
+      if (res.error) {
+        message.error('处理失败：' + res.error)
+      } else {
+        message.success(`段首缩进处理完成！共清理 ${res.formatted_count || 0} 个段落的前置杂乱硬空格，已应用纯 CSS 物理缩进`)
+        loadProject()
+        loadResults()
+      }
+    } catch (e) {
+      message.error('处理失败：' + e.message)
+    } finally {
+      setFormattingIndent(false)
     }
   }
 
@@ -491,25 +543,141 @@ export default function ProjectDetail() {
         }
         extra={
           <Space>
-            <Popconfirm
-              title="确定清理所有空白段落？"
-              description="系统将自动清理所有无意义空行，并重新连续编排段号。"
-              onConfirm={handleCleanEmptyParagraphs}
-              okText="确定清理"
-              cancelText="取消"
-              disabled={project?.is_locked === 1 || inProgress}
+            <Popover
+              trigger="click"
+              open={toolsOpen}
+              onOpenChange={setToolsOpen}
+              placement="bottomRight"
+              content={
+                <div style={{ width: 280, padding: '4px 2px' }}>
+                  <div style={{
+                    fontSize: 12, fontWeight: 600, color: color.textSecondary,
+                    marginBottom: 10, paddingLeft: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <span>🛠️ 自动化工具箱</span>
+                    <span style={{ fontSize: 11, color: color.textTertiary }}>快捷一键处理</span>
+                  </div>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: 10,
+                  }}>
+                    {/* 1. 清空行 */}
+                    <div
+                      onClick={() => {
+                        if (project?.is_locked === 1 || inProgress || cleaningEmpty) return
+                        setToolsOpen(false)
+                        Modal.confirm({
+                          title: '确定清理所有空白段落？',
+                          content: '系统将自动清理所有无意义空行，并重新连续编排段号。',
+                          okText: '确定清理',
+                          cancelText: '取消',
+                          onOk: handleCleanEmptyParagraphs,
+                        })
+                      }}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
+                        background: 'var(--color-bgPage)', border: `1px solid ${color.borderBar}`,
+                        transition: 'all 0.15s ease',
+                        opacity: (project?.is_locked === 1 || inProgress) ? 0.4 : 1,
+                      }}
+                    >
+                      <ClearOutlined style={{ fontSize: 22, color: color.primary, marginBottom: 6 }} />
+                      <span style={{ fontSize: 12, color: color.textPrimary, fontWeight: 500 }}>清空行</span>
+                    </div>
+
+                    {/* 2. 规范检测 */}
+                    <div
+                      onClick={() => {
+                        if (inProgress || scanningTerms) return
+                        setToolsOpen(false)
+                        handleScanTerms()
+                      }}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
+                        background: 'var(--color-bgPage)', border: `1px solid ${color.borderBar}`,
+                        transition: 'all 0.15s ease',
+                        opacity: inProgress ? 0.4 : 1,
+                      }}
+                    >
+                      <ThunderboltOutlined style={{ fontSize: 22, color: color.warning, marginBottom: 6 }} />
+                      <span style={{ fontSize: 12, color: color.textPrimary, fontWeight: 500 }}>规范检测</span>
+                    </div>
+
+                    {/* 3. 敏感词 (预留) */}
+                    <div
+                      onClick={() => message.info('敏感词自查工具开发中')}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
+                        background: 'var(--color-bgPage)', border: `1px solid ${color.border}`,
+                        opacity: 0.5,
+                      }}
+                    >
+                      <SafetyOutlined style={{ fontSize: 22, color: color.textTertiary, marginBottom: 6 }} />
+                      <span style={{ fontSize: 12, color: color.textSecondary }}>敏感词</span>
+                    </div>
+
+                    {/* 4. 段首缩进 */}
+                    <div
+                      onClick={() => {
+                        setToolsOpen(false)
+                        Modal.confirm({
+                          title: '确定清理全书段首杂乱硬空格？',
+                          content: '系统将扫描全书段落，彻底擦除段首残留的杂乱空格与 Tab 缩进，恢复文本内容纯净。',
+                          okText: '确定清理',
+                          cancelText: '取消',
+                          onOk: handleFormatIndent,
+                        })
+                      }}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
+                        background: 'var(--color-bgPage)', border: `1px solid ${color.borderBar}`,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <FormatPainterOutlined style={{ fontSize: 22, color: color.primary, marginBottom: 6 }} />
+                      <span style={{ fontSize: 12, color: color.textPrimary, fontWeight: 500 }}>段首缩进</span>
+                    </div>
+
+                    {/* 5. 字数统计 (预留) */}
+                    <div
+                      onClick={() => message.info('字数统计与分析工具开发中')}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
+                        background: 'var(--color-bgPage)', border: `1px solid ${color.border}`,
+                        opacity: 0.5,
+                      }}
+                    >
+                      <BarChartOutlined style={{ fontSize: 22, color: color.textTertiary, marginBottom: 6 }} />
+                      <span style={{ fontSize: 12, color: color.textSecondary }}>字数统计</span>
+                    </div>
+
+                    {/* 6. 术语库 (预留) */}
+                    <div
+                      onClick={() => message.info('专有名词提取工具开发中')}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
+                        background: 'var(--color-bgPage)', border: `1px solid ${color.border}`,
+                        opacity: 0.5,
+                      }}
+                    >
+                      <TagsOutlined style={{ fontSize: 22, color: color.textTertiary, marginBottom: 6 }} />
+                      <span style={{ fontSize: 12, color: color.textSecondary }}>术语库</span>
+                    </div>
+                  </div>
+                </div>
+              }
             >
-              <Tooltip title={project?.is_locked === 1 ? '项目已锁定，无法清理空行' : '一键清除所有空行并自动重排段落序号'}>
-                <Button
-                  icon={<ClearOutlined />}
-                  loading={cleaningEmpty}
-                  disabled={project?.is_locked === 1 || inProgress}
-                  shape="round"
-                >
-                  一键清空行
-                </Button>
-              </Tooltip>
-            </Popconfirm>
+              <Button shape="round" icon={<ToolOutlined />} loading={cleaningEmpty || scanningTerms}>
+                🛠️ 工具
+              </Button>
+            </Popover>
             <Button
               icon={<UnorderedListOutlined />}
               onClick={() => setPanelOpen(v => !v)}
@@ -517,6 +685,20 @@ export default function ProjectDetail() {
               shape="round"
             >
               问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
+            </Button>
+            <Button
+              icon={<BookOutlined />}
+              onClick={() => setProfileDrawerOpen(true)}
+              shape="round"
+            >
+              作品设定
+            </Button>
+            <Button
+              icon={<TeamOutlined />}
+              onClick={() => setCharacterGraphOpen(true)}
+              shape="round"
+            >
+              人物图谱
             </Button>
             <Button
               icon={<EyeOutlined />}
@@ -596,7 +778,16 @@ export default function ProjectDetail() {
                         }}
                         onClick={() => setSelectedChapter(ch.id)}
                       >
-                        <Text>{ch.title || `第 ${ch.title_paragraph_idx} 段`}</Text>
+                        <Space style={{ width: '100%', justifyContent: 'space-between', minWidth: 0 }}>
+                          <Text ellipsis style={{ fontSize: ch.level === 2 ? 12 : 13, flex: 1 }}>{ch.title || `第 ${ch.title_paragraph_idx} 段`}</Text>
+                          {ch.detected_by === 'manual' ? (
+                            <Tag color="green" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>人工</Tag>
+                          ) : ch.detected_by === 'llm' ? (
+                            <Tag color="purple" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>LLM识别</Tag>
+                          ) : (
+                            <Tag color="blue" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>原文</Tag>
+                          )}
+                        </Space>
                       </List.Item>
                     )}
                   />
@@ -673,6 +864,21 @@ export default function ProjectDetail() {
           onClose={() => setLlmMonitorOpen(false)}
           calls={llmCalls}
           loading={llmMonitorLoading}
+        />
+
+        <ProjectProfileDrawer
+          open={profileDrawerOpen}
+          onClose={() => setProfileDrawerOpen(false)}
+          project={project}
+          onProjectUpdated={loadProject}
+          onResultsReload={loadResults}
+        />
+
+        <CharacterGraph
+          open={characterGraphOpen}
+          onClose={() => setCharacterGraphOpen(false)}
+          projectId={project?.id}
+          totalParagraphs={total}
         />
       </Card>
     </div>

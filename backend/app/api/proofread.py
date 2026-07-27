@@ -20,6 +20,7 @@ from app.core.database import (
     # batch 模式专用
     create_batch, get_batch, get_batch_windows, update_batch_window,
     finish_batch, batch_insert_errors, batch_insert_chapters,
+    merge_and_save_chapters,
 )
 from app.utils.helpers import generate_id
 
@@ -164,7 +165,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             window_paras = [(p["idx"], p["text"]) for p in window_rows]
             found_chapters = 0
             if window_paras:
-                system_prompt = build_proofread_system_prompt(types)
+                system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
                 user_text = build_proofread_user_text(window_paras)
                 _last_log_ctx = dict(
                     model=req.model, mode=req.mode,
@@ -189,26 +190,23 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 if not parse_ok:
                     logger.warning("窗口 JSON 解析失败 doc=%s range=%s-%s raw_preview=%r",
                                    doc_id, ws, we, (raw or "")[:100])
-                else:
-                    for e in errs:
-                        if range_start <= e["paragraph_index"] < range_end:
-                            if not _fix_error_paragraph(e, window_paras):
-                                continue
-                            e.pop("chapter_id", None)
-                            logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
-                            insert_error(doc_id, e)
-                    for c in chs:
-                        tip = c["title_paragraph_idx"]
-                        if tip is None or not (range_start <= tip < range_end):
+                    set_document_error(doc_id, "大模型响应 JSON 解析失败，已保留待校对状态")
+                    update_project_status(project_id, "reviewing")
+                    return
+
+                for e in errs:
+                    if range_start <= e["paragraph_index"] < range_end:
+                        if not _fix_error_paragraph(e, window_paras):
                             continue
-                        insert_chapter(
-                            generate_id(), doc_id, c["title"], tip, c["level"],
-                            c["parent_idx"], c["start_idx"] or range_start,
-                            c["end_idx"] or range_end, sort_base + found_chapters,
-                        )
-                        found_chapters += 1
+                        e.pop("chapter_id", None)
+                        logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
+                        insert_error(doc_id, e)
+                total_chs, new_chs = merge_and_save_chapters(doc_id, chs)
             set_proofread_progress(doc_id, we, req.types)
-            clear_document_error(doc_id)
+            if new_chs > 0:
+                set_document_error(doc_id, f"校对完成：自动识别并新增 {new_chs} 个新章节标题")
+            else:
+                clear_document_error(doc_id)
             update_project_status(project_id, "reviewing")
             logger.info("继续校对(单窗口) doc=%s window=%s-%s upto=%s/%s",
                         doc_id, ws, we, we, total)
@@ -227,7 +225,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 window_paras = [(p["idx"], p["text"]) for p in batch_rows]
                 if not window_paras:
                     continue
-                system_prompt = build_proofread_system_prompt(types)
+                system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=min(batch))
                 user_text = build_proofread_user_text(window_paras)
                 _last_log_ctx = dict(
                     model=req.model, mode=req.mode,
@@ -271,20 +269,18 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             range_start, range_end = ch["start_idx"], ch["end_idx"]
             types = req.types or progress["proofread_types"]
             delete_errors_in_range(doc_id, range_start, range_end)
-            delete_chapters_in_range(doc_id, range_start, range_end)
-            sort_base = len(get_chapters(doc_id))
             update_project_status(project_id, "proofreading")
             chapter_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, range_start, range_end)
             chapter_text_by_idx = {p["idx"]: p["text"] for p in chapter_rows}
             found_errors = 0
-            found_chapters = 0
+            new_chapters_total = 0
             max_processed = range_start
             for ws in range(range_start, range_end, window_size):
                 we = min(ws + window_size, range_end)
                 window_paras = [(i, chapter_text_by_idx[i]) for i in range(ws, we) if i in chapter_text_by_idx]
                 if not window_paras:
                     continue
-                system_prompt = build_proofread_system_prompt(types)
+                system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
                 user_text = build_proofread_user_text(window_paras)
                 _last_log_ctx = dict(
                     model=req.model, mode=req.mode,
@@ -313,21 +309,16 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                             logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
                             insert_error(doc_id, e)
                             found_errors += 1
-                    for c in chs:
-                        tip = c["title_paragraph_idx"]
-                        if tip is None or not (range_start <= tip < range_end):
-                            continue
-                        insert_chapter(
-                            generate_id(), doc_id, c["title"], tip, c["level"],
-                            c["parent_idx"], c["start_idx"] or range_start,
-                            c["end_idx"] or range_end, sort_base + found_chapters,
-                        )
-                        found_chapters += 1
+                    _, new_chs = merge_and_save_chapters(doc_id, chs)
+                    new_chapters_total += new_chs
                 max_processed = max(max_processed, we)
                 set_proofread_progress(doc_id, max_processed)
             new_upto = max(progress["proofread_upto"], range_end)
             set_proofread_progress(doc_id, new_upto, req.types)
-            clear_document_error(doc_id)
+            if new_chapters_total > 0:
+                set_document_error(doc_id, f"章节校对完成：自动识别并新增 {new_chapters_total} 个新章节标题")
+            else:
+                clear_document_error(doc_id)
             update_project_status(project_id, "reviewing")
             logger.info("章节校对完成 doc=%s chapter=%s errors=%s chapters=%s upto=%s",
                         doc_id, req.chapter_id, found_errors, found_chapters, new_upto)
@@ -357,8 +348,6 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 create_batch, batch_id, doc_id, range_start, range_end, windows
             )
             await asyncio.to_thread(delete_errors_in_range, doc_id, range_start, range_end)
-            await asyncio.to_thread(delete_chapters_in_range, doc_id, range_start, range_end)
-            sort_base = len(await asyncio.to_thread(get_chapters, doc_id))
             update_project_status(project_id, "proofreading")
 
             semaphore = asyncio.Semaphore(max_concurrent)
@@ -371,7 +360,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     window_paras = [(p["idx"], p["text"]) for p in window_rows]
                     if not window_paras:
                         return [], []
-                    system_prompt = build_proofread_system_prompt(types)
+                    system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
                     user_text = build_proofread_user_text(window_paras)
                     log_ctx = dict(
                         model=req.model, mode="batch",
@@ -432,10 +421,18 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     await asyncio.to_thread(update_batch_window, batch_id, i, "ok")
 
             await asyncio.to_thread(batch_insert_errors, doc_id, all_errors)
-            await asyncio.to_thread(batch_insert_chapters, doc_id, all_chapters, sort_base)
+            _, new_chs = await asyncio.to_thread(merge_and_save_chapters, doc_id, all_chapters)
             await asyncio.to_thread(finish_batch, batch_id, done_count, failed_count)
-            set_proofread_progress(doc_id, range_end, req.types)
-            clear_document_error(doc_id)
+            if failed_count > 0:
+                first_failed_ws = min(windows[i][0] for i, res in enumerate(results) if isinstance(res, Exception))
+                set_proofread_progress(doc_id, first_failed_ws, req.types)
+                set_document_error(doc_id, f"批量校对有 {failed_count} 个窗口解析失败，已保留未校对状态")
+            else:
+                set_proofread_progress(doc_id, range_end, req.types)
+                if new_chs > 0:
+                    set_document_error(doc_id, f"批量校对完成：自动识别并新增 {new_chs} 个新章节标题")
+                else:
+                    clear_document_error(doc_id)
             update_project_status(project_id, "reviewing")
             logger.info(
                 "批量校对完成 doc=%s range=%d-%d done=%d failed=%d errors=%d",
@@ -560,7 +557,7 @@ async def retry_window(project_id: str, req: RetryWindowRequest):
             finish_batch(req.batch_id, done, failed)
             return {"status": "ok", "message": "窗口无段落，已标记为完成"}
 
-        system_prompt = build_proofread_system_prompt(types)
+        system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
         user_text = build_proofread_user_text(window_paras)
 
         t0 = time.time()

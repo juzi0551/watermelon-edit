@@ -65,7 +65,6 @@ async def get_prompts():
     except (ValueError, TypeError):
         window_size = 30
     return {
-        "system_prompt_general": all_s.get("system_prompt_general", ""),
         "system_prompt_proofread": all_s.get("system_prompt_proofread", ""),
         "batch_max_concurrent": max_concurrent,
         "proofread_window_size": window_size,
@@ -73,7 +72,6 @@ async def get_prompts():
 
 
 class UpdatePromptsRequest(BaseModel):
-    system_prompt_general: str | None = None
     system_prompt_proofread: str | None = None
     batch_max_concurrent: int | None = None
     proofread_window_size: int | None = None
@@ -81,8 +79,6 @@ class UpdatePromptsRequest(BaseModel):
 
 @router.put("/settings/prompts")
 async def update_prompts(req: UpdatePromptsRequest):
-    if req.system_prompt_general is not None:
-        set_setting("system_prompt_general", req.system_prompt_general)
     if req.system_prompt_proofread is not None:
         set_setting("system_prompt_proofread", req.system_prompt_proofread)
     if req.batch_max_concurrent is not None:
@@ -92,6 +88,16 @@ async def update_prompts(req: UpdatePromptsRequest):
         ws = max(5, min(req.proofread_window_size, 100))
         set_setting("proofread_window_size", str(ws))
     return {"status": "ok"}
+
+
+@router.post("/settings/reset-prompts")
+async def reset_prompts():
+    from app.core.database import DEFAULT_SYSTEM_PROMPT_PROOFREAD
+    set_setting("system_prompt_proofread", DEFAULT_SYSTEM_PROMPT_PROOFREAD)
+    return {
+        "status": "ok",
+        "system_prompt_proofread": DEFAULT_SYSTEM_PROMPT_PROOFREAD,
+    }
 
 
 @router.post("/settings/test/{model_id:path}")

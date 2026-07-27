@@ -13,7 +13,9 @@ from app.core.database import (
     get_document_progress, set_document_error, batch_insert_chapters,
     update_paragraph_text, delete_paragraph_and_reorder,
     toggle_paragraph_page_break, set_paragraph_as_chapter, unset_chapter,
+    update_project_profile, get_character_graph, upsert_character, insert_relationship,
 )
+from app.core.nlp_engine import scan_term_consistency, scan_gbt15834_punctuation
 from app.api.proofread import _RUNNING
 
 logger = logging.getLogger(__name__)
@@ -213,6 +215,37 @@ async def api_rename_project(project_id: str, name: str):
     return {"status": "ok"}
 
 
+@router.post("/projects/{project_id}/format-indent")
+async def api_format_indent(project_id: str):
+    """一键物理清洗全书自然段段首杂乱硬空格，并激活 XML 物理首行缩进配置。"""
+    doc = get_current_document(project_id)
+    if not doc:
+        return {"error": "项目无文档"}
+    doc_id = doc["id"]
+    from app.core.database import get_conn, set_project_first_line_indent
+    count = 0
+    with get_conn() as conn:
+        paras = conn.execute(
+            "SELECT id, idx, text, revised_text FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
+            (doc_id,),
+        ).fetchall()
+        for p in paras:
+            raw = p["revised_text"] if p["revised_text"] is not None else p["text"]
+            if not raw or not raw.strip():
+                continue
+            clean = raw.lstrip(" \t\r\n\u3000")
+            if clean != raw:
+                conn.execute(
+                    "UPDATE paragraphs SET text = ?, revised_text = NULL WHERE id = ?",
+                    (clean, p["id"]),
+                )
+                count += 1
+    
+    # 激活 XML 中的首行 2 字符物理缩进配置
+    set_project_first_line_indent(project_id, True)
+    return {"status": "ok", "formatted_count": count, "first_line_indent_enabled": True}
+
+
 @router.delete("/projects/{project_id}")
 async def api_delete_project(project_id: str):
     """删除项目及其所有数据。"""
@@ -237,3 +270,56 @@ async def api_clean_empty_paragraphs(project_id: str):
         return {"error": str(ve)}
     except Exception as e:
         return {"error": f"清理失败：{str(e)}"}
+
+
+class ProjectProfileUpdateBody(BaseModel):
+    author_name: str | None = None
+    author_intro: str | None = None
+    background_setting: str | None = None
+    theme_mode: str | None = None
+
+
+@router.put("/projects/{project_id}/profile")
+async def api_update_project_profile(project_id: str, body: ProjectProfileUpdateBody):
+    """更新作者基本设定、背景介绍与主题偏好。"""
+    project = get_project(project_id)
+    if not project:
+        return {"error": "项目不存在"}
+    update_project_profile(
+        project_id,
+        author_name=body.author_name,
+        author_intro=body.author_intro,
+        background_setting=body.background_setting,
+        theme_mode=body.theme_mode,
+    )
+    return {"status": "ok"}
+
+
+@router.get("/projects/{project_id}/character-graph")
+async def api_get_character_graph(project_id: str, upto_paragraph_idx: int | None = None):
+    """获取项目的人物演进关系图谱网络数据。"""
+    project = get_project(project_id)
+    if not project:
+        return {"error": "项目不存在"}
+    graph = get_character_graph(project_id, upto_paragraph_idx)
+    return graph
+
+
+@router.post("/projects/{project_id}/scan-terms")
+async def api_scan_terms(project_id: str):
+    """一键触发离线 NLP 规则异形词扫描与 GB/T 15834 标点规范校验。"""
+    doc = get_current_document(project_id)
+    if not doc:
+        return {"error": "项目无文档"}
+    
+    res_terms = scan_term_consistency(doc["id"])
+    res_punct = scan_gbt15834_punctuation(doc["id"])
+    
+    new_count = res_terms.get("new_issues", 0) + res_punct.get("new_issues", 0)
+    return {
+        "status": "ok",
+        "scanned_paragraphs": res_terms.get("scanned_paragraphs", 0),
+        "total_issues": res_terms.get("found_issues", 0) + res_punct.get("found_issues", 0),
+        "new_issues": new_count,
+    }
+

@@ -73,6 +73,7 @@ def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict]]:
                 "title": text.strip(),
                 "title_paragraph_idx": idx,
                 "level": chapter_level,
+                "detected_by": "original",
             })
 
         idx += 1

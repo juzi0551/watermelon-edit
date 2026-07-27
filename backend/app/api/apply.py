@@ -151,6 +151,10 @@ async def export_document(project_id: str):
             if child.tag in removable_tags:
                 body.remove(child)
 
+        from app.core.database import get_project_style_config
+        style_cfg = get_project_style_config(project_id)
+        indent_enabled = style_cfg.get("first_line_indent_enabled", False)
+
         # 按 DB idx 顺序逐段重建正文
         for p_data in paras:
             text = p_data.get("text") or ""
@@ -178,6 +182,12 @@ async def export_document(project_id: str):
                 pPr = new_para._element.get_or_add_pPr()
                 if pPr.find(qn("w:pageBreakBefore")) is None:
                     pPr.append(parse_xml(r'<w:pageBreakBefore %s/>' % nsdecls("w")))
+
+            # 若项目 XML 配置激活了段首缩进，为正文段落注入物理首行 2 字符缩进
+            if indent_enabled and "heading" not in style_name.lower() and "标题" not in style_name:
+                pPr = new_para._element.get_or_add_pPr()
+                if pPr.find(qn("w:ind")) is None:
+                    pPr.append(parse_xml(r'<w:ind %s w:firstLineChars="200" w:firstLine="420"/>' % nsdecls("w")))
 
         fpath = os.path.join("backend/static/exports", fname)
         docx.save(fpath)

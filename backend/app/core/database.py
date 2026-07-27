@@ -20,62 +20,78 @@ DB_PATH = os.path.join(DB_DIR, "novel_proofreader.db")
 
 DEFAULT_PROOFREAD_TYPES = '["typo","grammar","punctuation","format"]'
 
+DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与排版专家。你的任务是基于带有 [全局段落索引编号] 前缀的待校对正文，仔细查看每个段落，提取章节层级结构，并精准定位与修正特定类型的文本错误。
 
-DEFAULT_SYSTEM_PROMPT_GENERAL = """你是一个专业的小说校对编辑。请严格按照以下要求返回结果：
+### 【校验依据与错误类型定义】
+本次校对必须严格遵循中国国家出版标准。你需要检查并输出 {type_desc} 等以下类型的错误（即 `type` 对应的分类，并在 `description` 中简述）：
 
-1. 检查文本中的错别字、语法错误、标点符号错误、格式不一致。
-2. 以 JSON 格式返回结果，且只返回 JSON，不要其他内容。
-3. 若某类无错误，对应数组返回空数组。"""
+1. 标点错误 (type: "punctuation")：
+   - 依据：《标点符号用法》（GB/T 15834-2011）。
+   - 定义：重点检查跨段引号不合规（见下文详述）、标点误用（如中英文标点混用、连续多个句号代替省略号）、以及点号（句号、逗号、问号等）出现在行首的排版禁忌。
+2. 错别字 (type: "typo")：
+   - 依据：《现代汉语词典》（第7版）及《出版物汉字使用管理规定》。
+   - 定义：同音错字、形近错字、多字漏字。必须严格区分结构助词“的、地、得”的标准语法场景。严禁干涉作者有意的修辞性造词或网络生造词（如无绝对把握，视为无错）。
+3. 语法错误 (type: "grammar")：
+   - 定义：语序不当、搭配不当（如动宾搭配不当、量名词搭配不当）、成分残缺或赘余、句式杂糅等语法语病。
+4. 格式不一致 (type: "format")：
+   - 定义：段首空格杂乱、中英文间距不一致、非标准全半角字符混用、排版符号格式混乱等问题。
+5. 数字用法不规范 (type: "number")：
+   - 依据：《出版物上数字用法》（GB/T 15835-2011）。
+   - 定义：阿拉伯数字与汉字数字的混用不当（如“二〇二三年”错写为“202三年”），以及计量单位前的数字格式错误。
+6. 常识与逻辑硬伤 (type: "logic")：
+   - 定义：同一段落或紧邻段落内出现明显的前后矛盾（如角色名字写错、称呼混乱、时间线颠倒）。仅指出绝对的逻辑硬伤，严禁干涉正常的艺术虚构。
+7. 文风与风格润色建议 (type: "style")：
+   - 依据：结合【作者设定与世界观背景】中的文风与风格偏好。
+   - 定义：检测表达平淡、修饰冗余、用词重复或与作者设定文风不符的语句，提供贴合作者个人写作特色的提质润色替换方案。
 
-# 详细的校对指令模板（含 {type_desc} 占位符，会被替换为错误类型列表）
-# 前端设置页可自由编辑此模板
-DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与排版专家。你的任务是基于提供的带有 [全局段落索引编号] 前缀的文本，提取章节层级结构，并精准定位与修正特定类型的文本错误。
-
-【检查范围】
-仅检查以下类型的错误：{type_desc}
-
-【结构识别规则】
+### 【结构识别规则】
 需精准识别文本内的章节结构，基于提取到的索引编号进行区间划分：
 1. 卷/章级别（主标题）：定义为 level=1。
-2. 节级别（副标题）：定义为 level=2，且必须明确输出 parent_idx（其所属最近的一个 level=1 主标题的 title_paragraph_idx）。
-3. 字段约束：所有返回的索引（paragraph_index, title_paragraph_idx, start_idx, end_idx）必须与段落开头的 [全局段落索引编号] 严格一致。严禁凭空捏造、推算或编造原文中未实际出现的索引编号。注意：`end_idx` 为包含边界（即区间包含该结尾段落本身）。
+2. 节级别（副标题）：定义为 level=2，且必须明确输出 `parent_idx`（其所属最近的一个 level=1 主标题的 `title_paragraph_idx`）。
+3. 字段约束：所有返回的索引必须与段落开头的 [全局段落索引编号] 严格一致。严禁凭空捏造、推算或编造原文中未实际出现的索引编号。
+4. 区间定义：`end_idx` 为包含边界（即区间包含该结尾段落本身）。
 
-【纠错与定位规则】
-1. 来源保真：`locator` 必须直接从原文逐字复制，严禁包含任何修改、多余空格或不可见字符。`paragraph_index` 必须真实存在于输入文本中。
-2. 唯一性防偏：`locator` 长度必须至少包含 5 个字符（若出错词本身较长，则取整个出错词），以确保该片段在当前段落内具有唯一性。
-3. 替换精准：`locator` 和 `replacement` 必须是同一段文本的「原文版」和「修正版」。两者的差异必须仅限于本次修正的错误本身，严禁在错误范围之外擅自增删改任何字符。
-4. 多错隔离：当同一段落存在多个错误时，各 `locator` 的文本范围严禁重叠或互斥，必须保持足够的间距。
+### 【纠错与定位规则】
+1. 来源保真：`locator` 必须直接从原文逐字复制，严禁包含任何修改。`paragraph_index` 必须真实存在于输入文本中。
+2. 唯一性防偏：`locator` 长度必须至少包含 5 个字符，以确保该片段在当前段落内具有唯一性。
+3. 替换精准与锚定原则（极重要）：
+   - 基础要求：`locator` 和 `replacement` 必须是严格对应的「原文版」和「修正版」。`locator` 提取包含错误的文本及前后相邻文字。`replacement` 必须与 `locator` 文本范围完全对齐，严禁擅自扩大输出范围或加入解释性文字。`description` 使用 5-10 个字的简短说明准确概括错误原因。
+   - 标点修改特例（警告）：当需要修改已存在的错误标点时，`locator` **必须且绝对**包含该错误标点符号本身。严禁在 `locator` 中因语法直觉而擅自截断或丢弃末尾的错误标点！`locator` 必须是原文的“无损切片”。
+   - 标点缺失特例：若是缺失标点，`locator` 提取目标位置前后文字作为锚点，`replacement` 在该位置补上标点。
+   - 逻辑错误特例：当 type 为 "logic" 时，`description` 可输出针对该处情节矛盾的解释性文字，不受上述严格字数对齐限制。
+4. 多错隔离：同一段落存在多个错误时，各 `locator` 的文本范围必须避免包含、重叠或互斥。
 5. 严重程度限定：`severity` 字段的值必须且仅限为 "low"、"medium"、"high" 三者之一。
-6. 简明诊断：`description` 必须使用 5-10 个字的简短说明准确概括错误原因。
 
-【特殊：跨段引号检查】
-1. 规范要求：按照中文排版规范，当人物对话或引文跨越多个自然段时，每一个段落的开头都必须有左引号（如 " 或 「），但只有在最后一段的末尾才使用右引号（如 」 或 」）。
-2. 缺陷检测：观察相邻段落，若前段以左引号开头且无右引号收尾，后段开头却没有左引号，即判定后段缺失左引号；或出现左多右少、右多左少的不配对情况。
-3. 修正方式：在缺失引号的段落报错。以该段前 5-10 个字作为 `locator`，`replacement` 则在 `locator` 的最前方补上对应的引号字符。此种修正的 `type` 统一设定为 "punctuation"。
+### 【特殊：跨段引号检查】
+1. 规范：当人物对话或引文跨越多个自然段时，每个段落开头必须有左引号，但仅在最后一段末尾使用右引号。
+2. 检测：若前段以左引号开头且无右引号收尾，后段开头却没有左引号，即判定后段缺失左引号。
+3. 修正：在缺失引号的段落报错（type: "punctuation"）。提取该段前 5-10 个字作为 `locator`，`replacement` 在最前方补上对应的引号字符。
 
-【输出格式】
+### 【输出格式】
 严格按照以下 JSON 格式输出结果。若某类数据（章节或错误）不存在，对应的数组返回空 `[]`。
 严禁输出任何分析过程、解释说明或 Markdown 代码块标记（如 ```json），只返回纯 JSON 字符串：
 
 {
   "chapters": [
-    {"level": 1, "title": "第一章 少年初长", "title_paragraph_idx": 0, "start_idx": 0, "end_idx": 2},
-    {"level": 2, "title": "第一节 启程", "title_paragraph_idx": 5, "parent_idx": 0, "start_idx": 3, "end_idx": 5}
+    {"level": 1, "title": "第一章 少年初长", "title_paragraph_idx": 0, "start_idx": 0, "end_idx": 4},
+    {"level": 2, "title": "第一节 启程", "title_paragraph_idx": 5, "parent_idx": 0, "start_idx": 5, "end_idx": 8}
   ],
   "errors": [
-    {"type": "typo", "paragraph_index": 1, "locator": "成才", "replacement": "成材", "severity": "medium", "description": "同音错字"}
+    {"type": "typo", "paragraph_index": 1, "locator": "他是一个渴望成才的少年", "replacement": "他是一个渴望成材的少年", "severity": "medium", "description": "同音错别字"},
+    {"type": "punctuation", "paragraph_index": 2, "locator": "这件事交给我！“", "replacement": "这件事交给我！”", "severity": "medium", "description": "右引号错为左引号"},
+    {"type": "logic", "paragraph_index": 3, "locator": "张三看了看自己手中的剑", "replacement": "李四看了看自己手中的剑", "severity": "high", "description": "角色名字或描述前后矛盾，建议张三修改为李四，前文描述持剑者为李四"},
+    {"type": "style", "paragraph_index": 4, "locator": "他的心里感到极为非常地悲伤", "replacement": "他心中极为悲怆", "severity": "low", "description": "符合作者指定冷硬文风的润色建议"}
   ]
 }"""
 
 
 def _init_default_settings(conn):
     defaults = {
-        "system_prompt_general": DEFAULT_SYSTEM_PROMPT_GENERAL,
         "system_prompt_proofread": DEFAULT_SYSTEM_PROMPT_PROOFREAD,
     }
     for key, value in defaults.items():
         conn.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             (key, value),
         )
 
@@ -201,6 +217,60 @@ def _migrate_schema(conn):
         """)
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '5')")
 
+    for col in (
+        "author_name TEXT",
+        "author_intro TEXT",
+        "background_setting TEXT",
+        "theme_mode TEXT DEFAULT 'system'",
+        "style_config_xml TEXT",
+    ):
+        try:
+            conn.execute(f"ALTER TABLE projects ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
+
+    if version < 6:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS characters (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                aliases TEXT,
+                role TEXT,
+                first_appear_idx INTEGER DEFAULT 0,
+                description TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_chars_proj ON characters(project_id);
+
+            CREATE TABLE IF NOT EXISTS character_relationships (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                from_char_id TEXT NOT NULL,
+                to_char_id TEXT NOT NULL,
+                relation_type TEXT NOT NULL,
+                description TEXT,
+                paragraph_idx INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_rel_proj ON character_relationships(project_id);
+            CREATE INDEX IF NOT EXISTS idx_rel_para ON character_relationships(paragraph_idx);
+
+            CREATE TABLE IF NOT EXISTS glossary_terms (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                term TEXT NOT NULL,
+                category TEXT DEFAULT 'custom',
+                std_replacement TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_glossary_proj ON glossary_terms(project_id);
+        """)
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '6')")
+
 
 def init_db():
     """初始化数据库，创建表结构。"""
@@ -248,7 +318,7 @@ def init_db():
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
 
-            -- 章节表（由 LLM 渐进式识别，支持主/副标题层级）
+            -- 章节表（支持原文/LLM识别/人工设定的来源区分与主副标题层级）
             CREATE TABLE IF NOT EXISTS chapters (
                 id TEXT PRIMARY KEY,
                 document_id TEXT NOT NULL,
@@ -259,7 +329,7 @@ def init_db():
                 start_idx INTEGER NOT NULL,
                 end_idx INTEGER NOT NULL,
                 sort_order INTEGER NOT NULL,
-                detected_by TEXT DEFAULT 'llm',
+                detected_by TEXT DEFAULT 'original',
                 confidence REAL DEFAULT 1.0,
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
@@ -320,10 +390,73 @@ def create_project(project_id: str, name: str) -> dict:
         return dict(conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone())
 
 
+DEFAULT_STYLE_CONFIG_XML = """<DocStyleConfig version="1.0">
+  <FirstLineIndent enabled="0" chars="2.0" dxa="420"/>
+  <LineSpacing rule="auto" val="360"/>
+  <ParagraphSpacing before="0" after="0"/>
+</DocStyleConfig>"""
+
+
+def parse_style_config_xml(xml_str: str | None) -> dict:
+    """使用 lxml 解析 style_config_xml 架构文本。"""
+    default_res = {"first_line_indent_enabled": False, "chars": "2.0", "dxa": 420}
+    if not xml_str or not xml_str.strip():
+        return default_res
+    try:
+        from lxml import etree
+        root = etree.fromstring(xml_str.encode("utf-8"))
+        indent_node = root.find("FirstLineIndent")
+        if indent_node is not None:
+            enabled = indent_node.get("enabled") == "1"
+            chars = indent_node.get("chars", "2.0")
+            dxa = int(indent_node.get("dxa", "420"))
+            return {
+                "first_line_indent_enabled": enabled,
+                "chars": chars,
+                "dxa": dxa,
+            }
+    except Exception:
+        pass
+    return default_res
+
+
+def get_project_style_config(project_id: str) -> dict:
+    with get_conn() as conn:
+        row = conn.execute("SELECT style_config_xml FROM projects WHERE id = ?", (project_id,)).fetchone()
+        xml_str = row["style_config_xml"] if row else None
+        return parse_style_config_xml(xml_str)
+
+
+def set_project_first_line_indent(project_id: str, enabled: bool) -> str:
+    from lxml import etree
+    with get_conn() as conn:
+        row = conn.execute("SELECT style_config_xml FROM projects WHERE id = ?", (project_id,)).fetchone()
+        xml_str = (row["style_config_xml"] if row else None) or DEFAULT_STYLE_CONFIG_XML
+        try:
+            root = etree.fromstring(xml_str.encode("utf-8"))
+        except Exception:
+            root = etree.fromstring(DEFAULT_STYLE_CONFIG_XML.encode("utf-8"))
+        
+        indent_node = root.find("FirstLineIndent")
+        if indent_node is None:
+            indent_node = etree.SubElement(root, "FirstLineIndent")
+            indent_node.set("chars", "2.0")
+            indent_node.set("dxa", "420")
+        
+        indent_node.set("enabled", "1" if enabled else "0")
+        new_xml = etree.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+        conn.execute("UPDATE projects SET style_config_xml = ? WHERE id = ?", (new_xml, project_id))
+        return new_xml
+
+
 def get_project(project_id: str) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        res = dict(row)
+        res["style_config"] = parse_style_config_xml(res.get("style_config_xml"))
+        return res
 
 
 def list_projects() -> list[dict]:
@@ -432,6 +565,14 @@ def insert_chapter(
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (chapter_id, document_id, title, title_paragraph_idx, level, parent_idx, start_idx, end_idx, sort_order),
         )
+        # 仅当为主章 (level == 1) 且该段当前为 'none' 且不是第 0 段时升级为 auto_chapter
+        if title_paragraph_idx is not None and title_paragraph_idx > 0 and level == 1:
+            conn.execute(
+                """UPDATE paragraphs
+                   SET has_page_break_before = 1, page_break_type = 'auto_chapter'
+                   WHERE document_id = ? AND idx = ? AND page_break_type = 'none'""",
+                (document_id, title_paragraph_idx),
+            )
         return chapter_id
 
 
@@ -441,7 +582,13 @@ def get_chapters(document_id: str) -> list[dict]:
             "SELECT * FROM chapters WHERE document_id = ? ORDER BY sort_order",
             (document_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        res = []
+        for r in rows:
+            d = dict(r)
+            if not d.get("detected_by"):
+                d["detected_by"] = "original"
+            res.append(d)
+        return res
 
 
 def delete_chapters(document_id: str):
@@ -653,16 +800,44 @@ def set_paragraph_as_chapter(document_id: str, idx: int, level: int = 1, title: 
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')""",
             (ch_id, document_id, title, idx, level, idx, total_max, sort_order)
         )
+        if idx > 0:
+            if level == 1:
+                conn.execute(
+                    """UPDATE paragraphs
+                       SET has_page_break_before = 1, page_break_type = 'auto_chapter'
+                       WHERE document_id = ? AND idx = ? AND page_break_type = 'none'""",
+                    (document_id, idx),
+                )
+            else:
+                conn.execute(
+                    """UPDATE paragraphs
+                       SET has_page_break_before = 0, page_break_type = 'none'
+                       WHERE document_id = ? AND idx = ? AND page_break_type = 'auto_chapter'""",
+                    (document_id, idx),
+                )
         return ch_id
 
 
 def unset_chapter(document_id: str, chapter_id_or_idx: str | int):
-    """取消某个章节。"""
+    """取消某个章节，并同步将该章节标题段落的 auto_chapter 分页重置为 none。"""
     with get_conn() as conn:
+        # 先查出 title_paragraph_idx，再删除章节
+        row = conn.execute(
+            "SELECT title_paragraph_idx FROM chapters WHERE document_id = ? AND (id = ? OR title_paragraph_idx = ?)",
+            (document_id, str(chapter_id_or_idx), chapter_id_or_idx)
+        ).fetchone()
         conn.execute(
             "DELETE FROM chapters WHERE document_id = ? AND (id = ? OR title_paragraph_idx = ?)",
             (document_id, str(chapter_id_or_idx), chapter_id_or_idx)
         )
+        # 仅重置 auto_chapter，不动 original/manual（用户自行设置的分页应保留）
+        if row and row["title_paragraph_idx"] is not None:
+            conn.execute(
+                """UPDATE paragraphs
+                   SET has_page_break_before = 0, page_break_type = 'none'
+                   WHERE document_id = ? AND idx = ? AND page_break_type = 'auto_chapter'""",
+                (document_id, row["title_paragraph_idx"]),
+            )
 
 
 def get_paragraphs(document_id: str) -> list[dict]:
@@ -739,7 +914,7 @@ def get_revised_paragraphs(document_id: str) -> list[dict]:
     """导出：返回所有段落，revised_text ?? text。"""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT idx, COALESCE(revised_text, text) AS text, revised_text IS NOT NULL AS has_rev FROM paragraphs WHERE document_id = ? ORDER BY idx",
+            "SELECT idx, COALESCE(revised_text, text) AS text, revised_text IS NOT NULL AS has_rev, has_page_break_before, page_break_type, style_name FROM paragraphs WHERE document_id = ? ORDER BY idx",
             (document_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1103,11 +1278,35 @@ def get_document_batches(document_id: str, limit: int = 5) -> list[dict]:
 
 # ==================== 批量写入（batch 模式专用，不替换现有逐条 insert） ====================
 
-def batch_insert_errors(document_id: str, errors: list[dict]):
-    """批量写入 errors，供 batch 模式在所有 window 完成后统一调用。"""
+def batch_insert_errors(document_id: str, errors: list[dict]) -> int:
+    """批量写入 errors，包含 (paragraph_index, original_text, suggested_text) 幂等去重防重复插入，返回实际新增条数。"""
     if not errors:
-        return
+        return 0
     with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT paragraph_index, original_text, suggested_text FROM errors WHERE document_id = ?",
+            (document_id,),
+        ).fetchall()
+        existing_keys = {
+            (r["paragraph_index"], r["original_text"] or "", r["suggested_text"] or "")
+            for r in existing
+        }
+
+        filtered = []
+        seen = set()
+        for e in errors:
+            key = (
+                e.get("paragraph_index", 0),
+                e.get("original_text", ""),
+                e.get("suggested_text", ""),
+            )
+            if key not in existing_keys and key not in seen:
+                seen.add(key)
+                filtered.append(e)
+
+        if not filtered:
+            return 0
+
         conn.executemany(
             """INSERT INTO errors
                (document_id, type, paragraph_index, original_text, suggested_text,
@@ -1124,13 +1323,14 @@ def batch_insert_errors(document_id: str, errors: list[dict]):
                     e.get("description", ""),
                     e.get("chapter_id", ""),
                 )
-                for e in errors
+                for e in filtered
             ],
         )
+        return len(filtered)
 
 
 def batch_insert_chapters(document_id: str, chapters: list[dict], sort_base: int):
-    """批量写入 chapters，sort_order 从 sort_base 起自增。"""
+    """批量写入 chapters，sort_order 从 sort_base 起自增，并同步更新章节标题段落的分页类型。"""
     if not chapters:
         return
     from app.utils.helpers import generate_id
@@ -1138,8 +1338,8 @@ def batch_insert_chapters(document_id: str, chapters: list[dict], sort_base: int
         conn.executemany(
             """INSERT INTO chapters
                (id, document_id, title, title_paragraph_idx, level, parent_idx,
-                start_idx, end_idx, sort_order)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                start_idx, end_idx, sort_order, detected_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     generate_id(),
@@ -1151,12 +1351,228 @@ def batch_insert_chapters(document_id: str, chapters: list[dict], sort_base: int
                     c.get("start_idx", c.get("title_paragraph_idx", 0)),
                     c.get("end_idx", c.get("title_paragraph_idx", 0)),
                     sort_base + i,
+                    c.get("detected_by", "original"),
                 )
                 for i, c in enumerate(chapters)
             ],
         )
+        # 仅当为主章(level == 1)且该段当前为 'none' 且不是第 0 段时升级为 auto_chapter
+        for c in chapters:
+            tip = c.get("title_paragraph_idx")
+            level = c.get("level", 1)
+            if tip is not None and tip > 0 and level == 1:
+                conn.execute(
+                    """UPDATE paragraphs
+                       SET has_page_break_before = 1, page_break_type = 'auto_chapter'
+                       WHERE document_id = ? AND idx = ? AND page_break_type = 'none'""",
+                    (document_id, tip),
+                )
+
+
+def merge_and_save_chapters(document_id: str, new_chapters: list[dict]) -> tuple[int, int]:
+    """智能比对落库章节（保护原有章节不被破坏清除）：
+    1. 保持 DB 中既有章节（original / manual / llm），零盲目清空删除；
+    2. 若新识别到的章节对应段落已有既有章节，100% 保护既有章节 ID、标题与来源，仅更新起止区间；
+    3. 若为全新识别到的段落章节，按 detected_by='llm' 插入；
+    返回 (全书当前章节总数, 本次新识别 LLM 章节数)
+    """
+    if not new_chapters:
+        existing = get_chapters(document_id)
+        return len(existing), 0
+
+    from app.utils.helpers import generate_id
+    newly_added_count = 0
+
+    with get_conn() as conn:
+        existing_rows = conn.execute(
+            "SELECT * FROM chapters WHERE document_id = ? ORDER BY sort_order ASC",
+            (document_id,),
+        ).fetchall()
+        existing_map = {r["title_paragraph_idx"]: dict(r) for r in existing_rows}
+        max_sort = max([r["sort_order"] for r in existing_rows], default=-1)
+
+        for c in new_chapters:
+            tip = c.get("title_paragraph_idx")
+            if tip is None:
+                continue
+
+            start_idx = c.get("start_idx", tip)
+            end_idx = c.get("end_idx", tip)
+            level = c.get("level", 1)
+            parent_idx = c.get("parent_idx")
+
+            if tip in existing_map:
+                # 场景 A: 既有章节已存在，100% 保留原标题与原 detected_by，仅补充更新起止范围
+                old_ch = existing_map[tip]
+                conn.execute(
+                    """UPDATE chapters
+                       SET start_idx = ?, end_idx = ?, parent_idx = COALESCE(?, parent_idx)
+                       WHERE id = ?""",
+                    (start_idx, end_idx, parent_idx, old_ch["id"]),
+                )
+            else:
+                # 场景 C: 全新段落章节，标记 detected_by='llm' 增量插入
+                max_sort += 1
+                ch_id = generate_id()
+                title = c.get("title") or f"第 {tip} 段"
+                conn.execute(
+                    """INSERT INTO chapters
+                       (id, document_id, title, title_paragraph_idx, level, parent_idx,
+                        start_idx, end_idx, sort_order, detected_by)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'llm')""",
+                    (ch_id, document_id, title, tip, level, parent_idx, start_idx, end_idx, max_sort),
+                )
+                newly_added_count += 1
+
+                # 仅当为主章 (level == 1) 时，同步更新该段落的硬分页类型为 auto_chapter
+                if tip > 0 and level == 1:
+                    conn.execute(
+                        """UPDATE paragraphs
+                           SET has_page_break_before = 1, page_break_type = 'auto_chapter'
+                           WHERE document_id = ? AND idx = ? AND page_break_type = 'none'""",
+                        (document_id, tip),
+                    )
+
+        total_count = conn.execute(
+            "SELECT COUNT(*) as c FROM chapters WHERE document_id = ?",
+            (document_id,),
+        ).fetchone()["c"]
+
+    return total_count, newly_added_count
+
+
+# ==================== 项目作者/设定与人物图谱 CRUD ====================
+
+def update_project_profile(project_id: str, author_name: str | None = None, author_intro: str | None = None, background_setting: str | None = None, theme_mode: str | None = None):
+    """更新项目的作者设定与背景信息。"""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE projects
+               SET author_name = COALESCE(?, author_name),
+                   author_intro = COALESCE(?, author_intro),
+                   background_setting = COALESCE(?, background_setting),
+                   theme_mode = COALESCE(?, theme_mode),
+                   updated_at = datetime('now', 'localtime')
+               WHERE id = ?""",
+            (author_name, author_intro, background_setting, theme_mode, project_id),
+        )
+
+
+def upsert_character(project_id: str, name: str, aliases: list[str] | None = None, role: str = "supporting", first_appear_idx: int = 0, description: str = "") -> str:
+    """插入或更新项目角色信息。"""
+    from app.utils.helpers import generate_id
+    aliases_json = json.dumps(aliases or [], ensure_ascii=False)
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM characters WHERE project_id = ? AND name = ?",
+            (project_id, name),
+        ).fetchone()
+        if existing:
+            char_id = existing["id"]
+            conn.execute(
+                """UPDATE characters
+                   SET aliases = ?, role = ?, description = ?
+                   WHERE id = ?""",
+                (aliases_json, role, description, char_id),
+            )
+            return char_id
+        else:
+            char_id = generate_id()
+            conn.execute(
+                """INSERT INTO characters (id, project_id, name, aliases, role, first_appear_idx, description)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (char_id, project_id, name, aliases_json, role, first_appear_idx, description),
+            )
+            return char_id
+
+
+def get_characters(project_id: str) -> list[dict]:
+    """获取项目的全部角色列表。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM characters WHERE project_id = ? ORDER BY first_appear_idx ASC",
+            (project_id,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["aliases"] = json.loads(d.get("aliases") or "[]")
+            except Exception:
+                d["aliases"] = []
+            result.append(d)
+        return result
+
+
+def insert_relationship(project_id: str, from_char_id: str, to_char_id: str, relation_type: str, description: str = "", paragraph_idx: int = 0) -> str:
+    """写入角色动态演进关系。"""
+    from app.utils.helpers import generate_id
+    rel_id = generate_id()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO character_relationships
+               (id, project_id, from_char_id, to_char_id, relation_type, description, paragraph_idx)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (rel_id, project_id, from_char_id, to_char_id, relation_type, description, paragraph_idx),
+        )
+        return rel_id
+
+
+def get_character_graph(project_id: str, upto_paragraph_idx: int | None = None) -> dict:
+    """获取项目的人物关系图谱网络数据（支持按段落编号截断查看演进过程）。"""
+    chars = get_characters(project_id)
+    with get_conn() as conn:
+        if upto_paragraph_idx is not None:
+            rel_rows = conn.execute(
+                """SELECT r.*, f.name as from_name, t.name as to_name
+                   FROM character_relationships r
+                   JOIN characters f ON r.from_char_id = f.id
+                   JOIN characters t ON r.to_char_id = t.id
+                   WHERE r.project_id = ? AND r.paragraph_idx <= ?
+                   ORDER BY r.paragraph_idx ASC""",
+                (project_id, upto_paragraph_idx),
+            ).fetchall()
+        else:
+            rel_rows = conn.execute(
+                """SELECT r.*, f.name as from_name, t.name as to_name
+                   FROM character_relationships r
+                   JOIN characters f ON r.from_char_id = f.id
+                   JOIN characters t ON r.to_char_id = t.id
+                   WHERE r.project_id = ?
+                   ORDER BY r.paragraph_idx ASC""",
+                (project_id,),
+            ).fetchall()
+            
+    return {
+        "nodes": chars,
+        "edges": [dict(r) for r in rel_rows],
+    }
+
+
+def insert_glossary_term(project_id: str, term: str, category: str = "custom", std_replacement: str | None = None) -> str:
+    """插入项目专属或规范异形词。"""
+    from app.utils.helpers import generate_id
+    term_id = generate_id()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO glossary_terms (id, project_id, term, category, std_replacement)
+               VALUES (?, ?, ?, ?, ?)""",
+            (term_id, project_id, term, category, std_replacement),
+        )
+        return term_id
+
+
+def get_glossary_terms(project_id: str) -> list[dict]:
+    """获取项目的术语/异形词列表。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM glossary_terms WHERE project_id = ? ORDER BY created_at DESC",
+            (project_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # 启动时初始化表 + 设置缓存
 init_db()
 _load_settings_cache()
+

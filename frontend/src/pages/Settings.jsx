@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Form, Input, InputNumber, Button, List, Tag, Typography, Space, message, Popconfirm } from 'antd'
-import { KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined, ApiOutlined, ArrowLeftOutlined, EditOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { Card, Form, Input, InputNumber, Button, List, Tag, Typography, Space, message, Popconfirm, Modal, Tabs } from 'antd'
+import { KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined, ApiOutlined, ArrowLeftOutlined, EditOutlined, ThunderboltOutlined, UndoOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { getProviders, saveApiKey, deleteApiKey, testApiKey, getPrompts, savePrompts } from '../services/api'
+import { getProviders, saveApiKey, deleteApiKey, testApiKey, getPrompts, savePrompts, resetPrompts } from '../services/api'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -14,9 +14,9 @@ export default function Settings() {
   const [form] = Form.useForm()
 
   // system prompt state
-  const [promptGeneral, setPromptGeneral] = useState('')
   const [promptProofread, setPromptProofread] = useState('')
   const [promptSaving, setPromptSaving] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   // batch concurrency & window size state
   const [batchMaxConcurrent, setBatchMaxConcurrent] = useState(2)
@@ -33,7 +33,6 @@ export default function Settings() {
         getPrompts(),
       ])
       setProviders(providersData)
-      setPromptGeneral(promptsData.system_prompt_general)
       setPromptProofread(promptsData.system_prompt_proofread)
       setBatchMaxConcurrent(promptsData.batch_max_concurrent || 2)
       setProofreadWindowSize(promptsData.proofread_window_size || 30)
@@ -50,7 +49,6 @@ export default function Settings() {
     const acct = values[`acct_${providerId}`]
     const provider = providers.find(p => p.provider === providerId)
 
-    // 只保存 Account ID（不要求 API Key）
     if (opts.onlyAccountId) {
       if (!acct || !acct.trim()) return
       const res = await saveApiKey(providerId, null, acct.trim())
@@ -64,7 +62,6 @@ export default function Settings() {
       return
     }
 
-    // 保存 API Key（可选同时更新 Account ID）
     if (!key || !key.trim()) return
     const res = await saveApiKey(providerId, key.trim(), acct)
     if (res.error) {
@@ -93,228 +90,281 @@ export default function Settings() {
     }
   }
 
+  const handleResetPrompts = () => {
+    Modal.confirm({
+      title: '确认恢复默认校对指令模板？',
+      icon: <UndoOutlined style={{ color: '#fa8c16' }} />,
+      content: '恢复后将使用系统最新的官方标准校对提示词（包含错别字、语法、格式、逻辑、文风润色等 7 大校验规范及 JSON 示例）。',
+      okText: '恢复默认',
+      okType: 'warning',
+      cancelText: '取消',
+      onOk: async () => {
+        setResetting(true)
+        try {
+          const res = await resetPrompts()
+          if (res.system_prompt_proofread) {
+            setPromptProofread(res.system_prompt_proofread)
+            message.success('已成功恢复为系统默认校对指令模板！')
+          }
+        } catch (e) {
+          message.error('恢复失败：' + e.message)
+        } finally {
+          setResetting(false)
+        }
+      },
+    })
+  }
+
+  const tabItems = [
+    {
+      key: 'keys',
+      label: (
+        <Space>
+          <KeyOutlined />
+          <span>API Key 配置</span>
+        </Space>
+      ),
+      children: (
+        <Card style={{ borderRadius: 8 }}>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            按服务商配置 API Key（同一个服务商的模型共用一个 Key）。Key 加密存储在本地（backend/app/data/api_keys.json），不会上传到任何服务器。
+            DeepSeek 为 OpenAI 兼容接口（base_url: https://api.deepseek.com）。
+          </Text>
+
+          <List
+            loading={loading}
+            dataSource={providers}
+            renderItem={(p) => (
+              <List.Item
+                actions={
+                  p.configured ? [
+                    <Popconfirm
+                      key="delete"
+                      title={`确定删除 ${p.name} 的 API Key？`}
+                      onConfirm={() => handleDelete(p.provider)}
+                    >
+                      <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
+                    </Popconfirm>,
+                  ] : []
+                }
+              >
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <Text strong>{p.name}</Text>
+                      {p.configured ? (
+                        <Tag color="success" icon={<CheckCircleOutlined />}>已配置</Tag>
+                      ) : (
+                        <Tag color="warning">未配置</Tag>
+                      )}
+                    </Space>
+                  }
+                  description={
+                    <div>
+                      {p.configured && (
+                        <div style={{ marginBottom: 8 }}>
+                          <Text type="secondary">当前 Key：{p.masked_key}</Text>
+                        </div>
+                      )}
+                      <div>
+                        <Form form={form} layout="inline">
+                          <Form.Item name={`key_${p.provider}`} noStyle>
+                            <Input.Password
+                              placeholder={p.configured ? '输入新 Key 覆盖' : '粘贴 API Key'}
+                              style={{ width: 360 }}
+                              onPressEnter={() => handleSave(p.provider)}
+                            />
+                          </Form.Item>
+                          <Form.Item noStyle>
+                            <Button type="primary" shape="round" icon={<SaveOutlined />} onClick={() => handleSave(p.provider)}>
+                              保存
+                            </Button>
+                          </Form.Item>
+                          {p.requires_account_id && (
+                            <div style={{ display: 'block', width: '100%', marginTop: 8 }}>
+                              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Account ID（Cloudflare Workers AI 必需）</Text>
+                              <Space>
+                                <Form.Item name={`acct_${p.provider}`} noStyle>
+                                  <Input
+                                    placeholder={p.masked_account_id ? `当前：${p.masked_account_id}` : '粘贴 Account ID'}
+                                    style={{ width: 360 }}
+                                  />
+                                </Form.Item>
+                                <Button
+                                  size="small"
+                                  type="primary"
+                                  shape="round"
+                                  icon={<SaveOutlined />}
+                                  onClick={() => handleSave(p.provider, { onlyAccountId: true })}
+                                >
+                                  保存
+                                </Button>
+                              </Space>
+                            </div>
+                          )}
+                        </Form>
+                      </div>
+                      <div style={{ marginTop: 10 }}>
+                        {p.models.map((m) => (
+                          <Tag
+                            key={m.id}
+                            color={m.deprecated ? 'red' : 'default'}
+                            style={{ marginBottom: 6 }}
+                          >
+                            {m.name}
+                            {p.configured && (
+                              <Button
+                                type="link"
+                                size="small"
+                                icon={<ApiOutlined />}
+                                loading={testing === m.id}
+                                onClick={() => handleTest(m.id)}
+                                style={{ padding: '0 4px' }}
+                              >
+                                测试
+                              </Button>
+                            )}
+                          </Tag>
+                        ))}
+                      </div>
+                    </div>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        </Card>
+      ),
+    },
+    {
+      key: 'prompts',
+      label: (
+        <Space>
+          <EditOutlined />
+          <span>校对指令模板</span>
+        </Space>
+      ),
+      children: (
+        <Card style={{ borderRadius: 8 }}>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            自定义下发给大模型的校对指令模板。{'{type_desc}'} 会自动被替换为选中的校对维度（错别字、语法、格式、文风润色等）。最头部会自动注入【作者设定与世界观背景】和【已登场人物与动态关系网】。
+          </Text>
+
+          <div style={{ marginBottom: 16 }}>
+            <TextArea
+              rows={18}
+              value={promptProofread}
+              onChange={(e) => setPromptProofread(e.target.value)}
+              placeholder="校对指令模板"
+            />
+          </div>
+
+          <Space>
+            <Button
+              type="primary"
+              shape="round"
+              icon={<SaveOutlined />}
+              loading={promptSaving}
+              onClick={async () => {
+                setPromptSaving(true)
+                try {
+                  await savePrompts(promptProofread, batchMaxConcurrent)
+                  message.success('校对指令模板已保存')
+                } catch {
+                  message.error('保存失败')
+                } finally {
+                  setPromptSaving(false)
+                }
+              }}
+            >
+              保存提示词
+            </Button>
+
+            <Button
+              shape="round"
+              icon={<UndoOutlined />}
+              loading={resetting}
+              onClick={handleResetPrompts}
+            >
+              恢复默认模板
+            </Button>
+          </Space>
+        </Card>
+      ),
+    },
+    {
+      key: 'concurrency',
+      label: (
+        <Space>
+          <ThunderboltOutlined />
+          <span>窗口与并发设置</span>
+        </Space>
+      ),
+      children: (
+        <Card style={{ borderRadius: 8 }}>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            配置校对时的单个 LLM 窗口段落数量以及“批量校对”时的并行窗口并发数量。
+          </Text>
+
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Text strong style={{ minWidth: 120 }}>单窗口段落数量：</Text>
+            <InputNumber
+              min={5}
+              max={100}
+              value={proofreadWindowSize}
+              onChange={(val) => setProofreadWindowSize(val || 5)}
+              style={{ width: 120 }}
+            />
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              （默认：30 段。范围：5 ~ 100 段）
+            </Text>
+          </div>
+
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Text strong style={{ minWidth: 120 }}>最大并发窗口数：</Text>
+            <InputNumber
+              min={1}
+              max={20}
+              value={batchMaxConcurrent}
+              onChange={(val) => setBatchMaxConcurrent(val || 1)}
+              style={{ width: 120 }}
+            />
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              （推荐：2 ~ 5。单次批量并发处理 {batchMaxConcurrent * proofreadWindowSize} 段）
+            </Text>
+          </div>
+
+          <Button
+            type="primary"
+            shape="round"
+            icon={<SaveOutlined />}
+            loading={batchSaving}
+            onClick={async () => {
+              setBatchSaving(true)
+              try {
+                await savePrompts(promptProofread, batchMaxConcurrent, proofreadWindowSize)
+                message.success('窗口与并发设置已保存')
+              } catch {
+                message.error('保存失败')
+              } finally {
+                setBatchSaving(false)
+              }
+            }}
+          >
+            保存窗口与并发设置
+          </Button>
+        </Card>
+      ),
+    },
+  ]
+
   return (
     <div>
       <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} style={{ marginBottom: 16 }}>
         返回项目列表
       </Button>
 
-      <Card title={<Space><KeyOutlined /> API Key 配置</Space>}>
-        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          按服务商配置 API Key（同一个服务商的模型共用一个 Key）。Key 加密存储在本地（backend/app/data/api_keys.json），不会上传到任何服务器。
-          DeepSeek 为 OpenAI 兼容接口（base_url: https://api.deepseek.com）。
-        </Text>
-
-        <List
-          loading={loading}
-          dataSource={providers}
-          renderItem={(p) => (
-            <List.Item
-              actions={
-                p.configured ? [
-                  <Popconfirm
-                    key="delete"
-                    title={`确定删除 ${p.name} 的 API Key？`}
-                    onConfirm={() => handleDelete(p.provider)}
-                  >
-                    <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
-                  </Popconfirm>,
-                ] : []
-              }
-            >
-              <List.Item.Meta
-                title={
-                  <Space>
-                    <Text strong>{p.name}</Text>
-                    {p.configured ? (
-                      <Tag color="success" icon={<CheckCircleOutlined />}>已配置</Tag>
-                    ) : (
-                      <Tag color="warning">未配置</Tag>
-                    )}
-                  </Space>
-                }
-                description={
-                  <div>
-                    {p.configured && (
-                      <div style={{ marginBottom: 8 }}>
-                        <Text type="secondary">当前 Key：{p.masked_key}</Text>
-                      </div>
-                    )}
-                    <div>
-                      <Form form={form} layout="inline">
-                        <Form.Item name={`key_${p.provider}`} noStyle>
-                          <Input.Password
-                            placeholder={p.configured ? '输入新 Key 覆盖' : '粘贴 API Key'}
-                            style={{ width: 360 }}
-                            onPressEnter={() => handleSave(p.provider)}
-                          />
-                        </Form.Item>
-                        <Form.Item noStyle>
-                          <Button type="primary" shape="round" icon={<SaveOutlined />} onClick={() => handleSave(p.provider)}>
-                            保存
-                          </Button>
-                        </Form.Item>
-                        {p.requires_account_id && (
-                          <div style={{ display: 'block', width: '100%', marginTop: 8 }}>
-                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Account ID（Cloudflare Workers AI 必需）</Text>
-                            <Space>
-                              <Form.Item name={`acct_${p.provider}`} noStyle>
-                                <Input
-                                  placeholder={p.masked_account_id ? `当前：${p.masked_account_id}` : '粘贴 Account ID'}
-                                  style={{ width: 360 }}
-                                />
-                              </Form.Item>
-                              <Button
-                                size="small"
-                                type="primary"
-                                shape="round"
-                                icon={<SaveOutlined />}
-                                onClick={() => handleSave(p.provider, { onlyAccountId: true })}
-                              >
-                                保存
-                              </Button>
-                            </Space>
-                          </div>
-                        )}
-                      </Form>
-                    </div>
-                    <div style={{ marginTop: 10 }}>
-                      {p.models.map((m) => (
-                        <Tag
-                          key={m.id}
-                          color={m.deprecated ? 'red' : 'default'}
-                          style={{ marginBottom: 6 }}
-                        >
-                          {m.name}
-                          {p.configured && (
-                            <Button
-                              type="link"
-                              size="small"
-                              icon={<ApiOutlined />}
-                              loading={testing === m.id}
-                              onClick={() => handleTest(m.id)}
-                              style={{ padding: '0 4px' }}
-                            >
-                              测试
-                            </Button>
-                          )}
-                        </Tag>
-                      ))}
-                    </div>
-                  </div>
-                }
-              />
-            </List.Item>
-          )}
-        />
-      </Card>
-
-      <Card title={<Space><EditOutlined /> 系统提示词</Space>} style={{ marginTop: 16 }}>
-        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          自定义发送给大模型的 system prompt。{'{type_desc}'} 会被替换为错误类型列表（错别字、语法错误等）。
-          修改后重启校对才会生效。
-        </Text>
-
-        <div style={{ marginBottom: 16 }}>
-          <Text strong style={{ display: 'block', marginBottom: 4 }}>通用提示词</Text>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
-            未指定校对指令时使用的默认 system prompt。
-          </Text>
-          <TextArea
-            rows={3}
-            value={promptGeneral}
-            onChange={(e) => setPromptGeneral(e.target.value)}
-            placeholder="通用 system prompt"
-          />
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <Text strong style={{ display: 'block', marginBottom: 4 }}>校对指令模板</Text>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
-            校对的 system prompt，{'{type_desc}'} 会被自动替换。
-          </Text>
-          <TextArea
-            rows={15}
-            value={promptProofread}
-            onChange={(e) => setPromptProofread(e.target.value)}
-            placeholder="校对指令模板"
-          />
-        </div>
-
-        <Button
-          type="primary"
-          shape="round"
-          icon={<SaveOutlined />}
-          loading={promptSaving}
-          onClick={async () => {
-            setPromptSaving(true)
-            try {
-              await savePrompts(promptGeneral, promptProofread, batchMaxConcurrent)
-              message.success('系统提示词已保存')
-            } catch {
-              message.error('保存失败')
-            } finally {
-              setPromptSaving(false)
-            }
-          }}
-        >
-          保存提示词
-        </Button>
-      </Card>
-
-      <Card title={<Space><ThunderboltOutlined /> 校对窗口与并发设置</Space>} style={{ marginTop: 16 }}>
-        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          配置校对时的单个 LLM 窗口段落数量以及“批量校对”时的并行窗口并发数量。
-        </Text>
-
-        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Text strong style={{ minWidth: 120 }}>单窗口段落数量：</Text>
-          <InputNumber
-            min={5}
-            max={100}
-            value={proofreadWindowSize}
-            onChange={(val) => setProofreadWindowSize(val || 5)}
-            style={{ width: 120 }}
-          />
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            （默认：30 段。范围：5 ~ 100 段）
-          </Text>
-        </div>
-
-        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Text strong style={{ minWidth: 120 }}>最大并发窗口数：</Text>
-          <InputNumber
-            min={1}
-            max={20}
-            value={batchMaxConcurrent}
-            onChange={(val) => setBatchMaxConcurrent(val || 1)}
-            style={{ width: 120 }}
-          />
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            （推荐：2 ~ 5。单次批量并发处理 {batchMaxConcurrent * proofreadWindowSize} 段）
-          </Text>
-        </div>
-
-        <Button
-          type="primary"
-          shape="round"
-          icon={<SaveOutlined />}
-          loading={batchSaving}
-          onClick={async () => {
-            setBatchSaving(true)
-            try {
-              await savePrompts(promptGeneral, promptProofread, batchMaxConcurrent, proofreadWindowSize)
-              message.success('窗口与并发设置已保存')
-            } catch {
-              message.error('保存失败')
-            } finally {
-              setBatchSaving(false)
-            }
-          }}
-        >
-          保存窗口与并发设置
-        </Button>
-      </Card>
+      <Tabs defaultActiveKey="keys" items={tabItems} size="large" />
     </div>
   )
 }

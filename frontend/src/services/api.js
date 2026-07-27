@@ -66,13 +66,17 @@ export async function getPrompts() {
   return data
 }
 
-export async function savePrompts(general, proofread, batchMaxConcurrent, proofreadWindowSize) {
+export async function savePrompts(proofread, batchMaxConcurrent, proofreadWindowSize) {
   const payload = {}
-  if (general !== undefined) payload.system_prompt_general = general
   if (proofread !== undefined) payload.system_prompt_proofread = proofread
   if (batchMaxConcurrent !== undefined) payload.batch_max_concurrent = batchMaxConcurrent
   if (proofreadWindowSize !== undefined) payload.proofread_window_size = proofreadWindowSize
   const { data } = await api.put('/settings/prompts', payload)
+  return data
+}
+
+export async function resetPrompts() {
+  const { data } = await api.post('/settings/reset-prompts')
   return data
 }
 
@@ -143,6 +147,11 @@ export async function cleanEmptyParagraphs(projectId) {
   return data
 }
 
+export async function formatProjectIndent(projectId) {
+  const { data } = await api.post(`/projects/${projectId}/format-indent`)
+  return data
+}
+
 // ==================== Export ====================
 
 export async function exportDoc(projectId) {
@@ -196,6 +205,25 @@ export async function setChapter(projectId, idx, isChapter = true, level = 1, ti
     level,
     title,
   })
+  return data
+}
+
+// ==================== Project Profile & Character Graph ====================
+
+export async function updateProjectProfile(projectId, profileData) {
+  const { data } = await api.put(`/projects/${projectId}/profile`, profileData)
+  return data
+}
+
+export async function getCharacterGraph(projectId, uptoParagraphIdx) {
+  const params = {}
+  if (uptoParagraphIdx !== undefined) params.upto_paragraph_idx = uptoParagraphIdx
+  const { data } = await api.get(`/projects/${projectId}/character-graph`, { params })
+  return data
+}
+
+export async function scanProjectTerms(projectId) {
+  const { data } = await api.post(`/projects/${projectId}/scan-terms`)
   return data
 }
 

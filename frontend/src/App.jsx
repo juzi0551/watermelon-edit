@@ -8,7 +8,7 @@ import ProjectDetail from './pages/ProjectDetail'
 import Settings from './pages/Settings'
 import LLMDebug from './components/LLMDebug'
 import ThemeSwitcher from './components/ThemeSwitcher'
-import { applyThemeVariables } from './design-tokens'
+import { applyThemeVariables, color } from './design-tokens'
 
 const { Header, Content, Footer } = Layout
 const { Text } = Typography
@@ -18,6 +18,14 @@ export const ThemeContext = createContext({
   setThemeMode: () => {},
   isDark: false,
 })
+
+export function useTheme() {
+  const ctx = useContext(ThemeContext)
+  return {
+    ...ctx,
+    color,
+  }
+}
 
 function getSystemTheme() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches

@@ -75,7 +75,7 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
         else:
-            sp = get_setting("system_prompt_general", _DEFAULT_SYSTEM_PROMPT_HARDCODED)
+            sp = get_setting("system_prompt_proofread", _DEFAULT_SYSTEM_PROMPT_HARDCODED)
             if sp:
                 messages.append({"role": "system", "content": sp})
         messages.append({"role": "user", "content": prompt})

@@ -1,13 +1,17 @@
 import json
 from json_repair import repair_json
+from app.core.database import (
+    get_setting, get_project, get_character_graph,
+    upsert_character, insert_relationship,
+)
 from app.core.llm import call_llm
-from app.core.database import get_setting
 
 TYPE_LABELS = {
     "typo": "错别字",
     "grammar": "语法错误",
     "punctuation": "标点符号错误",
     "format": "格式不一致",
+    "style": "文风与风格润色建议",
 }
 ALL_TYPES = list(TYPE_LABELS.keys())
 _VALID_TYPES = set(ALL_TYPES)
@@ -17,13 +21,55 @@ _VALID_SEVERITY = {"high", "medium", "low"}
 _FALLBACK_PROOFREAD_TEMPLATE = ""  # 由 database 模块的 DEFAULT_SYSTEM_PROMPT_PROOFREAD 兜底
 
 
-def build_proofread_system_prompt(selected_types: list[str]) -> str:
-    """构建 system prompt：从数据库加载模板，替换 {type_desc}。"""
+def build_proofread_system_prompt(selected_types: list[str], project_id: str | None = None, current_paragraph_idx: int | None = None) -> str:
+    """构建 system prompt：动态注入作者文风、背景设定、已知人物关系网并替换 {type_desc}。"""
     type_desc = "、".join(TYPE_LABELS.get(t, t) for t in selected_types)
     template = get_setting("system_prompt_proofread", _FALLBACK_PROOFREAD_TEMPLATE)
     if not template:
         template = _FALLBACK_PROOFREAD_TEMPLATE
-    return template.replace("{type_desc}", type_desc)
+    
+    base_prompt = template.replace("{type_desc}", type_desc)
+    
+    if not project_id:
+        return base_prompt
+
+    # 动态构建项目 Context（作者文风、背景设定、人物关系网）
+    context_parts = []
+    project = get_project(project_id)
+    if project:
+        author = project.get("author_name") or ""
+        intro = project.get("author_intro") or ""
+        bg = project.get("background_setting") or ""
+        if author or intro or bg:
+            context_parts.append("【作者设定与世界观背景】")
+            if author:
+                context_parts.append(f"作者：{author}")
+            if intro:
+                context_parts.append(f"文风偏好：{intro}")
+            if bg:
+                context_parts.append(f"背景设定：{bg}")
+    
+    # 注入已知人物动态网络
+    try:
+        graph = get_character_graph(project_id, current_paragraph_idx)
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        if nodes or edges:
+            context_parts.append("\n【已登场人物与动态关系网】")
+            if nodes:
+                node_strs = [f"{n['name']}({n.get('role','角色')})" for n in nodes[:15]]
+                context_parts.append("已知角色：" + "、".join(node_strs))
+            if edges:
+                edge_strs = [f"{e.get('from_name','')} <-> {e.get('to_name','')}: {e.get('description') or e.get('relation_type')}" for e in edges[:10]]
+                context_parts.append("已知关系：\n" + "\n".join(edge_strs))
+    except Exception:
+        pass
+
+    if context_parts:
+        context_str = "\n".join(context_parts) + "\n\n----------------------------------------\n"
+        return context_str + base_prompt
+    
+    return base_prompt
 
 
 def build_proofread_user_text(window_paragraphs: list[tuple]) -> str:
@@ -31,40 +77,75 @@ def build_proofread_user_text(window_paragraphs: list[tuple]) -> str:
     return "\n".join(f"[{idx}] {text}" for idx, text in window_paragraphs)
 
 
-def build_proofread_prompt(window_paragraphs: list[tuple], selected_types: list[str]) -> str:
-    """兼容旧接口：返回完整的 prompt（指令 + 文本混合）。
-    新代码请使用 build_proofread_system_prompt + build_proofread_user_text。"""
-    system = build_proofread_system_prompt(selected_types)
+def build_proofread_prompt(window_paragraphs: list[tuple], selected_types: list[str], project_id: str | None = None) -> str:
+    """兼容旧接口：返回完整的 prompt（指令 + 文本混合）。"""
+    first_idx = window_paragraphs[0][0] if window_paragraphs else None
+    system = build_proofread_system_prompt(selected_types, project_id, first_idx)
     text = build_proofread_user_text(window_paragraphs)
     return system + "\n\n文本：\n---\n" + text + "\n---"
 
 
-async def proofread_window(prompt: str, model_id: str, selected_types: list[str] | None = None, tag: str = "", system_prompt: str | None = None) -> tuple[list[dict], list[dict], str | None, dict, bool]:
-    """对一个窗口（W 段）调用 LLM 校对。
-
-    返回 (errors, chapters, raw_response, token_info, parse_ok)。
-
-    raw_response 为 LLM 返回的原始响应字符串（始终有值，用于持久化日志）。
-    token_info 包含 prompt_tokens / completion_tokens / total_tokens / cost。
-    errors 已按 selected_types 过滤并规范化；chapters 为本窗口识别的章节结构。
-    parse_ok 为 True 表示 JSON 解析成功，False 表示解析失败但原始内容已返回。
-    LLM 调用本身失败（连接/Key/超时）时仍抛出 LLMCallError。
-
-    建议传 system_prompt + prompt（纯文本），此时 prompt 作为 user 消息。
-    不传 system_prompt 时兼容旧模式：prompt 为完整 prompt（指令+文本混合）。
-    """
+async def proofread_window(
+    prompt: str,
+    model_id: str,
+    selected_types: list[str] | None = None,
+    tag: str = "",
+    system_prompt: str | None = None,
+    project_id: str | None = None,
+    window_first_idx: int | None = None,
+) -> tuple[list[dict], list[dict], str | None, dict, bool]:
+    """对一个窗口（W 段）调用 LLM 校对，自动注入 Context 并动态解析落库角色演进事件。"""
     if selected_types is None:
         selected_types = ALL_TYPES
-    if system_prompt is not None:
-        raw, token_info = await call_llm(prompt, model_id, tag=tag, system_prompt=system_prompt)
-    else:
-        raw, token_info = await call_llm(prompt, model_id, tag=tag)
+    
+    if system_prompt is None:
+        system_prompt = build_proofread_system_prompt(selected_types, project_id, window_first_idx)
+
+    raw, token_info = await call_llm(prompt, model_id, tag=tag, system_prompt=system_prompt)
     data = _robust_json_load(raw)
     if data is None:
         return [], [], raw, token_info, False
+    
     chapters = _normalize_chapters(data.get("chapters", []))
     errors = _normalize_errors(data.get("errors", []), set(selected_types))
+
+    # 动态解析并落库新登场人物与演进关系
+    if project_id and data:
+        _extract_and_save_character_events(project_id, data, window_first_idx or 0)
+
     return errors, chapters, raw, token_info, True
+
+
+def _extract_and_save_character_events(project_id: str, data: dict, paragraph_idx: int):
+    """解析 LLM 响应中的 character_updates 与 relationship_events 并自动落库。"""
+    char_updates = data.get("character_updates", [])
+    if isinstance(char_updates, list):
+        for c in char_updates:
+            if isinstance(c, dict) and c.get("name"):
+                upsert_character(
+                    project_id=project_id,
+                    name=c["name"],
+                    aliases=c.get("aliases"),
+                    role=c.get("role", "supporting"),
+                    first_appear_idx=paragraph_idx,
+                    description=c.get("description", ""),
+                )
+
+    rel_events = data.get("relationship_events", [])
+    if isinstance(rel_events, list):
+        char_map = {c["name"]: c["id"] for c in get_character_graph(project_id).get("nodes", [])}
+        for r in rel_events:
+            if isinstance(r, dict) and r.get("from") and r.get("to"):
+                from_id = char_map.get(r["from"]) or upsert_character(project_id, r["from"], first_appear_idx=paragraph_idx)
+                to_id = char_map.get(r["to"]) or upsert_character(project_id, r["to"], first_appear_idx=paragraph_idx)
+                insert_relationship(
+                    project_id=project_id,
+                    from_char_id=from_id,
+                    to_char_id=to_id,
+                    relation_type=r.get("type", "neutral"),
+                    description=r.get("description", ""),
+                    paragraph_idx=paragraph_idx,
+                )
 
 
 def proofread_chapter(chapter_id: str, chapter_content: str, model_id: str) -> list[dict]:

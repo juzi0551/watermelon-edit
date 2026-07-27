@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, forwardRe
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
-  Checkbox, Modal, Popconfirm,
+  Checkbox, Modal, Popconfirm, Dropdown,
 } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined,
@@ -527,12 +527,16 @@ export default function ReviewReader({
     }
   }
 
-  const handleToggleChapter = async (para) => {
+  const handleSetChapter = async (para, level = 1, isRemove = false) => {
     if (!project?.id) return
-    const isCh = chapters.some(c => c.title_paragraph_idx === para.idx)
     try {
-      await setChapter(project.id, para.idx, !isCh, 1, para.text.trim())
-      message.success(!isCh ? '已将该段设为章节标题' : '已取消章节标题')
+      if (isRemove) {
+        await setChapter(project.id, para.idx, false, 1, '')
+        message.success('已取消章节标记')
+      } else {
+        await setChapter(project.id, para.idx, true, level, para.text.trim())
+        message.success(level === 2 ? '已将该段设为副节标题' : '已将该段设为主章标题')
+      }
       onReloadProject?.()
     } catch (e) {
       message.error(e.message || '操作失败')
@@ -1048,7 +1052,13 @@ export default function ReviewReader({
                         {para.idx}
                       </span>
 
-                      <div style={{ lineHeight: 1.9, fontSize: currentBodyFontSize, flex: 1, color: color.textPrimary }}>
+                      <div style={{
+                        lineHeight: 1.9,
+                        fontSize: currentBodyFontSize,
+                        flex: 1,
+                        color: color.textPrimary,
+                        textIndent: (Boolean(project?.style_config?.first_line_indent_enabled) && !isCh) ? '2em' : '0',
+                      }}>
                         {isEditing ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <Input.TextArea
@@ -1067,11 +1077,20 @@ export default function ReviewReader({
                             </Space>
                           </div>
                         ) : (
-                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary }}>
+                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary, display: 'inline-block', width: '100%' }}>
                             {isCh && (
-                              <Tag color="gold" style={{ marginBottom: 4, marginRight: 6 }}>
-                                📖 章节 ({chapterObj?.level === 2 ? '节' : '章'})
-                              </Tag>
+                              <>
+                                <Tag color="gold" style={{ marginBottom: 4, marginRight: 4 }}>
+                                  📖 章节 ({chapterObj?.level === 2 ? '节' : '章'})
+                                </Tag>
+                                {chapterObj?.detected_by === 'manual' ? (
+                                  <Tag color="green" style={{ marginBottom: 4, marginRight: 8 }}>人工</Tag>
+                                ) : chapterObj?.detected_by === 'llm' ? (
+                                  <Tag color="purple" style={{ marginBottom: 4, marginRight: 8 }}>LLM识别</Tag>
+                                ) : (
+                                  <Tag color="blue" style={{ marginBottom: 4, marginRight: 8 }}>原文</Tag>
+                                )}
+                              </>
                             )}
                             {isBlank ? (
                               <span style={{ color: '#bfbfbf', fontStyle: 'italic', fontSize: 13, userSelect: 'none' }}>
@@ -1160,17 +1179,29 @@ export default function ReviewReader({
                               </Tooltip>
                             )
                           })()}
-                          <Tooltip title={isCh ? '取消章节标题' : '设为章节标题'}>
+                          <Dropdown
+                            menu={{
+                              items: isCh ? [
+                                { key: 'l1', label: '📖 改为主章 (Level 1)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
+                                { key: 'l2', label: '🔖 改为副节 (Level 2)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } },
+                                { type: 'divider' },
+                                { key: 'unset', danger: true, label: '❌ 取消章节标记', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1, true) } }
+                              ] : [
+                                { key: 'l1', label: '📖 设为主章 (Level 1)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
+                                { key: 'l2', label: '🔖 设为副节 (Level 2)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } }
+                              ]
+                            }}
+                          >
                             <Button
                               type={isCh ? 'primary' : 'text'}
                               size="small"
                               icon={<BookOutlined />}
-                              onClick={(e) => { e.stopPropagation(); handleToggleChapter(para); }}
+                              onClick={(e) => e.stopPropagation()}
                               style={{ fontSize: 12 }}
                             >
-                              {isCh ? '已设章节' : '设章节'}
+                              {isCh ? (chapterObj?.level === 2 ? '已设副节 ▾' : '已设主章 ▾') : '设章节 ▾'}
                             </Button>
-                          </Tooltip>
+                          </Dropdown>
                           <Tooltip title={project?.is_locked === 1 ? '项目已锁定，禁止删除段落' : '删除该段落'}>
                             <Button
                               type="text"
