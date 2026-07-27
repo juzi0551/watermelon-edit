@@ -156,7 +156,6 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             types = req.types or progress["proofread_types"]
             update_project_status(project_id, "proofreading")
             delete_errors_in_range(doc_id, range_start, total)
-            delete_chapters_in_range(doc_id, range_start, total)
             sort_base = len(get_chapters(doc_id))
             ws = range_start
             we = min(ws + window_size, range_end)
@@ -583,10 +582,8 @@ async def retry_window(project_id: str, req: RetryWindowRequest):
             update_project_status(project_id, "reviewing")
             return {"status": "error", "message": "模型返回格式异常，重试失败"}
 
-        # 清理该 window 范围内的旧数据
+        # 清理该 window 范围内的旧错误数据
         delete_errors_in_range(doc_id, ws, we)
-        delete_chapters_in_range(doc_id, ws, we)
-        sort_base = len(get_chapters(doc_id))
 
         valid_errs = []
         for e in errs:
@@ -601,7 +598,7 @@ async def retry_window(project_id: str, req: RetryWindowRequest):
         ]
 
         batch_insert_errors(doc_id, valid_errs)
-        batch_insert_chapters(doc_id, valid_chs, sort_base)
+        merge_and_save_chapters(doc_id, valid_chs)
         update_batch_window(req.batch_id, req.window_index, "ok")
 
         # 重新汇总 batch 状态

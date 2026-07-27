@@ -545,13 +545,15 @@ export default function ReviewReader({
       localStorage.setItem(`reading_scrolltop_${project.id}`, savedTop)
     }
 
+    const levelNames = { 1: '1级 卷/部', 2: '2级 章', 3: '3级 节/回', 4: '4级 小节', 5: '5级 目', 6: '6级 细目' }
+
     try {
       if (isRemove) {
         await setChapter(project.id, para.idx, false, 1, '')
         message.success('已取消章节标记')
       } else {
         await setChapter(project.id, para.idx, true, level, para.text.trim())
-        message.success(level === 2 ? '已将该段设为副节标题' : '已将该段设为主章标题')
+        message.success(`已将该段设为 ${levelNames[level] || level + '级'} 标题`)
       }
       await onReloadProject?.()
     } catch (e) {
@@ -1108,7 +1110,13 @@ export default function ReviewReader({
                             {isCh && (
                               <>
                                 <Tag color="gold" style={{ marginBottom: 4, marginRight: 4 }}>
-                                  📖 章节 ({chapterObj?.level === 2 ? '节' : '章'})
+                                  📖 章节 ({
+                                    chapterObj?.level === 1 ? '1级 卷/部' :
+                                    chapterObj?.level === 2 ? '2级 章' :
+                                    chapterObj?.level === 3 ? '3级 节/回' :
+                                    chapterObj?.level === 4 ? '4级 小节' :
+                                    chapterObj?.level === 5 ? '5级 目' : '6级 细目'
+                                  })
                                 </Tag>
                                 {chapterObj?.detected_by === 'manual' ? (
                                   <Tag color="green" style={{ marginBottom: 4, marginRight: 8 }}>人工</Tag>
@@ -1209,13 +1217,21 @@ export default function ReviewReader({
                           <Dropdown
                             menu={{
                               items: isCh ? [
-                                { key: 'l1', label: '📖 改为主章 (Level 1)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
-                                { key: 'l2', label: '🔖 改为副节 (Level 2)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } },
+                                { key: 'l1', label: '📖 改为 1 级 (卷/部) [开页]', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
+                                { key: 'l2', label: '📖 改为 2 级 (章)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } },
+                                { key: 'l3', label: '🔖 改为 3 级 (节/回)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 3) } },
+                                { key: 'l4', label: '📌 改为 4 级 (篇/小节)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 4) } },
+                                { key: 'l5', label: '📍 改为 5 级 (条/目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 5) } },
+                                { key: 'l6', label: '🔹 改为 6 级 (细目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 6) } },
                                 { type: 'divider' },
                                 { key: 'unset', danger: true, label: '❌ 取消章节标记', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1, true) } }
                               ] : [
-                                { key: 'l1', label: '📖 设为主章 (Level 1)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
-                                { key: 'l2', label: '🔖 设为副节 (Level 2)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } }
+                                { key: 'l1', label: '📖 设为 1 级 (卷/部) [开页]', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
+                                { key: 'l2', label: '📖 设为 2 级 (章)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } },
+                                { key: 'l3', label: '🔖 设为 3 级 (节/回)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 3) } },
+                                { key: 'l4', label: '📌 设为 4 级 (篇/小节)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 4) } },
+                                { key: 'l5', label: '📍 设为 5 级 (条/目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 5) } },
+                                { key: 'l6', label: '🔹 设为 6 级 (细目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 6) } }
                               ]
                             }}
                           >
@@ -1226,7 +1242,7 @@ export default function ReviewReader({
                               onClick={(e) => e.stopPropagation()}
                               style={{ fontSize: 12 }}
                             >
-                              {isCh ? (chapterObj?.level === 2 ? '已设副节 ▾' : '已设主章 ▾') : '设章节 ▾'}
+                              {isCh ? `已设 ${chapterObj?.level || 1}级章节 ▾` : '设章节 ▾'}
                             </Button>
                           </Dropdown>
                           <Tooltip title={project?.is_locked === 1 ? '项目已锁定，禁止删除段落' : '删除该段落'}>

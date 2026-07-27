@@ -772,16 +772,24 @@ export default function ProjectDetail() {
                       <List.Item
                         style={{
                           cursor: 'pointer',
-                          paddingLeft: ch.level === 2 ? 20 : 0,
-                          color: ch.level === 2 ? color.textTertiary : undefined,
+                          paddingLeft: ((ch.level || 1) - 1) * 14 + 6,
                           background: selectedChapter === ch.id ? color.bgChapterSelected : 'transparent',
-                          padding: '4px 8px',
+                          paddingTop: 4,
+                          paddingBottom: 4,
+                          paddingRight: 8,
                           borderRadius: 4,
                         }}
                         onClick={() => setSelectedChapter(ch.id)}
                       >
                         <Space style={{ width: '100%', justifyContent: 'space-between', minWidth: 0 }}>
-                          <Text ellipsis style={{ fontSize: ch.level === 2 ? 12 : 13, flex: 1 }}>{ch.title || `第 ${ch.title_paragraph_idx} 段`}</Text>
+                          <Text ellipsis style={{
+                            fontSize: ch.level >= 3 ? 12 : 13,
+                            fontWeight: ch.level === 1 ? 600 : 400,
+                            color: ch.level >= 3 ? color.textTertiary : color.textPrimary,
+                            flex: 1,
+                          }}>
+                            {ch.level >= 3 ? `[L${ch.level}] ` : ''}{ch.title || `第 ${ch.title_paragraph_idx} 段`}
+                          </Text>
                           {ch.detected_by === 'manual' ? (
                             <Tag color="green" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>人工</Tag>
                           ) : ch.detected_by === 'llm' ? (
