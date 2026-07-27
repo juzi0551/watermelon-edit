@@ -3,7 +3,6 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from docx import Document as DocxDocument
-from docx.enum.text import WD_BREAK
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from app.core.document import EMPTY_SKIP_STYLES
@@ -12,7 +11,6 @@ from app.core.database import (
     get_project, get_current_document, get_errors, get_error,
     update_error_status, update_error_suggested, update_project_status,
     get_paragraph_by_idx, update_paragraph_revised, get_revised_paragraphs,
-    get_chapters,
 )
 
 router = APIRouter()
@@ -117,9 +115,10 @@ async def accept_all(project_id: str):
 @router.post("/projects/{project_id}/export")
 async def export_document(project_id: str):
     """导出校稿版 docx。
-    
-    基于原 docx 文件修改文本（保留全部排版样式），
-    对 LLM 识别的章节标题段落应用 Heading 样式。
+
+    方式 A（有原文件）：以原 docx 为样式模板，清空正文后按 DB 段落数据重建，
+    彻底规避 1:1 映射脆弱性与 pPr 样式污染问题。
+    方式 B（原文件缺失）：降级为纯文本重建。
     """
     doc = get_current_document(project_id)
     if not doc:
@@ -127,15 +126,10 @@ async def export_document(project_id: str):
 
     doc_id = doc["id"]
     file_path = doc.get("file_path") or ""
-    paras = get_revised_paragraphs(doc_id)
-    chapters = get_chapters(doc_id)
+    if not file_path or not os.path.exists(file_path):
+        return {"error": "原始文件不存在，无法导出"}
 
-    # 构建章节段落查找表：{paragraph_idx: chapter_level}
-    chapter_heading = {}
-    for ch in chapters:
-        tip = ch.get("title_paragraph_idx")
-        if tip is not None:
-            chapter_heading[tip] = ch.get("level", 1)
+    paras = get_revised_paragraphs(doc_id)
 
     os.makedirs("backend/static/exports", exist_ok=True)
 
@@ -146,103 +140,47 @@ async def export_document(project_id: str):
     fname = f"{clean_name}_校稿版_{ts}.docx"
 
     if file_path and os.path.exists(file_path):
-        # ── 方式 A：基于原 docx 修改，完全保留排版 ──
+        # ── 方式 A：原 docx 只用作样式模板，正文完全从 DB 重建 ──
+        # 不再依赖 1:1 节点映射，彻底解决删段/空行清洗导致的错位与 pPr 样式污染问题。
         docx = DocxDocument(file_path)
+        body = docx._element.body
 
-        # 若数据库中已清理空行，使用 lxml 从 docx XML 中物理同步移除空段落节点，避免索引错位
-        db_has_no_empty = not any(not p.get("text") or not p["text"].strip() for p in paras)
-        if db_has_no_empty:
-            for para in list(docx.paragraphs):
-                style_name = para.style.name or ""
-                if style_name in EMPTY_SKIP_STYLES:
-                    continue
-                if not para.text or not para.text.strip():
-                    parent = para._element.getparent()
-                    if parent is not None:
-                        parent.remove(para._element)
+        # 清空 body 中的所有段落与表格，只保留末尾 sectPr（页面边距/纸张设置）
+        removable_tags = {qn("w:p"), qn("w:tbl"), qn("w:sdt")}
+        for child in list(body):
+            if child.tag in removable_tags:
+                body.remove(child)
 
-        # 构建 DB idx → docx 段落对象映射（1:1 绝对重合）
-        idx_to_para: dict[int, object] = {}
-        db_idx = 0
-        for para in docx.paragraphs:
-            style_name = para.style.name or ""
-            if style_name in EMPTY_SKIP_STYLES:
-                continue
-            idx_to_para[db_idx] = para
-            db_idx += 1
-
-        para_dict = {p["idx"]: p for p in paras}
-
-        # 替换文本 + 节点精准注入分页符（不修改样式，不插入多余段落）
-        for db_idx, para in idx_to_para.items():
-            p_data = para_dict.get(db_idx)
-            if not p_data:
-                continue
-
-            new_text = p_data["text"]
-
-            # 是否包含分页标记，或者该段落为 1 级大章节标题
-            is_ch_l1 = (chapter_heading.get(db_idx) == 1)
-            has_break = p_data.get("has_page_break_before", 0)
+        # 按 DB idx 顺序逐段重建正文
+        for p_data in paras:
+            text = p_data.get("text") or ""
+            style_name = p_data.get("style_name") or "Normal"
             pb_type = p_data.get("page_break_type", "none")
-            if (is_ch_l1 or has_break == 1 or pb_type in ("original", "auto_chapter", "manual")) and db_idx > 0:
-                pPr = para._element.get_or_add_pPr()
+            idx = p_data.get("idx", 0)
+
+            # 新建段落（python-docx 自动插入到 sectPr 之前）
+            new_para = docx.add_paragraph()
+
+            # 按原始样式名应用样式，找不到则 fallback 到 Normal
+            try:
+                new_para.style = docx.styles[style_name]
+            except (KeyError, Exception):
+                try:
+                    new_para.style = docx.styles["Normal"]
+                except Exception:
+                    pass
+
+            # 写入文字
+            new_para.add_run(text)
+
+            # 注入分页符（干净写入新建 pPr，不污染任何原有节点）
+            if pb_type != "none" and idx > 0:
+                pPr = new_para._element.get_or_add_pPr()
                 if pPr.find(qn("w:pageBreakBefore")) is None:
                     pPr.append(parse_xml(r'<w:pageBreakBefore %s/>' % nsdecls("w")))
-            elif pb_type == "none" and not is_ch_l1:
-                # 用户主动删除了该段落的硬分页：物理擦除 XML 中的 pageBreakBefore 与 w:type="page"
-                pPr = para._element.find(qn("w:pPr"))
-                if pPr is not None:
-                    pbb = pPr.find(qn("w:pageBreakBefore"))
-                    if pbb is not None:
-                        pPr.remove(pbb)
-                for r in para._element.findall(qn("w:r")):
-                    for br in r.findall(qn("w:br")):
-                        if br.get(qn("w:type")) == "page":
-                            r.remove(br)
-
-            # 替换段落文本，保留首 run 格式（零干扰原 Word 排版）
-            first = True
-            for run in para.runs:
-                if first:
-                    run.text = new_text
-                    first = False
-                else:
-                    run.text = ""
-            if not para.runs:
-                para.add_run(new_text)
 
         fpath = os.path.join("backend/static/exports", fname)
         docx.save(fpath)
-    else:
-        # ── 方式 B：原文件不存在时的降级（纯文本）──
-        out = DocxDocument()
-        ch_paras = sorted(
-            [(c["title_paragraph_idx"], c["title"], c.get("level", 1))
-             for c in chapters if c.get("title")],
-            key=lambda x: x[0],
-        ) if chapters else []
-        ch_title_by_idx = {tp[0]: tp for tp in ch_paras}
-
-        for p in paras:
-            has_break = p.get("has_page_break_before", 0)
-            pb_type = p.get("page_break_type", "none")
-            info = ch_title_by_idx.get(p["idx"])
-            is_ch_l1 = (info and info[2] == 1)
-            need_break = (is_ch_l1 or has_break == 1 or pb_type in ("original", "auto_chapter", "manual")) and p.get("idx", 0) > 0
-
-            if info:
-                p_obj = out.add_heading(info[1], level=info[2])
-            else:
-                p_obj = out.add_paragraph(p["text"])
-            
-            if need_break:
-                pPr = p_obj._element.get_or_add_pPr()
-                if pPr.find(qn("w:pageBreakBefore")) is None:
-                    pPr.append(parse_xml(r'<w:pageBreakBefore %s/>' % nsdecls("w")))
-
-        fpath = os.path.join("backend/static/exports", fname)
-        out.save(fpath)
 
     update_project_status(project_id, "completed")
     return FileResponse(fpath, filename=fname)

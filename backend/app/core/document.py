@@ -55,8 +55,13 @@ def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict]]:
                 chapter_level = 2
 
         # 3. 确定最终 Page Break 属性 ('original' | 'auto_chapter' | 'none')
+        # 优先级：章节标题有分页 → auto_chapter（幂等，避免二次导入后漂移为 original）
+        #         非章节段落有分页 → original
+        #         章节标题无分页且 idx > 0 → auto_chapter（系统自动补开页）
         page_break_type = "none"
-        if has_original_break:
+        if has_original_break and chapter_level == 1 and idx > 0:
+            page_break_type = "auto_chapter"
+        elif has_original_break:
             page_break_type = "original"
         elif chapter_level == 1 and idx > 0:
             page_break_type = "auto_chapter"
