@@ -705,11 +705,11 @@ def insert_paragraphs(document_id: str, rows: list[tuple]):
 
 
 def update_paragraph_text(document_id: str, idx: int, new_text: str):
-    """更新段落文本并重算字符数。"""
+    """更新段落文本（写入 revised_text）并重算字符数。"""
     with get_conn() as conn:
         conn.execute(
             """UPDATE paragraphs 
-               SET text = ?, char_count = ?
+               SET revised_text = ?, char_count = ?
                WHERE document_id = ? AND idx = ?""",
             (new_text, len(new_text), document_id, idx),
         )
@@ -939,6 +939,15 @@ def get_paragraph_count(document_id: str) -> int:
             (document_id,),
         ).fetchone()
         return int(row["c"]) if row else 0
+
+
+def get_paragraph_content(para: dict | None) -> str:
+    """全系统唯一段落真实内容提取方法：有 revised_text 用 revised_text，没有用 text。"""
+    if not para:
+        return ""
+    if para.get("revised_text") is not None:
+        return para["revised_text"]
+    return para.get("text") or ""
 
 
 def get_paragraph_text(document_id: str, idx: int) -> str:

@@ -243,7 +243,8 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   const posMap = {}
   const intervals = []
   paraErrors.forEach(e => {
-    const t = e.original_text
+    const t = e.user_status === 'accepted' ? e.suggested_text : e.original_text
+    if (!t) return
     const from = posMap[t] ?? 0
     const idx = text.indexOf(t, from)
     if (idx >= 0) {
@@ -513,7 +514,7 @@ function ReviewReaderInner({
 
   const handleStartEdit = (para) => {
     setEditingIdx(para.idx)
-    setEditingText(para.text || '')
+    setEditingText(para.revised_text ?? para.text ?? '')
   }
 
   const handleSaveEdit = async (paraIdx) => {
@@ -864,15 +865,6 @@ function ReviewReaderInner({
     }
   }, [selectedError?.id, selIsPending])
 
-  const prevPendingCount = useRef(pending.length)
-  useEffect(() => {
-    if (pending.length === 0 && prevPendingCount.current > 0 && flowRef.current && flatErrors.length > 0) {
-      const lastErr = flatErrors[flatErrors.length - 1]
-      const el = flowRef.current.querySelector(`[data-para="${lastErr.paragraph_index}"]`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-    prevPendingCount.current = pending.length
-  }, [pending.length, flatErrors])
 
   const handleStatus = (status) => {
     if (!selectedId) return
@@ -1019,7 +1011,8 @@ function ReviewReaderInner({
                 const chapterObj = chapters.find(c => c.title_paragraph_idx === para.idx)
                 const isEditing = editingIdx === para.idx
                 const isHover = hoverIdx === para.idx
-                const isBlank = !para.text || para.text.trim() === ''
+                const activeParaText = para.revised_text ?? para.text
+                const isBlank = !activeParaText || activeParaText.trim() === ''
 
                 const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
                 const pbInfo = {
@@ -1205,7 +1198,7 @@ function ReviewReaderInner({
                               </span>
                             ) : (
                               <ParagraphView
-                                text={(Boolean(project?.style_config?.first_line_indent_enabled) && !isCh) ? (para.text || '').replace(/^[\s\u3000]+/, '') : para.text}
+                                text={(Boolean(project?.style_config?.first_line_indent_enabled) && !isCh) ? (activeParaText || '').replace(/^[\s\u3000]+/, '') : activeParaText}
                                 paraErrors={paraErrs}
                                 selectedId={selectedId}
                                 onSelect={setSelectedId}

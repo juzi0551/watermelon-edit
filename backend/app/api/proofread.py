@@ -10,7 +10,7 @@ from app.core.llm import LLMCallError
 from app.core.database import (
     get_project, get_current_document,
     get_paragraphs_in_range, get_paragraphs_by_indices,
-    get_paragraph_count, get_chapters,
+    get_paragraph_count, get_chapters, get_paragraph_content,
     insert_error, insert_chapter, delete_errors_in_range,
     delete_errors_by_indices,
     delete_chapters_in_range, set_proofread_progress,
@@ -161,7 +161,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             we = min(ws + window_size, range_end)
             # 只读当前窗口的 30 段，不读全文
             window_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, ws, we)
-            window_paras = [(p["idx"], p["text"]) for p in window_rows]
+            window_paras = [(p["idx"], get_paragraph_content(p)) for p in window_rows]
             found_chapters = 0
             if window_paras:
                 system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
@@ -221,7 +221,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 batch = req.paragraph_indices[ws:ws + window_size]
                 # 只查询这一批选中的段落，不读全文
                 batch_rows = await asyncio.to_thread(get_paragraphs_by_indices, doc_id, batch)
-                window_paras = [(p["idx"], p["text"]) for p in batch_rows]
+                window_paras = [(p["idx"], get_paragraph_content(p)) for p in batch_rows]
                 if not window_paras:
                     continue
                 system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=min(batch))
@@ -270,7 +270,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             delete_errors_in_range(doc_id, range_start, range_end)
             update_project_status(project_id, "proofreading")
             chapter_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, range_start, range_end)
-            chapter_text_by_idx = {p["idx"]: p["text"] for p in chapter_rows}
+            chapter_text_by_idx = {p["idx"]: get_paragraph_content(p) for p in chapter_rows}
             found_errors = 0
             new_chapters_total = 0
             max_processed = range_start
@@ -356,7 +356,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     window_rows = await asyncio.to_thread(
                         get_paragraphs_in_range, doc_id, ws, we
                     )
-                    window_paras = [(p["idx"], p["text"]) for p in window_rows]
+                    window_paras = [(p["idx"], get_paragraph_content(p)) for p in window_rows]
                     if not window_paras:
                         return [], []
                     system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
@@ -547,7 +547,7 @@ async def retry_window(project_id: str, req: RetryWindowRequest):
         update_batch_window(req.batch_id, req.window_index, "pending")
 
         window_rows = await asyncio.to_thread(get_paragraphs_in_range, doc_id, ws, we)
-        window_paras = [(p["idx"], p["text"]) for p in window_rows]
+        window_paras = [(p["idx"], get_paragraph_content(p)) for p in window_rows]
         if not window_paras:
             update_batch_window(req.batch_id, req.window_index, "ok")
             all_wins = get_batch_windows(req.batch_id)

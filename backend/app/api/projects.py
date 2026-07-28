@@ -236,7 +236,7 @@ async def api_format_indent(project_id: str):
             clean = raw.lstrip(" \t\r\n\u3000")
             if clean != raw:
                 conn.execute(
-                    "UPDATE paragraphs SET text = ?, revised_text = NULL WHERE id = ?",
+                    "UPDATE paragraphs SET revised_text = ? WHERE id = ?",
                     (clean, p["id"]),
                 )
                 count += 1

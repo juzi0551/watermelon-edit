@@ -48,26 +48,30 @@ def _recompute_paragraph(document_id: str, paragraph_idx: int):
         e for e in get_errors(document_id)
         if e["paragraph_index"] == paragraph_idx and e["user_status"] == "accepted"
     ]
+    original_clean = para["text"].lstrip(" \t\r\n\u3000")
+    has_lstrip = original_clean != para["text"]
+    base_text = original_clean if has_lstrip else para["text"]
+
     if not accepted:
-        update_paragraph_revised(para["id"], None)
+        if has_lstrip:
+            update_paragraph_revised(para["id"], original_clean)
+        else:
+            update_paragraph_revised(para["id"], None)
         return
 
-    original = para["text"]
-
-    # 用 indexOf 获取每个错误在原文中的确切位置
+    # 用 indexOf 获取每个错误在基底文本中的确切位置
     indexed: list[tuple[int, dict]] = []
     for e in accepted:
-        pos = original.find(e["original_text"])
+        pos = base_text.find(e["original_text"])
         if pos >= 0:
             indexed.append((pos, e))
 
     # 按位置降序处理（从右向左），保证左侧未处理的位置不受长度变化影响
     indexed.sort(key=lambda x: x[0], reverse=True)
 
-    revised = original
+    revised = base_text
     for pos, e in indexed:
         end = pos + len(e["original_text"])
-        # 验证 original 确实还在该 position（未被此前处理的右侧重叠错误修改）
         if revised[pos:end] == e["original_text"]:
             revised = revised[:pos] + e["suggested_text"] + revised[end:]
 

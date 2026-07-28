@@ -54,6 +54,14 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    fav_path = os.path.join(STATIC_DIR, "favicon.ico")
+    if os.path.exists(fav_path):
+        return FileResponse(fav_path)
+    return {"status": "ok"}
+
+
 # 托管前端静态文件（构建后放在 backend/static）
 if os.path.isdir(STATIC_DIR):
     from fastapi.staticfiles import StaticFiles
