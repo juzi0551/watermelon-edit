@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Drawer, Form, Input, Button, Space, message } from 'antd'
+import { Modal, Form, Input, Button, Space, Alert, message } from 'antd'
 import { SaveOutlined, BookOutlined, UserOutlined } from '@ant-design/icons'
 import { updateProjectProfile } from '../services/api'
 import { useTheme } from '../App'
@@ -15,6 +15,8 @@ export default function ProjectProfileDrawer({
   const { color } = useTheme()
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
+
+  const isProfileEmpty = !project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()
 
   useEffect(() => {
     if (open && project) {
@@ -34,8 +36,9 @@ export default function ProjectProfileDrawer({
       if (res.error) {
         message.error('保存失败：' + res.error)
       } else {
-        message.success('设定已保存，后续校对将自动引入此 Context')
+        message.success('设定已保存')
         onProjectUpdated?.()
+        onClose?.()
       }
     } catch (e) {
       message.error('表单校验失败')
@@ -45,30 +48,42 @@ export default function ProjectProfileDrawer({
   }
 
   return (
-    <Drawer
+    <Modal
       title={
         <Space>
           <BookOutlined style={{ color: color.primary }} />
           <span>作品设定与作者文风</span>
         </Space>
       }
-      placement="right"
-      width={480}
       open={open}
-      onClose={onClose}
+      onCancel={onClose}
+      width={880}
+      zIndex={1100}
+      footer={null}
+      destroyOnHidden
       styles={{
-        body: {
+        content: {
           background: color.bgPage,
           color: color.textPrimary,
-          padding: 20,
+          padding: 24,
+          borderRadius: 12,
         },
         header: {
-          background: color.bgCard,
-          borderColor: color.border,
+          background: 'transparent',
           color: color.textPrimary,
+          marginBottom: 16,
         },
       }}
     >
+      {isProfileEmpty && (
+        <Alert
+          type="warning"
+          showIcon
+          message="未配置作品设定与作者文风 Context"
+          description="推荐补充作者笔名、文风特色（如半文半白、冷硬风格）及世界观专有名词（如门派、境界、神兵），大模型随文校对时将自动引入此 Context，有效防止将特色修辞误判为错字。"
+          style={{ marginBottom: 20, borderRadius: 8 }}
+        />
+      )}
       <Form form={form} layout="vertical">
         <Form.Item
           name="author_name"
@@ -95,7 +110,7 @@ export default function ProjectProfileDrawer({
         >
           <TextArea
             rows={6}
-            placeholder="如：\n1. 时代背景：玄幻架空大唐；\n2. 境界划分：练气、筑基、金丹、元婴；\n3. 门派：青云剑宗、九幽天魔教。"
+            placeholder="如：&#10;1. 时代背景：玄幻架空大唐；&#10;2. 境界划分：练气、筑基、金丹、元婴；&#10;3. 门派：青云剑宗、九幽天魔教。"
           />
         </Form.Item>
 
@@ -107,9 +122,9 @@ export default function ProjectProfileDrawer({
           onClick={handleSave}
           style={{ marginTop: 8 }}
         >
-          保存设置 (应用于后续 LLM 校对)
+          保存设定
         </Button>
       </Form>
-    </Drawer>
+    </Modal>
   )
 }

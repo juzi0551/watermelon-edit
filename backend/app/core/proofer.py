@@ -49,23 +49,18 @@ def build_proofread_system_prompt(selected_types: list[str], project_id: str | N
             if bg:
                 context_parts.append(f"背景设定：{bg}")
     
-    # 注入已知人物动态网络与特征
+    # 注入已知人物列表与最新特征
     try:
         graph = get_character_graph(project_id, current_paragraph_idx)
         nodes = graph.get("nodes", [])
-        edges = graph.get("edges", [])
-        if nodes or edges:
-            context_parts.append("\n【已登场人物与动态关系网】")
-            if nodes:
-                node_strs = []
-                for n in nodes[:15]:
-                    desc_str = f"：{n['description']}" if n.get("description") else ""
-                    alias_str = f"（别名：{'/'.join(n['aliases'])}）" if n.get("aliases") and isinstance(n["aliases"], list) else ""
-                    node_strs.append(f"• {n['name']}{alias_str} [{n.get('role','角色')}]{desc_str}")
-                context_parts.append("已知角色与特征：\n" + "\n".join(node_strs))
-            if edges:
-                edge_strs = [f"{e.get('from_name','')} <-> {e.get('to_name','')}: {e.get('description') or e.get('relation_type')}" for e in edges[:10]]
-                context_parts.append("已知关系：\n" + "\n".join(edge_strs))
+        if nodes:
+            context_parts.append("\n【已登场人物与最新特征】")
+            node_strs = []
+            for n in nodes[:20]:
+                desc_str = f"：{n['description']}" if n.get("description") else ""
+                alias_str = f"（别名：{'/'.join(n['aliases'])}）" if n.get("aliases") and isinstance(n["aliases"], list) else ""
+                node_strs.append(f"• {n['name']}{alias_str} [{n.get('role','角色')}]{desc_str}")
+            context_parts.append("\n".join(node_strs))
     except Exception:
         pass
 

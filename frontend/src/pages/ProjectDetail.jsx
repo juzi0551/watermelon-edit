@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Card, Button, Upload, Tag, Space, List, Typography, Spin, message,
-  Empty, Drawer, Tooltip, Popconfirm, Dropdown, Modal, Popover,
+  Empty, Drawer, Tooltip, Popconfirm, Dropdown, Modal, Popover, Badge,
 } from 'antd'
 import {
   InboxOutlined, ArrowLeftOutlined, DownloadOutlined, UnorderedListOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, EyeOutlined, LockOutlined, UnlockOutlined, ClearOutlined,
   BookOutlined, TeamOutlined, ToolOutlined, ThunderboltOutlined,
-  SafetyOutlined, FormatPainterOutlined, BarChartOutlined, TagsOutlined,
+  SafetyOutlined, FormatPainterOutlined, BarChartOutlined, TagsOutlined, ContainerOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
@@ -17,7 +17,6 @@ import {
   toggleProjectLock, cleanEmptyParagraphs, scanProjectTerms, formatProjectIndent,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
-import ThemeSwitcher from '../components/ThemeSwitcher'
 import ProjectProfileDrawer from '../components/ProjectProfileDrawer'
 import CharacterGraph from '../components/CharacterGraph'
 import { color } from '../design-tokens'
@@ -563,156 +562,18 @@ export default function ProjectDetail() {
         }
         extra={
           <Space wrap>
-            <Button
-              icon={<UnorderedListOutlined />}
-              onClick={() => setPanelOpen(v => !v)}
-              type={panelOpen ? 'primary' : 'default'}
-              shape="round"
-            >
-              问题列表{results?.errors?.filter(e => e.user_status === 'pending').length ? `（${results.errors.filter(e => e.user_status === 'pending').length}）` : ''}
-            </Button>
-            <Popover
-              trigger="click"
-              open={toolsOpen}
-              onOpenChange={setToolsOpen}
-              placement="bottomRight"
-              content={
-                <div style={{ width: 280, padding: '4px 2px' }}>
-                  <div style={{
-                    fontSize: 12, fontWeight: 600, color: color.textSecondary,
-                    marginBottom: 10, paddingLeft: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  }}>
-                    <span>🛠️ 自动化工具箱</span>
-                    <span style={{ fontSize: 11, color: color.textTertiary }}>快捷一键处理</span>
-                  </div>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: 10,
-                  }}>
-                    {/* 1. 清空行 */}
-                    <div
-                      onClick={() => {
-                        if (project?.is_locked === 1 || inProgress || cleaningEmpty) return
-                        setToolsOpen(false)
-                        Modal.confirm({
-                          title: '确定清理所有空白段落？',
-                          content: '系统将自动清理所有无意义空行，并重新连续编排段号。',
-                          okText: '确定清理',
-                          cancelText: '取消',
-                          onOk: handleCleanEmptyParagraphs,
-                        })
-                      }}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
-                        background: 'var(--color-bgPage)', border: `1px solid ${color.borderBar}`,
-                        transition: 'all 0.15s ease',
-                        opacity: (project?.is_locked === 1 || inProgress) ? 0.4 : 1,
-                      }}
-                    >
-                      <ClearOutlined style={{ fontSize: 22, color: color.primary, marginBottom: 6 }} />
-                      <span style={{ fontSize: 12, color: color.textPrimary, fontWeight: 500 }}>清空行</span>
-                    </div>
-
-                    {/* 2. 规范检测 */}
-                    <div
-                      onClick={() => {
-                        if (inProgress || scanningTerms) return
-                        setToolsOpen(false)
-                        handleScanTerms()
-                      }}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
-                        background: 'var(--color-bgPage)', border: `1px solid ${color.borderBar}`,
-                        transition: 'all 0.15s ease',
-                        opacity: inProgress ? 0.4 : 1,
-                      }}
-                    >
-                      <ThunderboltOutlined style={{ fontSize: 22, color: color.warning, marginBottom: 6 }} />
-                      <span style={{ fontSize: 12, color: color.textPrimary, fontWeight: 500 }}>规范检测</span>
-                    </div>
-
-                    {/* 3. 敏感词 (预留) */}
-                    <div
-                      onClick={() => message.info('敏感词自查工具开发中')}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
-                        background: 'var(--color-bgPage)', border: `1px solid ${color.border}`,
-                        opacity: 0.5,
-                      }}
-                    >
-                      <SafetyOutlined style={{ fontSize: 22, color: color.textTertiary, marginBottom: 6 }} />
-                      <span style={{ fontSize: 12, color: color.textSecondary }}>敏感词</span>
-                    </div>
-
-                    {/* 4. 段首缩进 */}
-                    <div
-                      onClick={() => {
-                        setToolsOpen(false)
-                        Modal.confirm({
-                          title: '确定清理全书段首杂乱硬空格？',
-                          content: '系统将扫描全书段落，彻底擦除段首残留的杂乱空格与 Tab 缩进，恢复文本内容纯净。',
-                          okText: '确定清理',
-                          cancelText: '取消',
-                          onOk: handleFormatIndent,
-                        })
-                      }}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
-                        background: 'var(--color-bgPage)', border: `1px solid ${color.borderBar}`,
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <FormatPainterOutlined style={{ fontSize: 22, color: color.primary, marginBottom: 6 }} />
-                      <span style={{ fontSize: 12, color: color.textPrimary, fontWeight: 500 }}>段首缩进</span>
-                    </div>
-
-                    {/* 5. 字数统计 (预留) */}
-                    <div
-                      onClick={() => message.info('字数统计与分析工具开发中')}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
-                        background: 'var(--color-bgPage)', border: `1px solid ${color.border}`,
-                        opacity: 0.5,
-                      }}
-                    >
-                      <BarChartOutlined style={{ fontSize: 22, color: color.textTertiary, marginBottom: 6 }} />
-                      <span style={{ fontSize: 12, color: color.textSecondary }}>字数统计</span>
-                    </div>
-
-                    {/* 6. 术语库 (预留) */}
-                    <div
-                      onClick={() => message.info('专有名词提取工具开发中')}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        padding: '14px 6px', borderRadius: 8, cursor: 'pointer',
-                        background: 'var(--color-bgPage)', border: `1px solid ${color.border}`,
-                        opacity: 0.5,
-                      }}
-                    >
-                      <TagsOutlined style={{ fontSize: 22, color: color.textTertiary, marginBottom: 6 }} />
-                      <span style={{ fontSize: 12, color: color.textSecondary }}>术语库</span>
-                    </div>
-                  </div>
-                </div>
-              }
-            >
-              <Button shape="round" icon={<ToolOutlined />} loading={cleaningEmpty || scanningTerms}>
-                🛠️ 工具
-              </Button>
-            </Popover>
-            <Button
-              icon={<BookOutlined />}
-              onClick={() => setProfileDrawerOpen(true)}
-              shape="round"
-            >
-              作品设定
-            </Button>
+            <Tooltip title={(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) ? '作品设定未填写！建议配置文风与专有名词，避免 LLM 校对时误判特色词汇' : '查看与修改作品设定与文风'}>
+              <Badge dot={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()} offset={[-4, 4]}>
+                <Button
+                  icon={<BookOutlined />}
+                  onClick={() => setProfileDrawerOpen(true)}
+                  shape="round"
+                  danger={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()}
+                >
+                  作品设定 {(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) && <span style={{ fontSize: 11, marginLeft: 2 }}>⚠ 待配置</span>}
+                </Button>
+              </Badge>
+            </Tooltip>
             <Button
               icon={<TeamOutlined />}
               onClick={() => setCharacterGraphOpen(true)}
@@ -720,7 +581,201 @@ export default function ProjectDetail() {
             >
               人物图谱
             </Button>
-            <ThemeSwitcher buttonType="default" />
+            <Button
+              shape="round"
+              icon={<ToolOutlined />}
+              loading={cleaningEmpty || scanningTerms}
+              onClick={() => setToolsOpen(true)}
+            >
+              快速工具
+            </Button>
+            <Modal
+              title={
+                <Space>
+                  <ToolOutlined style={{ color: color.primary }} />
+                  <span>快捷自动化工具箱</span>
+                </Space>
+              }
+              open={toolsOpen}
+              onCancel={() => setToolsOpen(false)}
+              width={800}
+              zIndex={1100}
+              footer={null}
+              destroyOnHidden
+              styles={{
+                content: {
+                  background: color.bgPage,
+                  color: color.textPrimary,
+                  padding: 24,
+                  borderRadius: 12,
+                },
+                header: {
+                  background: 'transparent',
+                  color: color.textPrimary,
+                  marginBottom: 16,
+                },
+              }}
+            >
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 16,
+              }}>
+                {/* 1. 清空行 */}
+                <Card
+                  hoverable
+                  size="small"
+                  onClick={() => {
+                    if (project?.is_locked === 1 || inProgress || cleaningEmpty) return
+                    setToolsOpen(false)
+                    Modal.confirm({
+                      title: '确定清理所有空白段落？',
+                      content: '系统将自动清理所有无意义空行，并重新连续编排段号。',
+                      okText: '确定清理',
+                      cancelText: '取消',
+                      onOk: handleCleanEmptyParagraphs,
+                    })
+                  }}
+                  style={{
+                    background: color.bgCard,
+                    borderColor: color.borderBar,
+                    borderRadius: 8,
+                    cursor: (project?.is_locked === 1 || inProgress) ? 'not-allowed' : 'pointer',
+                    opacity: (project?.is_locked === 1 || inProgress) ? 0.4 : 1,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <ClearOutlined style={{ fontSize: 22, color: color.primary }} />
+                    <span style={{ fontSize: 14, color: color.textPrimary, fontWeight: 600 }}>清空空行</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: color.textSecondary, lineHeight: 1.4 }}>
+                    一键擦除全书无意义连续空行，重新连续编排正文段落编号。
+                  </div>
+                </Card>
+
+                {/* 2. 规范检测 */}
+                <Card
+                  hoverable
+                  size="small"
+                  onClick={() => {
+                    if (inProgress || scanningTerms) return
+                    setToolsOpen(false)
+                    handleScanTerms()
+                  }}
+                  style={{
+                    background: color.bgCard,
+                    borderColor: color.borderBar,
+                    borderRadius: 8,
+                    cursor: inProgress ? 'not-allowed' : 'pointer',
+                    opacity: inProgress ? 0.4 : 1,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <ThunderboltOutlined style={{ fontSize: 22, color: color.warning }} />
+                    <span style={{ fontSize: 14, color: color.textPrimary, fontWeight: 600 }}>规范检测</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: color.textSecondary, lineHeight: 1.4 }}>
+                    离线扫查标点错用、数字用法不规范及全半角排版格式。
+                  </div>
+                </Card>
+
+                {/* 3. 段首缩进 */}
+                <Card
+                  hoverable
+                  size="small"
+                  onClick={() => {
+                    setToolsOpen(false)
+                    Modal.confirm({
+                      title: '确定清理全书段首杂乱硬空格？',
+                      content: '系统将扫描全书段落，彻底擦除段首残留的杂乱空格与 Tab 缩进，恢复文本内容纯净。',
+                      okText: '确定清理',
+                      cancelText: '取消',
+                      onOk: handleFormatIndent,
+                    })
+                  }}
+                  style={{
+                    background: color.bgCard,
+                    borderColor: color.borderBar,
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <FormatPainterOutlined style={{ fontSize: 22, color: color.primary }} />
+                    <span style={{ fontSize: 14, color: color.textPrimary, fontWeight: 600 }}>段首缩进</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: color.textSecondary, lineHeight: 1.4 }}>
+                    彻底擦除段首残留的杂乱硬空格与 Tab 缩进，恢复文本纯净。
+                  </div>
+                </Card>
+
+                {/* 4. 敏感词 (预留) */}
+                <Card
+                  size="small"
+                  onClick={() => message.info('敏感词自查工具开发中')}
+                  style={{
+                    background: color.bgCard,
+                    borderColor: color.border,
+                    borderRadius: 8,
+                    opacity: 0.5,
+                    cursor: 'not-allowed',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <SafetyOutlined style={{ fontSize: 22, color: color.textTertiary }} />
+                    <span style={{ fontSize: 14, color: color.textSecondary, fontWeight: 600 }}>敏感词自查</span>
+                    <Tag style={{ margin: 0, fontSize: 10 }}>开发中</Tag>
+                  </div>
+                  <div style={{ fontSize: 12, color: color.textTertiary, lineHeight: 1.4 }}>
+                    自查出版违规词汇、涉政涉黄敏感用语并提供替换提醒。
+                  </div>
+                </Card>
+
+                {/* 5. 字数统计 (预留) */}
+                <Card
+                  size="small"
+                  onClick={() => message.info('字数统计与分析工具开发中')}
+                  style={{
+                    background: color.bgCard,
+                    borderColor: color.border,
+                    borderRadius: 8,
+                    opacity: 0.5,
+                    cursor: 'not-allowed',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <BarChartOutlined style={{ fontSize: 22, color: color.textTertiary }} />
+                    <span style={{ fontSize: 14, color: color.textSecondary, fontWeight: 600 }}>字数统计</span>
+                    <Tag style={{ margin: 0, fontSize: 10 }}>开发中</Tag>
+                  </div>
+                  <div style={{ fontSize: 12, color: color.textTertiary, lineHeight: 1.4 }}>
+                    统计全书总字数、平均段长与章节篇幅分布曲线。
+                  </div>
+                </Card>
+
+                {/* 6. 术语知识库 (预留) */}
+                <Card
+                  size="small"
+                  onClick={() => message.info('专有名词提取工具开发中')}
+                  style={{
+                    background: color.bgCard,
+                    borderColor: color.border,
+                    borderRadius: 8,
+                    opacity: 0.5,
+                    cursor: 'not-allowed',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <TagsOutlined style={{ fontSize: 22, color: color.textTertiary }} />
+                    <span style={{ fontSize: 14, color: color.textSecondary, fontWeight: 600 }}>术语知识库</span>
+                    <Tag style={{ margin: 0, fontSize: 10 }}>开发中</Tag>
+                  </div>
+                  <div style={{ fontSize: 12, color: color.textTertiary, lineHeight: 1.4 }}>
+                    自动提取人名、地名、神兵功法专有名词并建立知识库。
+                  </div>
+                </Card>
+              </div>
+            </Modal>
           </Space>
         }
         style={{ marginBottom: 16 }}
@@ -868,6 +923,23 @@ export default function ProjectDetail() {
                 />
               )}
             </div>
+
+            {/* right panel toggle button (when collapsed, symmetrical to left chapters toggle) */}
+            {!panelOpen && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', paddingTop: 4,
+                flexShrink: 0, marginLeft: 12,
+              }}>
+                <Tooltip title="展开问题列表">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<ContainerOutlined />}
+                    onClick={() => setPanelOpen(true)}
+                  />
+                </Tooltip>
+              </div>
+            )}
           </div>
         )}
 

@@ -9,6 +9,7 @@ import {
   ThunderboltOutlined, LoadingOutlined, CloseOutlined,
   MinusOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
   ScissorOutlined, BookOutlined, ExclamationCircleOutlined,
+  MenuFoldOutlined,
 } from '@ant-design/icons'
 import { color, radius, spacing, fontSize } from '../design-tokens'
 import {
@@ -105,7 +106,7 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
       ref={ref}
       style={{
         position: 'fixed',
-        zIndex: 1100,
+        zIndex: 500,
         width: 380,
         padding: '14px 16px 12px',
         background: color.bgCard,
@@ -366,13 +367,7 @@ function ReviewReaderInner({
       if (flowRef.current && idx !== undefined && idx !== null) {
         const el = flowRef.current.querySelector(`[data-para="${idx}"]`)
         if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          el.style.transition = 'background 0.3s'
-          const origBg = el.style.background
-          el.style.background = 'rgba(250, 173, 20, 0.35)'
-          setTimeout(() => {
-            el.style.background = origBg
-          }, 1800)
+          el.scrollIntoView({ behavior: 'auto', block: 'center' })
         }
       }
     }
@@ -924,7 +919,7 @@ function ReviewReaderInner({
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 1000,
+    zIndex: 400,
     background: color.bgPage,
     borderTop: `1px solid ${color.borderBar}`,
     boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
@@ -1288,8 +1283,7 @@ function ReviewReaderInner({
               width: showPanel ? 420 : 0,
               overflow: 'hidden',
               flexShrink: 0,
-              transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              opacity: showPanel ? 1 : 0,
+              display: showPanel ? 'block' : 'none',
               borderLeft: showPanel ? `1px solid ${color.border}` : 'none',
               background: color.bgPage,
               borderRadius: 8,
@@ -1302,7 +1296,7 @@ function ReviewReaderInner({
                 padding: '14px 16px 0',
               }}>
                 <span style={{ fontWeight: 600, fontSize: 15 }}>问题列表</span>
-                <Button type="text" size="small" icon={<CloseOutlined />} onClick={onTogglePanel} />
+                <Button type="text" size="small" icon={<MenuFoldOutlined style={{ transform: 'scaleX(-1)' }} />} onClick={onTogglePanel} />
               </div>
 
               <style>{`
