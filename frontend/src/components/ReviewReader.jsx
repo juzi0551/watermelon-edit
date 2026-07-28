@@ -719,24 +719,64 @@ function ReviewReaderInner({
   const ITEM_HEIGHT = 48
   const BUFFER_SIZE = 50
   const [scrollTop, setScrollTop] = useState(0)
+  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
+    try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
+  })
+
+  const isJumpingRef = useRef(false)
+  const jumpTimerRef = useRef(null)
 
   const handleScroll = useCallback((e) => {
+    if (isJumpingRef.current) return
     const st = e.target.scrollTop
     requestAnimationFrame(() => {
-      setScrollTop(st)
+      if (!isJumpingRef.current) {
+        setScrollTop(st)
+      }
     })
   }, [])
 
+  const chaptersByParaIdx = useMemo(() => {
+    const map = new Map()
+    chapters.forEach(c => {
+      map.set(c.title_paragraph_idx, c)
+    })
+    return map
+  }, [chapters])
+
+  const jumpToParagraphExact = useCallback((targetIdx, offset = 0) => {
+    const container = flowRef.current
+    if (!container || targetIdx == null) return
+    const posIndex = paraIndexMap.get(targetIdx)
+    if (posIndex == null) return
+
+    isJumpingRef.current = true
+    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current)
+
+    // 步骤 1：锁定基准 scrollTop，锁定 50 行虚拟视口切片包含目标段落
+    const baseTop = Math.max(0, posIndex * ITEM_HEIGHT - offset)
+    container.scrollTop = baseTop
+    setScrollTop(baseTop)
+
+    // 步骤 2：DOM 挂载完成后使用浏览器原生引擎 block: 'start' 做物理绝对齐顶对齐
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!flowRef.current) return
+        const c = flowRef.current
+        const el = c.querySelector(`[data-para="${targetIdx}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'auto', block: offset > 0 ? 'center' : 'start' })
+        }
+        jumpTimerRef.current = setTimeout(() => {
+          isJumpingRef.current = false
+        }, 150)
+      })
+    })
+  }, [paraIndexMap, ITEM_HEIGHT])
+
   useImperativeHandle(ref, () => ({
     scrollToParagraph: (idx) => {
-      if (flowRef.current && idx !== undefined && idx !== null) {
-        const posIndex = paraIndexMap.get(idx)
-        if (posIndex != null) {
-          const targetTop = Math.max(0, posIndex * ITEM_HEIGHT - 100)
-          flowRef.current.scrollTop = targetTop
-          setScrollTop(targetTop)
-        }
-      }
+      jumpToParagraphExact(idx, 0)
     }
   }))
   const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
@@ -773,14 +813,6 @@ function ReviewReaderInner({
     })
     return map
   }, [errors])
-
-  const chaptersByParaIdx = useMemo(() => {
-    const map = new Map()
-    chapters.forEach(c => {
-      map.set(c.title_paragraph_idx, c)
-    })
-    return map
-  }, [chapters])
 
   const handleCheckboxToggle = useCallback((idx) => {
     onSelectionChange?.((prev) => {
@@ -976,9 +1008,6 @@ function ReviewReaderInner({
   }
 
   const [showOptions, setShowOptions] = useState(false)
-  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
-    try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
-  })
   const [flashSide, setFlashSide] = useState(null) // 'accept' | 'reject' | null
   const [showCheckboxes, setShowCheckboxes] = useState(false)
   const flowRef = useRef(null)
@@ -1155,13 +1184,8 @@ function ReviewReaderInner({
     const targetIdx = ch.title_paragraph_idx ?? ch.start_idx
     if (targetIdx == null) return
 
-    const posIndex = paraIndexMap.get(targetIdx)
-    if (posIndex != null && flowRef.current) {
-      const targetTop = Math.max(0, posIndex * ITEM_HEIGHT - 60)
-      flowRef.current.scrollTop = targetTop
-      setScrollTop(targetTop)
-    }
-  }, [selectedChapter, chapters, paraIndexMap, ITEM_HEIGHT])
+    jumpToParagraphExact(targetIdx, 0)
+  }, [selectedChapter, chapters, jumpToParagraphExact])
 
   const selectedError = useMemo(
     () => flatErrors.find(e => e.id === selectedId),
