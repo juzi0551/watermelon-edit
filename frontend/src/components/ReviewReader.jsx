@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, forwardRef, useImperativeHandle } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
@@ -15,6 +15,13 @@ import { color, radius, spacing, fontSize } from '../design-tokens'
 import {
   updateParagraph, deleteParagraph, togglePageBreak, setChapter,
 } from '../services/api'
+
+const EMPTY_ARRAY = Object.freeze([])
+const PB_INFO_MAP = Object.freeze({
+  original: Object.freeze({ label: '📄 原文硬分页', border: '#e8e8e8', color: '#8c8c8c' }),
+  auto_chapter: Object.freeze({ label: '📖 章节开页', border: '#ffe58f', color: '#d48806' }),
+  manual: Object.freeze({ label: '✂️ 新增硬分页', border: '#ffd591', color: '#d46b08' }),
+})
 
 const TYPE_LABEL = {
   typo: '错别字', grammar: '语法', punctuation: '标点', format: '格式',
@@ -138,26 +145,8 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
           <div style={{ fontSize: fontSize.meta, color: color.textSecondary, marginBottom: 2 }}>
             第 {error.paragraph_index} 段
           </div>
-          <div style={{ fontSize: fontSize.body, lineHeight: 1.6 }}>
-            <span style={{
-              background: color.diffRemovedBg,
-              color: color.diffRemovedText,
-              textDecoration: 'line-through',
-              padding: '1px 4px',
-              borderRadius: radius.sm,
-            }}>
-              {error.original_text}
-            </span>
-            <span style={{ margin: '0 6px', color: color.textMuted }}>→</span>
-            <span style={{
-              background: color.diffAddedBg,
-              color: color.diffAddedText,
-              padding: '1px 4px',
-              borderRadius: radius.sm,
-              fontWeight: 500,
-            }}>
-              {error.suggested_text}
-            </span>
+          <div style={{ marginBottom: 6 }}>
+            <DiffView original={error.original_text} suggested={error.suggested_text} />
           </div>
         </div>
       </div>
@@ -370,26 +359,8 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) 
             </Button>
           )}
         </Space>
-        <div style={{ fontSize: fontSize.bodyXs, lineHeight: 1.6 }}>
-          <span style={{
-            background: color.diffRemovedBg,
-            color: color.diffRemovedText,
-            textDecoration: 'line-through',
-            padding: '1px 4px',
-            borderRadius: radius.sm,
-          }}>
-            {e.original_text}
-          </span>
-          <span style={{ margin: '0 6px', color: color.textMuted, fontSize: fontSize.meta }}>→</span>
-          <span style={{
-            background: color.diffAddedBg,
-            color: color.diffAddedText,
-            padding: '1px 4px',
-            borderRadius: radius.sm,
-            fontWeight: 500,
-          }}>
-            {e.suggested_text}
-          </span>
+        <div style={{ margin: '4px 0' }}>
+          <DiffView original={e.original_text} suggested={e.suggested_text} />
         </div>
         <div style={{ fontSize: fontSize.meta, color: color.textDescription, marginTop: 3 }}>{e.description}</div>
       </div>
@@ -398,6 +369,324 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) 
 }
 
 
+
+const ParaRow = React.memo(function ParaRow({
+  para,
+  paraErrs,
+  isCh,
+  chapterObj,
+  isEditing,
+  isHover,
+  isActive,
+  showCheckboxes,
+  isChecked,
+  selectedId,
+  toolbarPos,
+  currentBodyFontSize,
+  firstLineIndentEnabled,
+  pbInfo,
+  pbType,
+  pbTooltipIdx,
+  editingText,
+  savingPara,
+  onHover,
+  onMouseLeave,
+  onParaClick,
+  onCheckboxToggle,
+  onEditingTextChange,
+  onSaveEdit,
+  onCancelEdit,
+  onStartEdit,
+  onDeletePara,
+  onTogglePageBreak,
+  onSetChapter,
+  onPbTooltipIdx,
+  onSelectError,
+}) {
+  const activeParaText = para.revised_text ?? para.text
+  const isBlank = !activeParaText || activeParaText.trim() === ''
+  const showToolbar = isActive && !isEditing && toolbarPos !== null
+
+  return (
+    <React.Fragment>
+      {pbInfo && (
+        <div style={{
+          margin: '12px 0 8px 0',
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          userSelect: 'none',
+        }}>
+          <div style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: '50%',
+            borderTop: `1px dashed ${pbInfo.border}`,
+            zIndex: 0,
+          }} />
+          {(pbType === 'original' || pbType === 'manual') ? (
+            <Popconfirm
+              title="确定移除该硬分页？"
+              description="移除后该段落导出时将不再另起新页。"
+              onConfirm={() => onTogglePageBreak(para)}
+              okText="确定移除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+            >
+              <Tooltip open={pbTooltipIdx === para.idx} title="点击移除硬分页" mouseLeaveDelay={0.1}>
+                <span
+                  onMouseEnter={() => onPbTooltipIdx(para.idx)}
+                  onMouseLeave={() => onPbTooltipIdx(null)}
+                  onClick={() => onPbTooltipIdx(null)}
+                  style={{
+                    position: 'relative',
+                    zIndex: 1,
+                    background: color.bgReader,
+                    padding: '2px 12px',
+                    borderRadius: 12,
+                    border: `1px solid ${pbInfo.border}`,
+                    color: pbInfo.color,
+                    fontSize: 11,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                    transition: 'all 0.15s ease',
+                  }}>
+                  {pbInfo.label}
+                </span>
+              </Tooltip>
+            </Popconfirm>
+          ) : (
+            <span style={{
+              position: 'relative',
+              zIndex: 1,
+              background: color.bgReader,
+              padding: '0 10px',
+              color: pbInfo.color,
+              fontSize: 11,
+              fontWeight: 400,
+            }}>
+              {pbInfo.label}
+            </span>
+          )}
+        </div>
+      )}
+      <div
+        data-para={para.idx}
+        onMouseEnter={() => onHover(para.idx)}
+        onMouseLeave={onMouseLeave}
+        onClick={(e) => onParaClick(e, para.idx)}
+        style={{
+          marginBottom: 16,
+          display: 'flex',
+          gap: 6,
+          position: 'relative',
+          padding: '6px 10px',
+          borderRadius: 6,
+          transition: 'all 0.15s ease',
+          background: isActive
+            ? 'rgba(19, 194, 194, 0.09)'
+            : isHover
+            ? 'rgba(19, 194, 194, 0.04)'
+            : isCh
+            ? 'rgba(212, 163, 89, 0.04)'
+            : 'transparent',
+          borderLeft: isActive
+            ? '4px solid #13c2c2'
+            : isHover
+            ? '4px solid #87e8de'
+            : isCh
+            ? '4px solid #ffe58f'
+            : '4px solid transparent',
+        }}
+      >
+        {showCheckboxes && (
+          <Checkbox
+            checked={isChecked}
+            onChange={() => onCheckboxToggle(para.idx)}
+            style={{ lineHeight: '1.9', paddingTop: 2 }}
+          />
+        )}
+        <span style={{
+          color: para?.revised_text ? color.success : color.textTertiary,
+          fontWeight: para?.revised_text ? 600 : 400,
+          fontVariantNumeric: 'tabular-nums',
+          display: 'inline-block',
+          fontSize: fontSize.bodyXs,
+          flexShrink: 0,
+          lineHeight: 1.9,
+          minWidth: 24,
+          textAlign: 'left',
+          userSelect: 'none',
+        }}>
+          {para.idx}
+        </span>
+
+        <div style={{
+          lineHeight: 1.9,
+          fontSize: currentBodyFontSize,
+          flex: 1,
+          color: color.textPrimary,
+          textIndent: (firstLineIndentEnabled && !isCh) ? '2em' : '0',
+        }}>
+          {isEditing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Input.TextArea
+                value={editingText}
+                onChange={e => onEditingTextChange(e.target.value)}
+                autoSize={{ minRows: 1, maxRows: 8 }}
+                style={{ fontSize: currentBodyFontSize }}
+              />
+              <Space size="small">
+                <Button type="primary" size="small" loading={savingPara} onClick={() => onSaveEdit(para.idx)}>
+                  保存
+                </Button>
+                <Button size="small" onClick={onCancelEdit}>
+                  取消
+                </Button>
+              </Space>
+            </div>
+          ) : (
+            <div onDoubleClick={() => onStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}>
+              {isCh && (
+                <>
+                  <Tag color="gold" style={{ marginBottom: 4, marginRight: 4 }}>
+                    📖 章节 ({
+                      chapterObj?.level === 1 ? '1级 卷/部' :
+                      chapterObj?.level === 2 ? '2级 章' :
+                      chapterObj?.level === 3 ? '3级 节/回' :
+                      chapterObj?.level === 4 ? '4级 小节' :
+                      chapterObj?.level === 5 ? '5级 目' : '6级 细目'
+                    })
+                  </Tag>
+                  {chapterObj?.detected_by === 'manual' ? (
+                    <Tag color="green" style={{ marginBottom: 4, marginRight: 8 }}>人工</Tag>
+                  ) : chapterObj?.detected_by === 'llm' ? (
+                    <Tag color="purple" style={{ marginBottom: 4, marginRight: 8 }}>LLM识别</Tag>
+                  ) : (
+                    <Tag color="blue" style={{ marginBottom: 4, marginRight: 8 }}>原文</Tag>
+                  )}
+                </>
+              )}
+              {isBlank ? (
+                <span style={{ color: '#bfbfbf', fontStyle: 'italic', fontSize: 13, userSelect: 'none' }}>
+                  [ 空段落 ]
+                </span>
+              ) : (
+                <ParagraphView
+                  text={(firstLineIndentEnabled && !isCh) ? (activeParaText || '').replace(/^[\s\u3000]+/, '') : activeParaText}
+                  paraErrors={paraErrs}
+                  selectedId={selectedId}
+                  onSelect={onSelectError}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {showToolbar && (
+          <div style={{
+            position: 'absolute',
+            top: (isActive && toolbarPos) ? toolbarPos.y : -30,
+            left: (isActive && toolbarPos) ? toolbarPos.x : 'auto',
+            right: (isActive && toolbarPos) ? 'auto' : 12,
+            zIndex: 10,
+            background: color.bgCard,
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            padding: '3px 8px',
+            borderRadius: 20,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.12)',
+            border: `1px solid ${color.borderBar}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}>
+            <Tooltip title="编辑段落文本">
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={(e) => { e.stopPropagation(); onStartEdit(para); }}
+                style={{ fontSize: 12 }}
+              >
+                编辑
+              </Button>
+            </Tooltip>
+            {(() => {
+              const hasHardBreak = pbType === 'original' || pbType === 'manual'
+              if (hasHardBreak) {
+                return (
+                  <Popconfirm
+                    title="确定移除该硬分页？"
+                    description="移除后该段落导出时将不再另起新页。"
+                    onConfirm={() => onTogglePageBreak(para)}
+                    okText="确定移除"
+                    okButtonProps={{ danger: true }}
+                    cancelText="取消"
+                  >
+                    <Tooltip title="移除段前硬分页（使导出 Word 时本段续接上一页）">
+                      <Button type="text" size="small" danger icon={<ScissorOutlined />} style={{ fontSize: 12 }}>
+                        移除分页
+                      </Button>
+                    </Tooltip>
+                  </Popconfirm>
+                )
+              }
+              return (
+                <Tooltip title="插入段前硬分页（使导出 Word 时从新一页开始）">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<BookOutlined />}
+                    onClick={(e) => { e.stopPropagation(); onTogglePageBreak(para) }}
+                    style={{ fontSize: 12 }}
+                  >
+                    新增分页
+                  </Button>
+                </Tooltip>
+              )
+            })()}
+
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => onSetChapter(para, 1) },
+                  { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => onSetChapter(para, 2) },
+                  { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => onSetChapter(para, 3) },
+                  { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => onSetChapter(para, 4) },
+                  { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => onSetChapter(para, 5) },
+                  { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => onSetChapter(para, 6) },
+                  ...(isCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => onSetChapter(para, 1, true) }] : []),
+                ],
+              }}
+            >
+              <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>
+                设为标题 ▾
+              </Button>
+            </Dropdown>
+
+            <Tooltip title="删除该段落">
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={(e) => { e.stopPropagation(); onDeletePara(para); }}
+                style={{ fontSize: 12 }}
+              >
+                删除
+              </Button>
+            </Tooltip>
+          </div>
+        )}
+      </div>
+    </React.Fragment>
+  )
+})
 
 function ReviewReaderInner({
   results, project, inProgress, onSetStatus, onAcceptAll,
@@ -418,18 +707,38 @@ function ReviewReaderInner({
   batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
   proofreadWindowSize = 30, onWindowSizeChange,
 }, ref) {
+  const errors = results?.errors || []
+  const paras = results?.paragraphs || []
+  const sortedParas = useMemo(() => [...paras].sort((a, b) => a.idx - b.idx), [paras])
+  const paraIndexMap = useMemo(() => {
+    const map = new Map()
+    sortedParas.forEach((p, i) => map.set(p.idx, i))
+    return map
+  }, [sortedParas])
+
+  const ITEM_HEIGHT = 48
+  const BUFFER_SIZE = 50
+  const [scrollTop, setScrollTop] = useState(0)
+
+  const handleScroll = useCallback((e) => {
+    const st = e.target.scrollTop
+    requestAnimationFrame(() => {
+      setScrollTop(st)
+    })
+  }, [])
+
   useImperativeHandle(ref, () => ({
     scrollToParagraph: (idx) => {
       if (flowRef.current && idx !== undefined && idx !== null) {
-        const el = flowRef.current.querySelector(`[data-para="${idx}"]`)
-        if (el) {
-          el.scrollIntoView({ behavior: 'auto', block: 'center' })
+        const posIndex = paraIndexMap.get(idx)
+        if (posIndex != null) {
+          const targetTop = Math.max(0, posIndex * ITEM_HEIGHT - 100)
+          flowRef.current.scrollTop = targetTop
+          setScrollTop(targetTop)
         }
       }
     }
   }))
-  const errors = results?.errors || []
-  const paras = results?.paragraphs || []
   const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
 
   const errorParaIdxs = useMemo(() => {
@@ -454,6 +763,37 @@ function ReviewReaderInner({
     })
     return ids
   }, [errors, paraMap])
+
+  const errorsByParaIdx = useMemo(() => {
+    const map = new Map()
+    errors.forEach(e => {
+      const list = map.get(e.paragraph_index)
+      if (list) list.push(e)
+      else map.set(e.paragraph_index, [e])
+    })
+    return map
+  }, [errors])
+
+  const chaptersByParaIdx = useMemo(() => {
+    const map = new Map()
+    chapters.forEach(c => {
+      map.set(c.title_paragraph_idx, c)
+    })
+    return map
+  }, [chapters])
+
+  const handleCheckboxToggle = useCallback((idx) => {
+    onSelectionChange?.((prev) => {
+      const next = new Set(prev || [])
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }, [onSelectionChange])
+
+  const handleHover = useCallback((idx) => setHoverIdx(idx), [])
+  const handleMouseLeave = useCallback(() => setHoverIdx(null), [])
+  const handleCancelEdit = useCallback(() => setEditingIdx(null), [])
 
   const [selectedId, setSelectedId] = useState(null)
   const [panelTab, setPanelTab] = useState('pending')
@@ -721,135 +1061,107 @@ function ReviewReaderInner({
   const isScrollingRef = useRef(false)
 
   // 切换 selectedId 时，在 Paint 之前同步隐去卡片，防止旧坐标闪烁
-  useLayoutEffect(() => {
+  const updatePos = useCallback(() => {
+    const container = flowRef.current
+    const el = floatCardElRef.current
+    if (!container || !el || !selectedId) return
+    const strId = String(selectedId)
+    const span = Array.from(container.querySelectorAll('[data-error-id]'))
+      .find(s => s.dataset.errorId.split(',').includes(strId))
+    if (!span) {
+      el.style.opacity = '0'
+      el.style.transform = 'translateY(3px)'
+      return
+    }
+
+    const rect = span.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const cardW = 380
+    const cardH = el.offsetHeight || 170
+
+    const bottomBarHeight = 72
+    const maxBottom = window.innerHeight - bottomBarHeight
+    const minTop = Math.max(8, containerRect.top + 8)
+
+    let top = rect.bottom + 6
+    if (top + cardH > maxBottom) {
+      const topSpace = rect.top - minTop
+      if (topSpace >= cardH + 6) {
+        top = rect.top - cardH - 6
+      } else {
+        top = Math.max(minTop, maxBottom - cardH)
+      }
+    }
+
+    let left = rect.left
+    if (left + cardW > window.innerWidth - 24) {
+      left = Math.max(12, window.innerWidth - cardW - 24)
+    }
+
+    el.style.top = `${top}px`
+    el.style.left = `${left}px`
+    el.style.opacity = '1'
+    el.style.transform = 'translateY(0)'
+  }, [selectedId])
+
+  useEffect(() => {
     const el = floatCardElRef.current
     if (el) {
       el.style.opacity = '0'
       el.style.transform = 'translateY(3px)'
     }
-  }, [selectedId])
+    const timer = setTimeout(() => {
+      updatePos()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [selectedId, scrollTop, results, updatePos])
 
-  // 悬浮卡片控制与段落对齐：物理视口精准单向状态机
   useEffect(() => {
+    if (!selectedId || !flowRef.current) return
+    const err = flatErrors.find(e => e.id === selectedId)
+    if (!err) return
+
     const container = flowRef.current
-    if (!container || !selectedId) return
+    const paraEl = container.querySelector(`[data-para="${err.paragraph_index}"]`)
 
-    let rafId
-    let scrollTimer = null
-
-    const updatePos = () => {
-      const el = floatCardElRef.current
-      if (!el) return
-      const id = selectedIdRef.current
-      if (!id) return
-      const strId = String(id)
-      const span = Array.from(container.querySelectorAll('[data-error-id]'))
-        .find(el => el.dataset.errorId.split(',').includes(strId))
-      if (!span) return
-
-      const rect = span.getBoundingClientRect()
-      const containerRect = container.getBoundingClientRect()
-      const cardW = 380
-      const cardH = el.offsetHeight || 170
-
-      const bottomBarHeight = 72 // 扣除 64px 底栏并留出 8px 绝对安全间隔
-      const maxBottom = window.innerHeight - bottomBarHeight
-      const minTop = Math.max(8, containerRect.top + 8)
-
-      // 1. 默认置于高亮文本下方
-      let top = rect.bottom + 6
-
-      // 2. 若下方触及底栏安全线，优先翻转至文本上方
-      if (top + cardH > maxBottom) {
-        const topSpace = rect.top - minTop
-        if (topSpace >= cardH + 6) {
-          top = rect.top - cardH - 6
-        } else {
-          // 上下空间吃紧时，贴于底栏上方安全线，且绝不压盖当前高亮词
-          top = Math.max(minTop, maxBottom - cardH)
-        }
-      }
-
-      // 3. 水平方向防右侧屏幕溢出
-      let left = rect.left
-      if (left + cardW > window.innerWidth - 24) {
-        left = Math.max(12, window.innerWidth - cardW - 24)
-      }
-
-      el.style.top = `${top}px`
-      el.style.left = `${left}px`
-      el.style.opacity = '1'
-      el.style.transform = 'translateY(0)'
-    }
-
-    const hideCard = () => {
-      const el = floatCardElRef.current
-      if (el) {
-        el.style.opacity = '0'
-        el.style.transform = 'translateY(3px)'
+    if (paraEl) {
+      const cRect = container.getBoundingClientRect()
+      const pRect = paraEl.getBoundingClientRect()
+      const isVisible = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 20
+      if (isVisible) {
+        // 目标段落已经在可视区域内：正文绝对保持静止，仅定位卡片！
+        updatePos()
+        return
       }
     }
 
-    hideCard()
-
-    // 滚动过程中绝对保持隐藏，停稳 80ms 后一次性淡入
-    const onScroll = () => {
-      hideCard()
-      clearTimeout(scrollTimer)
-      scrollTimer = setTimeout(() => {
-        rafId = requestAnimationFrame(updatePos)
-      }, 80)
+    // 只有当目标段落不在当前视口内时，才触发正文滚动
+    const posIndex = paraIndexMap.get(err.paragraph_index)
+    if (posIndex != null) {
+      const targetTop = Math.max(0, posIndex * ITEM_HEIGHT - 80)
+      container.scrollTop = targetTop
+      setScrollTop(targetTop)
     }
-
-    // 智能判定目标段落是否已经在视口中央
-    if (!positionSavedRef.current) {
-      const err = flatErrors.find(e => e.id === selectedId)
-      if (err) {
-        const paraEl = container.querySelector(`[data-para="${err.paragraph_index}"]`)
-        if (paraEl) {
-          const cRect = container.getBoundingClientRect()
-          const pRect = paraEl.getBoundingClientRect()
-          // 目标段落已在可视区域（上下各留有 20px 余量）
-          const isCentered = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 20
-          if (isCentered) {
-            // 分支 A：原地 / 连着的问题，无需滚动，零延迟直接在下一帧精确定位显现
-            rafId = requestAnimationFrame(updatePos)
-          } else {
-            // 分支 B：远端段落，触发平滑滚动，卡片保持隐藏直至 scroll 结束停稳
-            paraEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }
-        }
-      }
-    } else {
-      positionSavedRef.current = false
-      rafId = requestAnimationFrame(updatePos)
-    }
-
-    container.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onScroll, { passive: true })
-    return () => {
-      clearTimeout(scrollTimer)
-      cancelAnimationFrame(rafId)
-      container.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', onScroll)
-    }
-  }, [selectedId, flatErrors])
+  }, [selectedId, flatErrors, paraIndexMap, ITEM_HEIGHT, updatePos])
 
   const prevSelectedChapterRef = useRef(selectedChapter)
   useEffect(() => {
     if (!selectedChapter || !flowRef.current) return
-    // 仅当 selectedChapter 改变（用户手动点击菜单切换）时才触发平滑滚动，避免更新 chapters 数据时误触发置顶
     if (prevSelectedChapterRef.current === selectedChapter) return
     prevSelectedChapterRef.current = selectedChapter
 
     const ch = chapters.find(c => c.id === selectedChapter)
     if (!ch) return
-    const target = errorParaIdxs.find(idx => idx >= (ch.title_paragraph_idx ?? 0))
-      ?? ch.start_idx ?? ch.title_paragraph_idx
-    if (target == null) return
-    const el = flowRef.current.querySelector(`[data-para="${target}"]`)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [selectedChapter, chapters, errorParaIdxs])
+    const targetIdx = ch.title_paragraph_idx ?? ch.start_idx
+    if (targetIdx == null) return
+
+    const posIndex = paraIndexMap.get(targetIdx)
+    if (posIndex != null && flowRef.current) {
+      const targetTop = Math.max(0, posIndex * ITEM_HEIGHT - 60)
+      flowRef.current.scrollTop = targetTop
+      setScrollTop(targetTop)
+    }
+  }, [selectedChapter, chapters, paraIndexMap, ITEM_HEIGHT])
 
   const selectedError = useMemo(
     () => flatErrors.find(e => e.id === selectedId),
@@ -994,8 +1306,30 @@ function ReviewReaderInner({
               minHeight: 0,
             }}
           >
+            <style>{`
+              .custom-reader-scroll::-webkit-scrollbar {
+                width: 14px;
+              }
+              .custom-reader-scroll::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              .custom-reader-scroll::-webkit-scrollbar-thumb {
+                min-height: 48px;
+                background-color: rgba(0, 0, 0, 0.2);
+                background-clip: padding-box;
+                border: 4px solid transparent;
+                border-radius: 7px;
+                transition: background-color 0.2s ease, border-width 0.2s ease;
+              }
+              .custom-reader-scroll::-webkit-scrollbar-thumb:hover {
+                background-color: rgba(0, 0, 0, 0.55);
+                border: 1px solid transparent;
+              }
+            `}</style>
             <div
               ref={flowRef}
+              className="custom-reader-scroll"
+              onScroll={handleScroll}
               style={{
                 flex: 1,
                 minHeight: 0,
@@ -1003,330 +1337,73 @@ function ReviewReaderInner({
                 padding: '0 24px',
                 background: color.bgReader,
                 borderRadius: radius.md,
+                position: 'relative',
               }}
             >
-              {[...paras].sort((a, b) => a.idx - b.idx).map(para => {
-                const paraErrs = errors.filter(e => e.paragraph_index === para.idx)
-                const isCh = chapters.some(c => c.title_paragraph_idx === para.idx)
-                const chapterObj = chapters.find(c => c.title_paragraph_idx === para.idx)
-                const isEditing = editingIdx === para.idx
-                const isHover = hoverIdx === para.idx
-                const activeParaText = para.revised_text ?? para.text
-                const isBlank = !activeParaText || activeParaText.trim() === ''
-
-                const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
-                const pbInfo = {
-                  original: { label: '📄 原文硬分页', border: '#e8e8e8', color: '#8c8c8c' },
-                  auto_chapter: { label: '📖 章节开页', border: '#ffe58f', color: '#d48806' },
-                  manual: { label: '✂️ 新增硬分页', border: '#ffd591', color: '#d46b08' },
-                }[pbType]
-
-                const isActive = activeIdx === para.idx
-                const showToolbar = isActive && !isEditing && toolbarPos !== null
+              {(() => {
+                const totalHeight = sortedParas.length * ITEM_HEIGHT
+                const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - 10)
+                const endIndex = Math.min(sortedParas.length, startIndex + BUFFER_SIZE)
+                const offsetY = startIndex * ITEM_HEIGHT
+                const visibleParas = sortedParas.slice(startIndex, endIndex)
 
                 return (
-                  <React.Fragment key={para.idx}>
-                    {pbInfo && (
-                      <div style={{
-                        margin: '12px 0 8px 0',
-                        position: 'relative',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        userSelect: 'none',
-                      }}>
-                        <div style={{
-                          position: 'absolute',
-                          left: 0,
-                          right: 0,
-                          top: '50%',
-                          borderTop: `1px dashed ${pbInfo.border}`,
-                          zIndex: 0,
-                        }} />
-                        {(pbType === 'original' || pbType === 'manual') ? (
-                          <Popconfirm
-                            title="确定移除该硬分页？"
-                            description="移除后该段落导出时将不再另起新页。"
-                            onConfirm={() => handleTogglePageBreak(para)}
-                            okText="确定移除"
-                            okButtonProps={{ danger: true }}
-                            cancelText="取消"
-                          >
-                            <Tooltip open={pbTooltipIdx === para.idx} title="点击移除硬分页" mouseLeaveDelay={0.1}>
-                              <span
-                                onMouseEnter={() => setPbTooltipIdx(para.idx)}
-                                onMouseLeave={() => setPbTooltipIdx(null)}
-                                onClick={() => setPbTooltipIdx(null)}
-                                style={{
-                                position: 'relative',
-                                zIndex: 1,
-                                background: color.bgReader,
-                                padding: '2px 12px',
-                                borderRadius: 12,
-                                border: `1px solid ${pbInfo.border}`,
-                                color: pbInfo.color,
-                                fontSize: 11,
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                                boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-                                transition: 'all 0.15s ease',
-                              }}>
-                                {pbInfo.label}
-                              </span>
-                            </Tooltip>
-                          </Popconfirm>
-                        ) : (
-                          <span style={{
-                            position: 'relative',
-                            zIndex: 1,
-                            background: color.bgReader,
-                            padding: '0 10px',
-                            color: pbInfo.color,
-                            fontSize: 11,
-                            fontWeight: 400,
-                          }}>
-                            {pbInfo.label}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    <div
-                      data-para={para.idx}
-                      onMouseEnter={() => setHoverIdx(para.idx)}
-                      onMouseLeave={() => setHoverIdx(null)}
-                      onClick={(e) => handleParaClick(e, para.idx)}
-                      style={{
-                        marginBottom: 16,
-                        display: 'flex',
-                        gap: 6,
-                        position: 'relative',
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        transition: 'all 0.15s ease',
-                        background: isActive
-                          ? 'rgba(19, 194, 194, 0.09)'
-                          : isHover
-                          ? 'rgba(19, 194, 194, 0.04)'
-                          : isCh
-                          ? 'rgba(212, 163, 89, 0.04)'
-                          : 'transparent',
-                        borderLeft: isActive
-                          ? '4px solid #13c2c2'
-                          : isHover
-                          ? '4px solid #87e8de'
-                          : isCh
-                          ? '4px solid #ffe58f'
-                          : '4px solid transparent',
-                      }}
-                    >
-                      {showCheckboxes && (
-                        <Checkbox
-                          checked={selectedParas?.has(para.idx)}
-                          onChange={() => {
-                            const next = new Set(selectedParas || [])
-                            if (next.has(para.idx)) next.delete(para.idx)
-                            else next.add(para.idx)
-                            onSelectionChange?.(next)
-                          }}
-                          style={{ lineHeight: '1.9', paddingTop: 2 }}
-                        />
-                      )}
-                      <span style={{
-                        color: para?.revised_text ? color.success : color.textTertiary,
-                        fontWeight: para?.revised_text ? 600 : 400,
-                        fontVariantNumeric: 'tabular-nums',
-                        display: 'inline-block',
-                        fontSize: fontSize.bodyXs,
-                        flexShrink: 0,
-                        lineHeight: 1.9,
-                        minWidth: 24,
-                        textAlign: 'left',
-                        userSelect: 'none',
-                      }}>
-                        {para.idx}
-                      </span>
+                  <div style={{ height: totalHeight, position: 'relative', width: '100%' }}>
+                    <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
+                      {visibleParas.map(para => {
+                        const paraErrs = errorsByParaIdx.get(para.idx) || EMPTY_ARRAY
+                        const chapterObj = chaptersByParaIdx.get(para.idx)
+                        const isCh = Boolean(chapterObj)
+                        const isEditing = editingIdx === para.idx
+                        const isHover = hoverIdx === para.idx
+                        const isChecked = selectedParas?.has(para.idx) || false
 
-                      <div style={{
-                        lineHeight: 1.9,
-                        fontSize: currentBodyFontSize,
-                        flex: 1,
-                        color: color.textPrimary,
-                        textIndent: (Boolean(project?.style_config?.first_line_indent_enabled) && !isCh) ? '2em' : '0',
-                      }}>
-                        {isEditing ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <Input.TextArea
-                              value={editingText}
-                              onChange={e => setEditingText(e.target.value)}
-                              autoSize={{ minRows: 1, maxRows: 8 }}
-                              style={{ fontSize: currentBodyFontSize }}
-                            />
-                            <Space size="small">
-                              <Button type="primary" size="small" loading={savingPara} onClick={() => handleSaveEdit(para.idx)}>
-                                保存
-                              </Button>
-                              <Button size="small" onClick={() => setEditingIdx(null)}>
-                                取消
-                              </Button>
-                            </Space>
-                          </div>
-                        ) : (
-                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}>
-                            {isCh && (
-                              <>
-                                <Tag color="gold" style={{ marginBottom: 4, marginRight: 4 }}>
-                                  📖 章节 ({
-                                    chapterObj?.level === 1 ? '1级 卷/部' :
-                                    chapterObj?.level === 2 ? '2级 章' :
-                                    chapterObj?.level === 3 ? '3级 节/回' :
-                                    chapterObj?.level === 4 ? '4级 小节' :
-                                    chapterObj?.level === 5 ? '5级 目' : '6级 细目'
-                                  })
-                                </Tag>
-                                {chapterObj?.detected_by === 'manual' ? (
-                                  <Tag color="green" style={{ marginBottom: 4, marginRight: 8 }}>人工</Tag>
-                                ) : chapterObj?.detected_by === 'llm' ? (
-                                  <Tag color="purple" style={{ marginBottom: 4, marginRight: 8 }}>LLM识别</Tag>
-                                ) : (
-                                  <Tag color="blue" style={{ marginBottom: 4, marginRight: 8 }}>原文</Tag>
-                                )}
-                              </>
-                            )}
-                            {isBlank ? (
-                              <span style={{ color: '#bfbfbf', fontStyle: 'italic', fontSize: 13, userSelect: 'none' }}>
-                                [ 空段落 ]
-                              </span>
-                            ) : (
-                              <ParagraphView
-                                text={(Boolean(project?.style_config?.first_line_indent_enabled) && !isCh) ? (activeParaText || '').replace(/^[\s\u3000]+/, '') : activeParaText}
-                                paraErrors={paraErrs}
-                                selectedId={selectedId}
-                                onSelect={setSelectedId}
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
+                        const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
+                        const pbInfo = PB_INFO_MAP[pbType]
 
-                      {/* Follow-Cursor / Click-Location Dynamic Floating Bubble Bar with Boundary Guard */}
-                      {showToolbar && (
-                        <div style={{
-                          position: 'absolute',
-                          top: (isActive && toolbarPos) ? toolbarPos.y : -30,
-                          left: (isActive && toolbarPos) ? toolbarPos.x : 'auto',
-                          right: (isActive && toolbarPos) ? 'auto' : 12,
-                          zIndex: 10,
-                          background: color.bgCard,
-                          backdropFilter: 'blur(4px)',
-                          WebkitBackdropFilter: 'blur(4px)',
-                          padding: '3px 8px',
-                          borderRadius: 20,
-                          boxShadow: '0 4px 16px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.12)',
-                          border: `1px solid ${color.borderBar}`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}>
-                          <Tooltip title="编辑段落文本">
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<EditOutlined />}
-                              onClick={(e) => { e.stopPropagation(); handleStartEdit(para); }}
-                              style={{ fontSize: 12 }}
-                            >
-                              编辑
-                            </Button>
-                          </Tooltip>
-                          {(() => {
-                            const hasHardBreak = pbType === 'original' || pbType === 'manual'
-                            if (hasHardBreak) {
-                              return (
-                                <Popconfirm
-                                  title="确定移除该硬分页？"
-                                  description="移除后该段落导出时将不再另起新页。"
-                                  onConfirm={() => handleTogglePageBreak(para)}
-                                  okText="确定移除"
-                                  okButtonProps={{ danger: true }}
-                                  cancelText="取消"
-                                >
-                                  <Tooltip title="移除该硬分页">
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      icon={<ScissorOutlined />}
-                                      danger
-                                      onClick={(e) => e.stopPropagation()}
-                                      style={{ fontSize: 12 }}
-                                    >
-                                      移除硬分页
-                                    </Button>
-                                  </Tooltip>
-                                </Popconfirm>
-                              )
-                            }
-                            return (
-                              <Tooltip title="在段前插入硬分页">
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  icon={<ScissorOutlined />}
-                                  onClick={(e) => { e.stopPropagation(); handleTogglePageBreak(para); }}
-                                  style={{ fontSize: 12 }}
-                                >
-                                  硬分页
-                                </Button>
-                              </Tooltip>
-                            )
-                          })()}
-                          <Dropdown
-                            menu={{
-                              items: isCh ? [
-                                { key: 'l1', label: '📖 改为 1 级 (卷/部) [开页]', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
-                                { key: 'l2', label: '📖 改为 2 级 (章)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } },
-                                { key: 'l3', label: '🔖 改为 3 级 (节/回)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 3) } },
-                                { key: 'l4', label: '📌 改为 4 级 (篇/小节)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 4) } },
-                                { key: 'l5', label: '📍 改为 5 级 (条/目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 5) } },
-                                { key: 'l6', label: '🔹 改为 6 级 (细目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 6) } },
-                                { type: 'divider' },
-                                { key: 'unset', danger: true, label: '❌ 取消章节标记', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1, true) } }
-                              ] : [
-                                { key: 'l1', label: '📖 设为 1 级 (卷/部) [开页]', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 1) } },
-                                { key: 'l2', label: '📖 设为 2 级 (章)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 2) } },
-                                { key: 'l3', label: '🔖 设为 3 级 (节/回)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 3) } },
-                                { key: 'l4', label: '📌 设为 4 级 (篇/小节)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 4) } },
-                                { key: 'l5', label: '📍 设为 5 级 (条/目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 5) } },
-                                { key: 'l6', label: '🔹 设为 6 级 (细目)', onClick: (e) => { e.domEvent?.stopPropagation(); handleSetChapter(para, 6) } }
-                              ]
-                            }}
-                          >
-                            <Button
-                              type={isCh ? 'primary' : 'text'}
-                              size="small"
-                              icon={<BookOutlined />}
-                              onClick={(e) => e.stopPropagation()}
-                              style={{ fontSize: 12 }}
-                            >
-                              {isCh ? `已设 ${chapterObj?.level || 1}级章节 ▾` : '设章节 ▾'}
-                            </Button>
-                          </Dropdown>
-                          <Tooltip title={project?.is_locked === 1 ? '项目已锁定，禁止删除段落' : '删除该段落'}>
-                            <Button
-                              type="text"
-                              size="small"
-                              danger
-                              disabled={project?.is_locked === 1}
-                              icon={<DeleteOutlined />}
-                              onClick={(e) => { e.stopPropagation(); handleDeletePara(para); }}
-                              style={{ fontSize: 12 }}
-                            />
-                          </Tooltip>
-                        </div>
-                      )}
+                        const isActive = activeIdx === para.idx
+
+                        return (
+                          <ParaRow
+                            key={para.idx}
+                            para={para}
+                            paraErrs={paraErrs}
+                            isCh={isCh}
+                            chapterObj={chapterObj}
+                            isEditing={isEditing}
+                            isHover={isHover}
+                            isActive={isActive}
+                            showCheckboxes={showCheckboxes}
+                            isChecked={isChecked}
+                            selectedId={selectedId}
+                            toolbarPos={isActive ? toolbarPos : null}
+                            currentBodyFontSize={currentBodyFontSize}
+                            firstLineIndentEnabled={Boolean(project?.style_config?.first_line_indent_enabled)}
+                            pbInfo={pbInfo}
+                            pbType={pbType}
+                            pbTooltipIdx={pbTooltipIdx}
+                            editingText={isEditing ? editingText : ''}
+                            savingPara={savingPara}
+                            onHover={handleHover}
+                            onMouseLeave={handleMouseLeave}
+                            onParaClick={handleParaClick}
+                            onCheckboxToggle={handleCheckboxToggle}
+                            onEditingTextChange={setEditingText}
+                            onSaveEdit={handleSaveEdit}
+                            onCancelEdit={handleCancelEdit}
+                            onStartEdit={handleStartEdit}
+                            onDeletePara={handleDeletePara}
+                            onTogglePageBreak={handleTogglePageBreak}
+                            onSetChapter={handleSetChapter}
+                            onPbTooltipIdx={setPbTooltipIdx}
+                            onSelectError={setSelectedId}
+                          />
+                        )
+                      })}
                     </div>
-                  </React.Fragment>
+                  </div>
                 )
-              })}
+              })()}
             </div>
           </div>
 
@@ -1423,7 +1500,14 @@ function ReviewReaderInner({
           <Button
             type="text"
             size="small"
-            onClick={() => setShowCheckboxes(v => !v)}
+            onClick={() => {
+              if (showCheckboxes) {
+                setShowCheckboxes(false)
+                onSelectionChange?.(new Set())
+              } else {
+                setShowCheckboxes(true)
+              }
+            }}
             style={{
               fontSize: 13, color: showCheckboxes ? color.warning : color.textTertiary,
               whiteSpace: 'nowrap', flexShrink: 0,
