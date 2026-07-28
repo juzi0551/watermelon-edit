@@ -81,7 +81,7 @@ def scan_term_consistency(document_id: str) -> dict:
                     "description": f"项目术语一致性提示：检测到专有名词“{term}”，建议统一修正为“{replacement}”",
                 })
 
-    inserted = batch_insert_errors(document_id, new_errors) if new_errors else 0
+    inserted = batch_insert_errors(document_id, new_errors, default_source="rule") if new_errors else 0
 
     return {"scanned_paragraphs": scanned, "found_issues": len(new_errors), "new_issues": inserted}
 
@@ -168,6 +168,6 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
                     "description": f"标点未闭合提示：本段中{name}数量不匹配 ({open_sym}: {c_open}, {close_sym}: {c_close})",
                 })
 
-    inserted = batch_insert_errors(document_id, new_errors) if new_errors else 0
+    inserted = batch_insert_errors(document_id, new_errors, default_source="rule") if new_errors else 0
 
     return {"scanned_paragraphs": scanned, "found_issues": len(new_errors), "new_issues": inserted}

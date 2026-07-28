@@ -348,7 +348,14 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) 
           <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
             {SEVERITY_LABEL[e.severity]}
           </Tag>
-          {done && (
+          {e.is_obsolete === 1 ? (
+            <Tag color="default" style={{ fontSize: fontSize.metaSm, margin: 0 }}>
+              历史存档 (已覆盖)
+            </Tag>
+          ) : (
+            e.source === 'rule' && <Tag color="blue" style={{ fontSize: fontSize.metaSm, margin: 0 }}>规范检测</Tag>
+          )}
+          {done && !e.is_obsolete && (
             <Button
               type="text"
               size="small"
@@ -781,18 +788,21 @@ function ReviewReaderInner({
   }))
   const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
 
-  const errorParaIdxs = useMemo(() => {
-    const set = new Set(errors.map(e => e.paragraph_index))
-    return [...set].sort((a, b) => a - b)
-  }, [errors])
-
   const flatErrors = useMemo(
     () => [...errors].sort((a, b) => a.paragraph_index - b.paragraph_index),
     [errors],
   )
-  const pending = useMemo(() => flatErrors.filter(e => e.user_status === 'pending'), [flatErrors])
-  const accepted = useMemo(() => flatErrors.filter(e => e.user_status === 'accepted').reverse(), [flatErrors])
-  const rejected = useMemo(() => flatErrors.filter(e => e.user_status === 'rejected').reverse(), [flatErrors])
+  const activeErrors = useMemo(() => flatErrors.filter(e => !e.is_obsolete), [flatErrors])
+  const obsolete = useMemo(() => flatErrors.filter(e => e.is_obsolete === 1).reverse(), [flatErrors])
+
+  const errorParaIdxs = useMemo(() => {
+    const set = new Set(activeErrors.map(e => e.paragraph_index))
+    return [...set].sort((a, b) => a - b)
+  }, [activeErrors])
+
+  const pending = useMemo(() => activeErrors.filter(e => e.user_status === 'pending'), [activeErrors])
+  const accepted = useMemo(() => activeErrors.filter(e => e.user_status === 'accepted').reverse(), [activeErrors])
+  const rejected = useMemo(() => activeErrors.filter(e => e.user_status === 'rejected').reverse(), [activeErrors])
   const unmatchedIds = useMemo(() => {
     const ids = new Set()
     errors.forEach(e => {
@@ -806,13 +816,13 @@ function ReviewReaderInner({
 
   const errorsByParaIdx = useMemo(() => {
     const map = new Map()
-    errors.forEach(e => {
+    activeErrors.forEach(e => {
       const list = map.get(e.paragraph_index)
       if (list) list.push(e)
       else map.set(e.paragraph_index, [e])
     })
     return map
-  }, [errors])
+  }, [activeErrors])
 
   const handleCheckboxToggle = useCallback((idx) => {
     onSelectionChange?.((prev) => {
@@ -1094,6 +1104,13 @@ function ReviewReaderInner({
     const container = flowRef.current
     const el = floatCardElRef.current
     if (!container || !el || !selectedId) return
+    const id = selectedIdRef.current
+    const err = flatErrors.find(e => e.id === id)
+    if (!err || err.is_obsolete === 1) {
+      el.style.opacity = '0'
+      el.style.transform = 'translateY(3px)'
+      return
+    }
     const strId = String(selectedId)
     const span = Array.from(container.querySelectorAll('[data-error-id]'))
       .find(s => s.dataset.errorId.split(',').includes(strId))
@@ -1504,6 +1521,27 @@ function ReviewReaderInner({
                           errors={rejected}
                           selectedId={selectedId}
                           onSelect={(id) => { setSelectedId(id) }}
+                          unmatchedIds={unmatchedIds}
+                          onSetStatus={onSetStatus}
+                        />
+                      ),
+                  },
+                  {
+                    key: 'obsolete',
+                    label: <span>历史作废 ({obsolete.length})</span>,
+                    children: obsolete.length === 0
+                      ? <Empty description="暂无历史作废问题" />
+                      : (
+                        <ErrorList
+                          errors={obsolete}
+                          selectedId={selectedId}
+                          onSelect={(id) => {
+                            setSelectedId(id)
+                            const err = flatErrors.find(e => e.id === id)
+                            if (err) {
+                              scrollToParagraph(err.paragraph_index)
+                            }
+                          }}
                           unmatchedIds={unmatchedIds}
                           onSetStatus={onSetStatus}
                         />

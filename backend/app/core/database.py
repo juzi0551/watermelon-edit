@@ -396,6 +396,14 @@ def init_db():
             conn.execute("ALTER TABLE documents ADD COLUMN last_error TEXT")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE errors ADD COLUMN source TEXT DEFAULT 'llm'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE errors ADD COLUMN is_obsolete INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
 
 
 @contextmanager
@@ -705,7 +713,7 @@ def insert_paragraphs(document_id: str, rows: list[tuple]):
 
 
 def update_paragraph_text(document_id: str, idx: int, new_text: str):
-    """更新段落文本（写入 revised_text）并重算字符数。"""
+    """更新段落文本（写入 revised_text）并重算字符数，同时自动归档受影响废弃错字。"""
     with get_conn() as conn:
         conn.execute(
             """UPDATE paragraphs 
@@ -713,6 +721,7 @@ def update_paragraph_text(document_id: str, idx: int, new_text: str):
                WHERE document_id = ? AND idx = ?""",
             (new_text, len(new_text), document_id, idx),
         )
+    mark_unmatched_errors_obsolete(document_id, idx, new_text)
 
 
 def toggle_paragraph_page_break(document_id: str, idx: int, pb_val: str | bool):
@@ -1020,8 +1029,8 @@ def insert_error(document_id: str, err: dict):
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO errors
-               (document_id, type, paragraph_index, original_text, suggested_text, severity, description, chapter_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (document_id, type, paragraph_index, original_text, suggested_text, severity, description, chapter_id, source, is_obsolete)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 document_id,
                 err.get("type", "typo"),
@@ -1031,28 +1040,66 @@ def insert_error(document_id: str, err: dict):
                 err.get("severity", "medium"),
                 err.get("description", ""),
                 err.get("chapter_id", ""),
+                err.get("source", "llm"),
+                err.get("is_obsolete", 0),
             ),
         )
 
 
-def delete_errors_in_range(document_id: str, start_idx: int, end_idx: int):
+def obsolete_errors_in_range(document_id: str, start_idx: int, end_idx: int, source: str = "llm"):
+    """仅将同来源（source）且未手动决策（user_status = 'pending'）的旧错误标记为已作废 is_obsolete = 1。
+       用户已采纳或解绝的决策记录 100% 锁死保留。"""
     with get_conn() as conn:
         conn.execute(
-            "DELETE FROM errors WHERE document_id = ? AND paragraph_index >= ? AND paragraph_index < ?",
-            (document_id, start_idx, end_idx),
+            """UPDATE errors
+               SET is_obsolete = 1
+               WHERE document_id = ?
+                 AND paragraph_index >= ?
+                 AND paragraph_index < ?
+                 AND user_status = 'pending'
+                 AND (source IS NULL OR source = ?)""",
+            (document_id, start_idx, end_idx, source),
         )
 
 
-def delete_errors_by_indices(document_id: str, indices: list[int]):
-    """删除指定段落编号的错误（用于 selection 模式）。"""
+def delete_errors_in_range(document_id: str, start_idx: int, end_idx: int, source: str = "llm"):
+    """兼容旧函数签名：调用软标记覆盖。"""
+    obsolete_errors_in_range(document_id, start_idx, end_idx, source)
+
+
+def obsolete_errors_by_indices(document_id: str, indices: list[int], source: str = "llm"):
     if not indices:
         return
     placeholders = ",".join("?" for _ in indices)
     with get_conn() as conn:
         conn.execute(
-            f"DELETE FROM errors WHERE document_id = ? AND paragraph_index IN ({placeholders})",
-            (document_id, *indices),
+            f"""UPDATE errors
+                SET is_obsolete = 1
+                WHERE document_id = ?
+                  AND paragraph_index IN ({placeholders})
+                  AND user_status = 'pending'
+                  AND (source IS NULL OR source = ?)""",
+            (document_id, *indices, source),
         )
+
+
+def delete_errors_by_indices(document_id: str, indices: list[int], source: str = "llm"):
+    """兼容旧函数签名：调用软标记覆盖。"""
+    obsolete_errors_by_indices(document_id, indices, source)
+
+
+def mark_unmatched_errors_obsolete(document_id: str, paragraph_index: int, new_text: str):
+    """当段落文本发生人工修改或采纳修改后，检查该段落中原错字在 new_text 中已不存在的待处理错误，
+       自动将其软标记为 is_obsolete = 1（历史作废）。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, original_text FROM errors WHERE document_id = ? AND paragraph_index = ? AND user_status = 'pending' AND (is_obsolete IS NULL OR is_obsolete = 0)",
+            (document_id, paragraph_index),
+        ).fetchall()
+        for r in rows:
+            orig = r["original_text"]
+            if orig and orig not in new_text:
+                conn.execute("UPDATE errors SET is_obsolete = 1 WHERE id = ?", (r["id"],))
 
 
 def delete_all_errors(document_id: str):
@@ -1347,13 +1394,13 @@ def get_document_batches(document_id: str, limit: int = 5) -> list[dict]:
 
 # ==================== 批量写入（batch 模式专用，不替换现有逐条 insert） ====================
 
-def batch_insert_errors(document_id: str, errors: list[dict]) -> int:
+def batch_insert_errors(document_id: str, errors: list[dict], default_source: str = "llm") -> int:
     """批量写入 errors，包含 (paragraph_index, original_text, suggested_text) 幂等去重防重复插入，返回实际新增条数。"""
     if not errors:
         return 0
     with get_conn() as conn:
         existing = conn.execute(
-            "SELECT paragraph_index, original_text, suggested_text FROM errors WHERE document_id = ?",
+            "SELECT paragraph_index, original_text, suggested_text FROM errors WHERE document_id = ? AND (is_obsolete IS NULL OR is_obsolete = 0)",
             (document_id,),
         ).fetchall()
         existing_keys = {
@@ -1379,8 +1426,8 @@ def batch_insert_errors(document_id: str, errors: list[dict]) -> int:
         conn.executemany(
             """INSERT INTO errors
                (document_id, type, paragraph_index, original_text, suggested_text,
-                severity, description, chapter_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                severity, description, chapter_id, source, is_obsolete)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     document_id,
@@ -1391,6 +1438,8 @@ def batch_insert_errors(document_id: str, errors: list[dict]) -> int:
                     e.get("severity", "medium"),
                     e.get("description", ""),
                     e.get("chapter_id", ""),
+                    e.get("source", default_source),
+                    e.get("is_obsolete", 0),
                 )
                 for e in filtered
             ],
