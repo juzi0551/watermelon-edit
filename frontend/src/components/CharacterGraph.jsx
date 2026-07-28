@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Drawer, Card, Tag, Slider, Empty, Spin, Space, Tooltip, Badge } from 'antd'
-import { TeamOutlined, RocketOutlined, HistoryOutlined } from '@ant-design/icons'
+import { TeamOutlined, HistoryOutlined } from '@ant-design/icons'
 import { getCharacterGraph } from '../services/api'
 import { useTheme } from '../App'
 
@@ -29,11 +29,18 @@ export default function CharacterGraph({
   onClose,
   projectId,
   totalParagraphs = 100,
+  onScrollToParagraph,
 }) {
   const { color } = useTheme()
   const [loading, setLoading] = useState(false)
   const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
   const [currentParaIdx, setCurrentParaIdx] = useState(totalParagraphs)
+
+  const handleJumpToPara = (paragraphIdx) => {
+    if (typeof onScrollToParagraph === 'function' && paragraphIdx !== undefined && paragraphIdx !== null) {
+      onScrollToParagraph(paragraphIdx)
+    }
+  }
 
   useEffect(() => {
     if (totalParagraphs > 0) {
@@ -125,7 +132,7 @@ export default function CharacterGraph({
         <Spin size="large" style={{ display: 'block', margin: '40px auto' }} />
       ) : graphData.nodes.length === 0 ? (
         <Empty
-          description="暂无人物关系演进数据。随着校对深入，系统将自动识别全书新登场角色与关系网。"
+          description="暂无人物关系演进数据。点击右上角“✨ LLM 智能分析全书剧情”或随文校对，系统将自动大模型萃取全书人物与关系网。"
           style={{ margin: '60px 0' }}
         />
       ) : (
@@ -140,10 +147,13 @@ export default function CharacterGraph({
                 <Card
                   key={node.id}
                   size="small"
+                  hoverable
+                  onClick={() => handleJumpToPara(node.first_appear_idx)}
                   style={{
                     background: color.bgCard,
                     borderColor: color.border,
                     borderRadius: 8,
+                    cursor: 'pointer',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -170,7 +180,7 @@ export default function CharacterGraph({
           {/* 动态演进关系链 */}
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: color.textSecondary, marginBottom: 8 }}>
-              关系演进链条 ({activeEdges.length})
+              角色关系演进链条 ({activeEdges.length})
             </div>
             {activeEdges.length === 0 ? (
               <div style={{ fontSize: 12, color: color.textTertiary, padding: 12, textAlign: 'center' }}>
@@ -182,10 +192,13 @@ export default function CharacterGraph({
                   <Card
                     key={edge.id}
                     size="small"
+                    hoverable
+                    onClick={() => handleJumpToPara(edge.paragraph_idx)}
                     style={{
                       background: color.bgCard,
                       borderColor: color.borderBar,
                       borderRadius: 8,
+                      cursor: 'pointer',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -206,6 +219,49 @@ export default function CharacterGraph({
                     {edge.description && (
                       <div style={{ marginTop: 6, fontSize: 12, color: color.textSecondary, background: color.bgPage, padding: '4px 8px', borderRadius: 4 }}>
                         {edge.description}
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 剧情关键事件时间轴 */}
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: color.textSecondary, marginBottom: 8 }}>
+              剧情核心关键事件 ({(graphData.plot_events || []).length})
+            </div>
+            {(graphData.plot_events || []).length === 0 ? (
+              <div style={{ fontSize: 12, color: color.textTertiary, padding: 12, textAlign: 'center' }}>
+                当前段落范围内未检索到剧情关键事件
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(graphData.plot_events || []).map((pe) => (
+                  <Card
+                    key={pe.id}
+                    size="small"
+                    hoverable
+                    onClick={() => handleJumpToPara(pe.paragraph_idx)}
+                    style={{
+                      background: color.bgCard,
+                      borderColor: color.borderBar,
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>
+                        第 {pe.paragraph_idx} 段
+                      </Tag>
+                      <span style={{ fontWeight: 600, color: color.textPrimary, fontSize: 13 }}>
+                        {pe.title}
+                      </span>
+                    </div>
+                    {pe.description && (
+                      <div style={{ fontSize: 12, color: color.textSecondary, lineHeight: 1.4 }}>
+                        {pe.description}
                       </div>
                     )}
                   </Card>

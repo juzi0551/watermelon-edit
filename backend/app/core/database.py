@@ -67,8 +67,14 @@ DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与�
 2. 检测：若前段以左引号开头且无右引号收尾，后段开头却没有左引号，即判定后段缺失左引号。
 3. 修正：在缺失引号的段落报错（type: "punctuation"）。提取该段前 5-10 个字作为 `locator`，`replacement` 在最前方补上对应的引号字符。
 
+### 【人物与剧情关键事件萃取规则】
+在校对段落文本的同时，分析段落中登场的人物与发生的事件：
+1. **角色信息与更新**：若有新登场或重要的角色，在 `character_updates` 数组中输出 `name`（姓名）、`aliases`（别名数组）、`role`（protagonist/antagonist/supporting 三者之一）与 `description`（角色身份与背景最新完整说明）；若段落中对【已知角色】揭示了新的身份背景、重要经历、性格转折或重大变故，亦在 `description` 中提供结合最新信息的完整介绍；
+2. **角色关系演进**：若文中发生角色间的关系建立或动态转变（如结盟、敌对、倾慕、拜师、背叛等），在 `relationship_events` 数组中输出 `from`（角色A姓名）、`to`（角色B姓名）、`type`（ally/enemy/lover/family/neutral）、`description`（事件与关系简述）与发生的具体段落索引 `paragraph_idx`；
+3. **剧情关键事件**：若文中发生重大的剧情节点或非人物关系关键事件（如“六大派围攻光明顶”、“绿柳山庄陷阱被破”），在 `plot_events` 数组中输出 `title`（事件标题）、`description`（事件简述）与发生的具体段落索引 `paragraph_idx`。
+
 ### 【输出格式】
-严格按照以下 JSON 格式输出结果。若某类数据（章节或错误）不存在，对应的数组返回空 `[]`。
+严格按照以下 JSON 格式输出结果。若某类数据不存在，对应的数组返回空 `[]`。
 严禁输出任何分析过程、解释说明或 Markdown 代码块标记（如 ```json），只返回纯 JSON 字符串：
 
 {
@@ -81,6 +87,15 @@ DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与�
     {"type": "punctuation", "paragraph_index": 2, "locator": "这件事交给我！“", "replacement": "这件事交给我！”", "severity": "medium", "description": "右引号错为左引号"},
     {"type": "logic", "paragraph_index": 3, "locator": "张三看了看自己手中的剑", "replacement": "李四看了看自己手中的剑", "severity": "high", "description": "角色名字或描述前后矛盾，建议张三修改为李四，前文描述持剑者为李四"},
     {"type": "style", "paragraph_index": 4, "locator": "他的心里感到极为非常地悲伤", "replacement": "他心中极为悲怆", "severity": "low", "description": "符合作者指定冷硬文风的润色建议"}
+  ],
+  "character_updates": [
+    {"name": "张无忌", "aliases": ["无忌"], "role": "protagonist", "description": "主角，武当弟子，学会九阳神功"}
+  ],
+  "relationship_events": [
+    {"from": "张无忌", "to": "赵敏", "type": "ally", "description": "绿柳山庄合作达成共识", "paragraph_idx": 15}
+  ],
+  "plot_events": [
+    {"title": "六大派围攻光明顶", "description": "六大门派合围光明顶，战事一触即发", "paragraph_idx": 15}
   ]
 }"""
 
@@ -270,6 +285,22 @@ def _migrate_schema(conn):
             CREATE INDEX IF NOT EXISTS idx_glossary_proj ON glossary_terms(project_id);
         """)
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '6')")
+
+    if version < 7:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS plot_events (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                paragraph_idx INTEGER NOT NULL DEFAULT 0,
+                title TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_pe_proj ON plot_events(project_id);
+            CREATE INDEX IF NOT EXISTS idx_pe_para ON plot_events(paragraph_idx);
+        """)
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '7')")
 
 
 def init_db():
@@ -1552,6 +1583,7 @@ def insert_relationship(project_id: str, from_char_id: str, to_char_id: str, rel
 def get_character_graph(project_id: str, upto_paragraph_idx: int | None = None) -> dict:
     """获取项目的人物关系图谱网络数据（支持按段落编号截断查看演进过程）。"""
     chars = get_characters(project_id)
+    plot_events = get_plot_events(project_id, upto_paragraph_idx)
     with get_conn() as conn:
         if upto_paragraph_idx is not None:
             rel_rows = conn.execute(
@@ -1577,7 +1609,42 @@ def get_character_graph(project_id: str, upto_paragraph_idx: int | None = None) 
     return {
         "nodes": chars,
         "edges": [dict(r) for r in rel_rows],
+        "plot_events": plot_events,
     }
+
+
+def insert_plot_event(project_id: str, paragraph_idx: int, title: str, description: str = "") -> str:
+    """写入剧情关键非角色关系事件。"""
+    from app.utils.helpers import generate_id
+    event_id = generate_id()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO plot_events
+               (id, project_id, paragraph_idx, title, description)
+               VALUES (?, ?, ?, ?, ?)""",
+            (event_id, project_id, paragraph_idx, title, description),
+        )
+        return event_id
+
+
+def get_plot_events(project_id: str, upto_paragraph_idx: int | None = None) -> list[dict]:
+    """获取项目的剧情关键事件列表（支持时间轴截至段落筛选）。"""
+    with get_conn() as conn:
+        if upto_paragraph_idx is not None:
+            rows = conn.execute(
+                """SELECT * FROM plot_events
+                   WHERE project_id = ? AND paragraph_idx <= ?
+                   ORDER BY paragraph_idx ASC""",
+                (project_id, upto_paragraph_idx),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT * FROM plot_events
+                   WHERE project_id = ?
+                   ORDER BY paragraph_idx ASC""",
+                (project_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def insert_glossary_term(project_id: str, term: str, category: str = "custom", std_replacement: str | None = None) -> str:

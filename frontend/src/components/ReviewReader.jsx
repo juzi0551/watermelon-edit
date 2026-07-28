@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, forwardRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, forwardRef, useImperativeHandle } from 'react'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
@@ -279,8 +279,9 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) 
           padding: '10px 14px',
           borderRadius: radius.md,
           marginBottom: 6,
-          border: '1px solid',
-          borderColor: noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border),
+          borderTop: `1px solid ${noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)}`,
+          borderRight: `1px solid ${noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)}`,
+          borderBottom: `1px solid ${noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)}`,
           borderLeft: `3px solid ${statusColor}`,
           transition: 'background 0.15s, box-shadow 0.15s',
         }}
@@ -341,7 +342,7 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) 
 
 
 
-export default function ReviewReader({
+function ReviewReaderInner({
   results, project, inProgress, onSetStatus, onAcceptAll,
   panelOpen, onTogglePanel,
   chapters = [], selectedChapter = null, onStartProofread,
@@ -359,7 +360,23 @@ export default function ReviewReader({
   onStartBatchProofread, batchInfo = null, batchPolling = false, onRetryWindow, retryingWindow = null,
   batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
   proofreadWindowSize = 30, onWindowSizeChange,
-}) {
+}, ref) {
+  useImperativeHandle(ref, () => ({
+    scrollToParagraph: (idx) => {
+      if (flowRef.current && idx !== undefined && idx !== null) {
+        const el = flowRef.current.querySelector(`[data-para="${idx}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.style.transition = 'background 0.3s'
+          const origBg = el.style.background
+          el.style.background = 'rgba(250, 173, 20, 0.35)'
+          setTimeout(() => {
+            el.style.background = origBg
+          }, 1800)
+        }
+      }
+    }
+  }))
   const errors = results?.errors || []
   const paras = results?.paragraphs || []
   const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
@@ -1774,3 +1791,7 @@ function ControlsRow({
     </div>
   )
 }
+
+const ReviewReader = forwardRef(ReviewReaderInner)
+ReviewReader.displayName = 'ReviewReader'
+export default ReviewReader

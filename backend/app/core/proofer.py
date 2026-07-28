@@ -2,7 +2,7 @@ import json
 from json_repair import repair_json
 from app.core.database import (
     get_setting, get_project, get_character_graph,
-    upsert_character, insert_relationship,
+    upsert_character, insert_relationship, insert_plot_event,
 )
 from app.core.llm import call_llm
 
@@ -49,7 +49,7 @@ def build_proofread_system_prompt(selected_types: list[str], project_id: str | N
             if bg:
                 context_parts.append(f"背景设定：{bg}")
     
-    # 注入已知人物动态网络
+    # 注入已知人物动态网络与特征
     try:
         graph = get_character_graph(project_id, current_paragraph_idx)
         nodes = graph.get("nodes", [])
@@ -57,8 +57,12 @@ def build_proofread_system_prompt(selected_types: list[str], project_id: str | N
         if nodes or edges:
             context_parts.append("\n【已登场人物与动态关系网】")
             if nodes:
-                node_strs = [f"{n['name']}({n.get('role','角色')})" for n in nodes[:15]]
-                context_parts.append("已知角色：" + "、".join(node_strs))
+                node_strs = []
+                for n in nodes[:15]:
+                    desc_str = f"：{n['description']}" if n.get("description") else ""
+                    alias_str = f"（别名：{'/'.join(n['aliases'])}）" if n.get("aliases") and isinstance(n["aliases"], list) else ""
+                    node_strs.append(f"• {n['name']}{alias_str} [{n.get('role','角色')}]{desc_str}")
+                context_parts.append("已知角色与特征：\n" + "\n".join(node_strs))
             if edges:
                 edge_strs = [f"{e.get('from_name','')} <-> {e.get('to_name','')}: {e.get('description') or e.get('relation_type')}" for e in edges[:10]]
                 context_parts.append("已知关系：\n" + "\n".join(edge_strs))
@@ -94,7 +98,7 @@ async def proofread_window(
     project_id: str | None = None,
     window_first_idx: int | None = None,
 ) -> tuple[list[dict], list[dict], str | None, dict, bool]:
-    """对一个窗口（W 段）调用 LLM 校对，自动注入 Context 并动态解析落库角色演进事件。"""
+    """对一个窗口（W 段）调用 LLM 校对，自动注入 Context 并动态解析落库角色演进与剧情关键事件。"""
     if selected_types is None:
         selected_types = ALL_TYPES
     
@@ -109,7 +113,7 @@ async def proofread_window(
     chapters = _normalize_chapters(data.get("chapters", []))
     errors = _normalize_errors(data.get("errors", []), set(selected_types))
 
-    # 动态解析并落库新登场人物与演进关系
+    # 动态解析并落库新登场人物、演进关系与剧情关键事件
     if project_id and data:
         _extract_and_save_character_events(project_id, data, window_first_idx or 0)
 
@@ -117,17 +121,18 @@ async def proofread_window(
 
 
 def _extract_and_save_character_events(project_id: str, data: dict, paragraph_idx: int):
-    """解析 LLM 响应中的 character_updates 与 relationship_events 并自动落库。"""
+    """解析 LLM 响应中的 character_updates、relationship_events 与 plot_events 并自动落库。"""
     char_updates = data.get("character_updates", [])
     if isinstance(char_updates, list):
         for c in char_updates:
             if isinstance(c, dict) and c.get("name"):
+                c_idx = c.get("first_appear_idx") if isinstance(c.get("first_appear_idx"), int) else paragraph_idx
                 upsert_character(
                     project_id=project_id,
                     name=c["name"],
                     aliases=c.get("aliases"),
                     role=c.get("role", "supporting"),
-                    first_appear_idx=paragraph_idx,
+                    first_appear_idx=c_idx,
                     description=c.get("description", ""),
                 )
 
@@ -136,15 +141,28 @@ def _extract_and_save_character_events(project_id: str, data: dict, paragraph_id
         char_map = {c["name"]: c["id"] for c in get_character_graph(project_id).get("nodes", [])}
         for r in rel_events:
             if isinstance(r, dict) and r.get("from") and r.get("to"):
-                from_id = char_map.get(r["from"]) or upsert_character(project_id, r["from"], first_appear_idx=paragraph_idx)
-                to_id = char_map.get(r["to"]) or upsert_character(project_id, r["to"], first_appear_idx=paragraph_idx)
+                r_idx = r.get("paragraph_idx") if isinstance(r.get("paragraph_idx"), int) else paragraph_idx
+                from_id = char_map.get(r["from"]) or upsert_character(project_id, r["from"], first_appear_idx=r_idx)
+                to_id = char_map.get(r["to"]) or upsert_character(project_id, r["to"], first_appear_idx=r_idx)
                 insert_relationship(
                     project_id=project_id,
                     from_char_id=from_id,
                     to_char_id=to_id,
                     relation_type=r.get("type", "neutral"),
                     description=r.get("description", ""),
-                    paragraph_idx=paragraph_idx,
+                    paragraph_idx=r_idx,
+                )
+
+    plot_events = data.get("plot_events", [])
+    if isinstance(plot_events, list):
+        for pe in plot_events:
+            if isinstance(pe, dict) and pe.get("title"):
+                pe_idx = pe.get("paragraph_idx") if isinstance(pe.get("paragraph_idx"), int) else paragraph_idx
+                insert_plot_event(
+                    project_id=project_id,
+                    paragraph_idx=pe_idx,
+                    title=pe["title"],
+                    description=pe.get("description", ""),
                 )
 
 

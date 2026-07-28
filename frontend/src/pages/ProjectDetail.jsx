@@ -63,6 +63,7 @@ export default function ProjectDetail() {
   const [toolsOpen, setToolsOpen] = useState(false)
   const [llmCalls, setLlmCalls] = useState([])
   const [llmMonitorLoading, setLlmMonitorLoading] = useState(false)
+  const readerRef = useRef(null)
   const llmTimerRef = useRef(null)
   // batch 模式专用 state
   const [batchInfo, setBatchInfo] = useState(null)   // 当前 batch 的窗口状态
@@ -827,6 +828,7 @@ export default function ProjectDetail() {
             <div style={{ flex: 1, minWidth: 0 }}>
               {results && (
                 <ReviewReader
+                  ref={readerRef}
                   results={results}
                   project={project}
                   inProgress={inProgress}
@@ -889,6 +891,11 @@ export default function ProjectDetail() {
           onClose={() => setCharacterGraphOpen(false)}
           projectId={project?.id}
           totalParagraphs={total}
+          onScrollToParagraph={(idx) => {
+            if (readerRef.current && readerRef.current.scrollToParagraph) {
+              readerRef.current.scrollToParagraph(idx)
+            }
+          }}
         />
       </Card>
     </div>
