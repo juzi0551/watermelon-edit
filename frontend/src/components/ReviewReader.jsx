@@ -101,6 +101,7 @@ function DiffView({ original, suggested }) {
 
 function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
   const pending = error.user_status === 'pending'
+  const [btnState, setBtnState] = useState(null)
   return (
     <div
       ref={ref}
@@ -122,21 +123,48 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
         <Button
           type="text"
           size="small"
-          icon={<CloseOutlined />}
-          onClick={(e) => { e.stopPropagation(); onClose?.() }}
-          style={{ position: 'absolute', top: -6, right: -8, width: 24, height: 24, fontSize: 12, color: color.textTertiary }}
+          icon={<CloseOutlined style={{ fontSize: 12 }} />}
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: -2,
+            right: -4,
+            color: color.textMuted,
+            width: 24,
+            height: 24,
+          }}
         />
-      <div style={{ marginBottom: 10 }}>
-        <DiffView
-          original={error.original_text}
-          suggested={error.suggested_text}
-        />
-      </div>
+        <div style={{ marginBottom: 6, paddingRight: 20 }}>
+          <div style={{ fontSize: fontSize.meta, color: color.textSecondary, marginBottom: 2 }}>
+            第 {error.paragraph_index} 段
+          </div>
+          <div style={{ fontSize: fontSize.body, lineHeight: 1.6 }}>
+            <span style={{
+              background: color.diffRemovedBg,
+              color: color.diffRemovedText,
+              textDecoration: 'line-through',
+              padding: '1px 4px',
+              borderRadius: radius.sm,
+            }}>
+              {error.original_text}
+            </span>
+            <span style={{ margin: '0 6px', color: color.textMuted }}>→</span>
+            <span style={{
+              background: color.diffAddedBg,
+              color: color.diffAddedText,
+              padding: '1px 4px',
+              borderRadius: radius.sm,
+              fontWeight: 500,
+            }}>
+              {error.suggested_text}
+            </span>
+          </div>
+        </div>
       </div>
       <div style={{
-        marginBottom: 8,
-        color: color.textSecondary,
-        fontSize: fontSize.bodySm,
+        fontSize: fontSize.bodyXs,
+        color: color.textDescription,
+        marginBottom: 10,
         lineHeight: 1.6,
         padding: '6px 10px',
         background: color.bgPage,
@@ -157,19 +185,46 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
         {pending && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
             <Button
-              type="primary"
               size="small"
               shape="round"
-              onClick={(e) => { e.stopPropagation(); onAccept?.() }}
-              style={{ height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px' }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setBtnState('accepted')
+                setTimeout(() => {
+                  setBtnState(null)
+                  onAccept?.()
+                }, 100)
+              }}
+              style={{
+                height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px',
+                backgroundColor: btnState === 'accepted' ? '#52c41a' : 'transparent',
+                color: btnState === 'accepted' ? '#ffffff' : '#52c41a',
+                borderColor: '#52c41a',
+                boxShadow: 'none',
+                transition: 'all 0.05s ease',
+              }}
             >
               采纳
             </Button>
             <Button
               size="small"
               shape="round"
-              onClick={(e) => { e.stopPropagation(); onReject?.() }}
-              style={{ height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px', borderColor: color.border }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setBtnState('rejected')
+                setTimeout(() => {
+                  setBtnState(null)
+                  onReject?.()
+                }, 100)
+              }}
+              style={{
+                height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px',
+                backgroundColor: btnState === 'rejected' ? '#ff4d4f' : 'transparent',
+                color: btnState === 'rejected' ? '#ffffff' : color.textPrimary,
+                borderColor: btnState === 'rejected' ? '#ff4d4f' : color.border,
+                boxShadow: 'none',
+                transition: 'all 0.05s ease',
+              }}
             >
               拒绝
             </Button>
@@ -1547,12 +1602,13 @@ function ReviewReaderInner({
                   size="large"
                   className="bar-action-btn"
                   icon={<CheckCircleOutlined />}
-                  onClick={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
+                  onClick={() => { setFlashSide('accepted'); setTimeout(() => { setFlashSide(null); handleStatus('accepted') }, 100) }}
                   disabled={inProgress}
                   style={{
                     height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
-                    background: flashSide === 'accepted' ? '#52c41a' : undefined,
-                    boxShadow: flashSide === 'accepted' ? '0 0 0 3px rgba(82,196,26,0.3)' : undefined,
+                    backgroundColor: flashSide === 'accepted' ? '#52c41a' : undefined,
+                    borderColor: flashSide === 'accepted' ? '#52c41a' : undefined,
+                    boxShadow: 'none',
                   }}
                 >
                   ← 采纳
@@ -1561,14 +1617,14 @@ function ReviewReaderInner({
                   size="large"
                   className="bar-action-btn"
                   icon={<CloseCircleOutlined />}
-                  onClick={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
+                  onClick={() => { setFlashSide('rejected'); setTimeout(() => { setFlashSide(null); handleStatus('rejected') }, 100) }}
                   disabled={inProgress}
                   style={{
                     height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
-                    background: flashSide === 'rejected' ? '#ff4d4f' : undefined,
+                    backgroundColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
                     color: flashSide === 'rejected' ? '#fff' : undefined,
                     borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
-                    boxShadow: flashSide === 'rejected' ? '0 0 0 3px rgba(255,77,79,0.3)' : undefined,
+                    boxShadow: 'none',
                   }}
                 >
                   拒绝 →
