@@ -1050,7 +1050,7 @@ function ReviewReaderInner({
                       style={{
                         marginBottom: 16,
                         display: 'flex',
-                        gap: 8,
+                        gap: 6,
                         position: 'relative',
                         padding: '6px 10px',
                         borderRadius: 6,
@@ -1088,7 +1088,12 @@ function ReviewReaderInner({
                         fontWeight: para?.revised_text ? 600 : 400,
                         fontVariantNumeric: 'tabular-nums',
                         display: 'inline-block',
-                        fontSize: fontSize.bodyXs, flexShrink: 0, lineHeight: 1.9, minWidth: 36, textAlign: 'right', userSelect: 'none',
+                        fontSize: fontSize.bodyXs,
+                        flexShrink: 0,
+                        lineHeight: 1.9,
+                        minWidth: 24,
+                        textAlign: 'left',
+                        userSelect: 'none',
                       }}>
                         {para.idx}
                       </span>
@@ -1118,7 +1123,7 @@ function ReviewReaderInner({
                             </Space>
                           </div>
                         ) : (
-                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary, display: 'inline-block', width: '100%' }}>
+                          <div onDoubleClick={() => handleStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}>
                             {isCh && (
                               <>
                                 <Tag color="gold" style={{ marginBottom: 4, marginRight: 4 }}>
@@ -1145,7 +1150,7 @@ function ReviewReaderInner({
                               </span>
                             ) : (
                               <ParagraphView
-                                text={para.text}
+                                text={(Boolean(project?.style_config?.first_line_indent_enabled) && !isCh) ? (para.text || '').replace(/^[\s\u3000]+/, '') : para.text}
                                 paraErrors={paraErrs}
                                 selectedId={selectedId}
                                 onSelect={setSelectedId}
