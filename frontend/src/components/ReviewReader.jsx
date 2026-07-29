@@ -1126,6 +1126,8 @@ const ParaRow = React.memo(function ParaRow({
           padding: '6px 10px',
           borderRadius: 6,
           transition: 'all 0.15s ease',
+          contentVisibility: 'auto',
+          containIntrinsicSize: '0 48px',
           background: isActive
             ? 'rgba(19, 194, 194, 0.09)'
             : isHover
@@ -1481,32 +1483,18 @@ function ReviewReaderInner({
   const jumpToParagraphExact = useCallback((targetIdx, offset = 0) => {
     const container = flowRef.current
     if (!container || targetIdx == null) return
-    const posIndex = paraIndexMap.get(targetIdx)
-    if (posIndex == null) return
 
     isJumpingRef.current = true
     if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current)
 
-    // 步骤 1：锁定基准 scrollTop，让虚拟视口切片包含目标段落
-    const baseTop = Math.max(0, posIndex * ITEM_HEIGHT - 60)
-    container.scrollTop = baseTop
-    setScrollTop(baseTop)
-
-    // 步骤 2：DOM 挂载完成后使用浏览器原生引擎结合 scrollMarginTop 精准对齐
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!flowRef.current) return
-        const c = flowRef.current
-        const el = c.querySelector(`[data-para="${targetIdx}"]`)
-        if (el) {
-          el.scrollIntoView({ behavior: 'auto', block: offset > 0 ? 'center' : 'start' })
-        }
-        jumpTimerRef.current = setTimeout(() => {
-          isJumpingRef.current = false
-        }, 150)
-      })
-    })
-  }, [paraIndexMap, ITEM_HEIGHT])
+    const el = container.querySelector(`[data-para="${targetIdx}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'auto', block: offset > 0 ? 'center' : 'start' })
+    }
+    jumpTimerRef.current = setTimeout(() => {
+      isJumpingRef.current = false
+    }, 150)
+  }, [])
 
   useImperativeHandle(ref, () => ({
     scrollToParagraph: (idx) => {
@@ -2259,74 +2247,62 @@ function ReviewReaderInner({
                 position: 'relative',
               }}
             >
-              {(() => {
-                const totalHeight = sortedParas.length * ITEM_HEIGHT
-                const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - 10)
-                const endIndex = Math.min(sortedParas.length, startIndex + BUFFER_SIZE)
-                const offsetY = startIndex * ITEM_HEIGHT
-                const visibleParas = sortedParas.slice(startIndex, endIndex)
+              <div style={{ position: 'relative', width: '100%' }}>
+                {sortedParas.map(para => {
+                  const paraErrs = errorsByParaIdx.get(para.idx) || EMPTY_ARRAY
+                  const chapterObj = chaptersByParaIdx.get(para.idx)
+                  const isCh = Boolean(chapterObj)
+                  const isEditing = editingIdx === para.idx
+                  const isHover = hoverIdx === para.idx
+                  const isChecked = selectedParas?.has(para.idx) || false
 
-                return (
-                  <div style={{ height: totalHeight, position: 'relative', width: '100%' }}>
-                    <div style={{ transform: `translateY(${offsetY}px)`, position: 'absolute', top: 0, left: 0, right: 0 }}>
-                      {visibleParas.map(para => {
-                        const paraErrs = errorsByParaIdx.get(para.idx) || EMPTY_ARRAY
-                        const chapterObj = chaptersByParaIdx.get(para.idx)
-                        const isCh = Boolean(chapterObj)
-                        const isEditing = editingIdx === para.idx
-                        const isHover = hoverIdx === para.idx
-                        const isChecked = selectedParas?.has(para.idx) || false
+                  const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
+                  const pbInfo = PB_INFO_MAP[pbType]
 
-                        const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
-                        const pbInfo = PB_INFO_MAP[pbType]
+                  const isActive = activeIdx === para.idx
 
-                        const isActive = activeIdx === para.idx
-
-                        return (
-                          <ParaRow
-                            key={para.idx}
-                            para={para}
-                            paraErrs={paraErrs}
-                            isCh={isCh}
-                            chapterObj={chapterObj}
-                            isEditing={isEditing}
-                            isHover={isHover}
-                            isActive={isActive}
-                            showCheckboxes={showCheckboxes}
-                            isChecked={isChecked}
-                            selectedId={selectedId}
-                            toolbarPos={isActive ? toolbarPos : null}
-                            currentBodyFontSize={currentBodyFontSize}
-                            firstLineIndentEnabled={Boolean(project?.style_config?.first_line_indent_enabled)}
-                            pbInfo={pbInfo}
-                            pbType={pbType}
-                            pbTooltipIdx={pbTooltipIdx}
-                            editingText={isEditing ? editingText : ''}
-                            editingNote={isEditing ? editingNote : ''}
-                            savingPara={savingPara}
-                            onHover={handleHover}
-                            onMouseLeave={handleMouseLeave}
-                            onParaClick={handleParaClick}
-                            onCheckboxToggle={handleCheckboxToggle}
-                            onEditingTextChange={setEditingText}
-                            onEditingNoteChange={setEditingNote}
-                            onSaveEdit={handleSaveEdit}
-                            onCancelEdit={handleCancelEdit}
-                            onStartEdit={handleStartEdit}
-                            onDeletePara={handleDeletePara}
-                            onTogglePageBreak={handleTogglePageBreak}
-                            onSetChapter={handleSetChapter}
-                            onPbTooltipIdx={setPbTooltipIdx}
-                            onSelectError={(id) => { setSelectedManualEditIdx(null); setSelectedId(id); }}
-                            showAllOriginals={showAllOriginals}
-                            onSelectManualEdit={(idx) => { setSelectedId(null); setSelectedManualEditIdx(idx); }}
-                          />
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })()}
+                  return (
+                    <ParaRow
+                      key={para.idx}
+                      para={para}
+                      paraErrs={paraErrs}
+                      isCh={isCh}
+                      chapterObj={chapterObj}
+                      isEditing={isEditing}
+                      isHover={isHover}
+                      isActive={isActive}
+                      showCheckboxes={showCheckboxes}
+                      isChecked={isChecked}
+                      selectedId={selectedId}
+                      toolbarPos={isActive ? toolbarPos : null}
+                      currentBodyFontSize={currentBodyFontSize}
+                      firstLineIndentEnabled={Boolean(project?.style_config?.first_line_indent_enabled)}
+                      pbInfo={pbInfo}
+                      pbType={pbType}
+                      pbTooltipIdx={pbTooltipIdx}
+                      editingText={isEditing ? editingText : ''}
+                      editingNote={isEditing ? editingNote : ''}
+                      savingPara={savingPara}
+                      onHover={handleHover}
+                      onMouseLeave={handleMouseLeave}
+                      onParaClick={handleParaClick}
+                      onCheckboxToggle={handleCheckboxToggle}
+                      onEditingTextChange={setEditingText}
+                      onEditingNoteChange={setEditingNote}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={handleCancelEdit}
+                      onStartEdit={handleStartEdit}
+                      onDeletePara={handleDeletePara}
+                      onTogglePageBreak={handleTogglePageBreak}
+                      onSetChapter={handleSetChapter}
+                      onPbTooltipIdx={setPbTooltipIdx}
+                      onSelectError={(id) => { setSelectedManualEditIdx(null); setSelectedId(id); }}
+                      showAllOriginals={showAllOriginals}
+                      onSelectManualEdit={(idx) => { setSelectedId(null); setSelectedManualEditIdx(idx); }}
+                    />
+                  )
+                })}
+              </div>
             </div>
           </div>
 
