@@ -4,6 +4,7 @@ import json
 # API Key 存储路径
 KEYS_DIR = os.path.join(os.path.dirname(__file__), "app", "data")
 KEYS_PATH = os.path.join(KEYS_DIR, "api_keys.json")
+CUSTOM_PROVIDERS_PATH = os.path.join(KEYS_DIR, "custom_providers.json")
 
 # 服务商注册表：一个服务商 = 一个 API Key（覆盖其下所有模型）
 # litellm 通过 "前缀/模型名" 路由到对应服务商的 OpenAI 兼容端点
@@ -103,8 +104,8 @@ PROVIDERS = {
 
 # ---------- 工具函数 ----------
 
-# API Key 内存缓存（避免每次 LLM 调用都同步读磁盘）
 _keys_cache: dict | None = None
+_custom_providers_cache: dict | None = None
 
 
 def _load_keys() -> dict:
@@ -116,7 +117,7 @@ def _load_keys() -> dict:
         _keys_cache = {}
         return _keys_cache
     try:
-        with open(KEYS_PATH, "r") as f:
+        with open(KEYS_PATH, "r", encoding="utf-8") as f:
             _keys_cache = json.load(f)
             return _keys_cache
     except (json.JSONDecodeError, IOError):
@@ -127,13 +128,64 @@ def _load_keys() -> dict:
 def _save_keys(keys: dict):
     global _keys_cache
     os.makedirs(KEYS_DIR, exist_ok=True)
-    with open(KEYS_PATH, "w") as f:
-        json.dump(keys, f, indent=2)
-    _keys_cache = keys  # 写入后同步更新缓存
+    with open(KEYS_PATH, "w", encoding="utf-8") as f:
+        json.dump(keys, f, indent=2, ensure_ascii=False)
+    _keys_cache = keys
+
+
+def _load_custom_providers() -> dict:
+    global _custom_providers_cache
+    if _custom_providers_cache is not None:
+        return _custom_providers_cache
+    os.makedirs(KEYS_DIR, exist_ok=True)
+    if not os.path.exists(CUSTOM_PROVIDERS_PATH):
+        _custom_providers_cache = {}
+        return _custom_providers_cache
+    try:
+        with open(CUSTOM_PROVIDERS_PATH, "r", encoding="utf-8") as f:
+            _custom_providers_cache = json.load(f)
+            return _custom_providers_cache
+    except (json.JSONDecodeError, IOError):
+        _custom_providers_cache = {}
+        return _custom_providers_cache
+
+
+def _save_custom_providers(data: dict):
+    global _custom_providers_cache
+    os.makedirs(KEYS_DIR, exist_ok=True)
+    with open(CUSTOM_PROVIDERS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    _custom_providers_cache = data
+
+
+def get_all_providers() -> dict:
+    """获取动态合并后的全部服务商（内置服务商 + 追加的自定义模型 + 自定义服务商）。"""
+    merged = {}
+    custom = _load_custom_providers()
+    extra_models_map = custom.get("_extra_models", {})
+
+    # 1. 内置服务商
+    for pid, p in PROVIDERS.items():
+        p_copy = json.loads(json.dumps(p))
+        extra_models = extra_models_map.get(pid, [])
+        p_copy["models"].extend(extra_models)
+        p_copy["is_custom"] = False
+        merged[pid] = p_copy
+
+    # 2. 用户新增的自定义服务商
+    for pid, p in custom.items():
+        if pid.startswith("_"):
+            continue
+        p_copy = json.loads(json.dumps(p))
+        p_copy["is_custom"] = True
+        merged[pid] = p_copy
+
+    return merged
 
 
 def _provider_of(model_id: str) -> str | None:
-    for pid, p in PROVIDERS.items():
+    all_p = get_all_providers()
+    for pid, p in all_p.items():
         if any(m["id"] == model_id for m in p["models"]):
             return pid
     return None
@@ -146,36 +198,36 @@ def _mask(key: str) -> str:
 def _litellm_model(model_id: str) -> str:
     """转换为 LiteLLM 模型标识，如 deepseek/deepseek-v4-flash。
     无内置前缀的服务商返回原始模型名，由 api_base 决定路由。"""
+    all_p = get_all_providers()
     pid = _provider_of(model_id)
-    if not pid:
+    if not pid or pid not in all_p:
         return model_id
-    prefix = PROVIDERS[pid].get("litellm_prefix")
+    prefix = all_p[pid].get("litellm_prefix")
     return f"{prefix}/{model_id}" if prefix else model_id
 
 
 def _api_base(model_id: str) -> str | None:
     """返回服务商的自定义 OpenAI 兼容端点（如有）。"""
+    all_p = get_all_providers()
     pid = _provider_of(model_id)
-    if not pid:
+    if not pid or pid not in all_p:
         return None
-    return PROVIDERS[pid].get("api_base")
+    return all_p[pid].get("api_base")
 
 
 def _model_temperature(model_id: str) -> float | None:
-    """返回模型自定义 temperature（如有），仅对明确支持的模型（如 moonshot-v1 系列）返回。"""
+    """返回模型自定义 temperature（如有）。"""
+    all_p = get_all_providers()
     pid = _provider_of(model_id)
-    if not pid:
+    if not pid or pid not in all_p:
         return None
-    for m in PROVIDERS[pid]["models"]:
+    for m in all_p[pid]["models"]:
         if m["id"] == model_id:
             return m.get("temperature")
     return None
 
 
 def _model_extra_kwargs(model_id: str) -> dict:
-    """返回模型自定义额外参数，合并到 litellm 调用参数中。
-    注意：不要用 extra_body 包装，litellm 会将其作为字面 JSON 字段发送。
-    直接返回原始字段名，litellm 会自动收集到 extra_body 中。"""
     pid = _provider_of(model_id)
     if pid == "moonshot":
         k2_6_ids = {"kimi-k2.6", "kimi-k2.5", "kimi-k2.7-code"}
@@ -197,36 +249,38 @@ def _resolve_key_value(value: str | dict | None) -> str | None:
 
 def get_api_key(model_id: str) -> str | None:
     """根据模型找到所属服务商，返回该服务商的 API Key（JSON 文件优先，回退环境变量）。"""
+    all_p = get_all_providers()
     pid = _provider_of(model_id)
-    if not pid:
+    if not pid or pid not in all_p:
         return None
     keys = _load_keys()
     if pid in keys:
         key = _resolve_key_value(keys[pid])
         if key:
             return key
-    return os.getenv(PROVIDERS[pid]["env_key"])
+    env_key = all_p[pid].get("env_key")
+    return os.getenv(env_key) if env_key else None
 
 
 def get_account_id(provider_id: str) -> str | None:
     """返回服务商的 Account ID（仅 Cloudflare 等需要）。"""
+    all_p = get_all_providers()
     keys = _load_keys()
     value = keys.get(provider_id)
     if isinstance(value, dict):
         acct = value.get("account_id")
         if acct:
             return acct
-    # 回退环境变量
-    env_key = PROVIDERS.get(provider_id, {}).get("account_id_env_key")
+    env_key = all_p.get(provider_id, {}).get("account_id_env_key")
     if env_key:
         return os.getenv(env_key)
     return None
 
 
 def set_api_key(provider_id: str, api_key: str, account_id: str | None = None):
+    all_p = get_all_providers()
     keys = _load_keys()
-    if PROVIDERS.get(provider_id, {}).get("account_id_env_key"):
-        # 需要 account_id 的服务商（如 Cloudflare），存为 dict
+    if all_p.get(provider_id, {}).get("account_id_env_key"):
         existing = keys.get(provider_id)
         if isinstance(existing, dict):
             existing["api_key"] = api_key
@@ -248,10 +302,13 @@ def delete_api_key(provider_id: str):
 def list_providers_status() -> list[dict]:
     """返回所有服务商及其配置状态（Key 脱敏）。"""
     keys = _load_keys()
+    all_p = get_all_providers()
     return [
         {
             "provider": pid,
             "name": p["name"],
+            "api_base": p.get("api_base", ""),
+            "litellm_prefix": p.get("litellm_prefix", ""),
             "configured": bool(keys.get(pid)),
             "masked_key": _mask(
                 _resolve_key_value(keys.get(pid)) or keys.get(pid, "")
@@ -261,15 +318,17 @@ def list_providers_status() -> list[dict]:
                 keys.get(pid)["account_id"]
             ) if isinstance(keys.get(pid), dict) and keys[pid].get("account_id") else "",
             "models": p["models"],
+            "is_custom": p.get("is_custom", False),
         }
-        for pid, p in PROVIDERS.items()
+        for pid, p in all_p.items()
     ]
 
 
 def list_models() -> list[dict]:
     """返回所有可选模型（供校对时选择）。"""
+    all_p = get_all_providers()
     out = []
-    for pid, p in PROVIDERS.items():
+    for pid, p in all_p.items():
         for m in p["models"]:
             out.append({
                 "model_id": m["id"],
@@ -277,5 +336,107 @@ def list_models() -> list[dict]:
                 "provider": pid,
                 "provider_name": p["name"],
                 "deprecated": m.get("deprecated", False),
+                "is_custom": m.get("is_custom", False),
             })
     return out
+
+
+# ---------- 自定义服务商 & 模型管理 ----------
+
+def add_custom_provider(provider_id: str, name: str, api_base: str = "", litellm_prefix: str = "openai", initial_model_id: str = "", initial_model_name: str = "", api_key: str = None) -> dict:
+    pid = provider_id.strip().lower()
+    if not pid:
+        raise ValueError("服务商标识不能为空")
+    all_p = get_all_providers()
+    if pid in all_p:
+        raise ValueError(f"服务商标识 '{pid}' 已存在")
+
+    custom = _load_custom_providers()
+    models = []
+    if initial_model_id.strip():
+        m_id = initial_model_id.strip()
+        m_name = initial_model_name.strip() or m_id
+        models.append({"id": m_id, "name": m_name, "is_custom": True})
+
+    custom[pid] = {
+        "name": name.strip() or pid,
+        "api_base": api_base.strip(),
+        "litellm_prefix": litellm_prefix.strip() or "openai",
+        "env_key": f"{pid.upper()}_API_KEY",
+        "models": models,
+    }
+    _save_custom_providers(custom)
+
+    if api_key and api_key.strip():
+        set_api_key(pid, api_key.strip())
+
+    return {"status": "ok", "provider": pid}
+
+
+def delete_custom_provider(provider_id: str) -> dict:
+    custom = _load_custom_providers()
+    if provider_id not in custom or provider_id.startswith("_"):
+        raise ValueError(f"无法删除非自定义服务商或服务商不存在: {provider_id}")
+    del custom[provider_id]
+    _save_custom_providers(custom)
+    delete_api_key(provider_id)
+    return {"status": "ok", "provider": provider_id}
+
+
+def add_model_to_provider(provider_id: str, model_id: str, model_name: str) -> dict:
+    pid = provider_id.strip()
+    m_id = model_id.strip()
+    m_name = model_name.strip() or m_id
+    if not m_id:
+        raise ValueError("模型 ID 不能为空")
+
+    all_p = get_all_providers()
+    if pid not in all_p:
+        raise ValueError(f"服务商 '{pid}' 不存在")
+
+    # 检查模型 ID 是否已存在
+    for p in all_p.values():
+        if any(m["id"] == m_id for m in p["models"]):
+            raise ValueError(f"模型 ID '{m_id}' 已在服务商 '{p['name']}' 中存在")
+
+    custom = _load_custom_providers()
+    if pid in PROVIDERS:
+        # 给内置服务商添加模型
+        extra_models_map = custom.setdefault("_extra_models", {})
+        extra_list = extra_models_map.setdefault(pid, [])
+        extra_list.append({"id": m_id, "name": m_name, "is_custom": True})
+    else:
+        # 给自定义服务商添加模型
+        custom_provider = custom.get(pid)
+        if not custom_provider:
+            raise ValueError(f"自定义服务商 '{pid}' 不存在")
+        custom_provider.setdefault("models", []).append({"id": m_id, "name": m_name, "is_custom": True})
+
+    _save_custom_providers(custom)
+    return {"status": "ok", "provider": pid, "model_id": m_id}
+
+
+def delete_model_from_provider(provider_id: str, model_id: str) -> dict:
+    custom = _load_custom_providers()
+    found = False
+
+    if provider_id in PROVIDERS:
+        extra_models_map = custom.get("_extra_models", {})
+        extra_list = extra_models_map.get(provider_id, [])
+        new_list = [m for m in extra_list if m["id"] != model_id]
+        if len(new_list) != len(extra_list):
+            extra_models_map[provider_id] = new_list
+            found = True
+    else:
+        custom_provider = custom.get(provider_id)
+        if custom_provider and "models" in custom_provider:
+            old_len = len(custom_provider["models"])
+            custom_provider["models"] = [m for m in custom_provider["models"] if m["id"] != model_id]
+            if len(custom_provider["models"]) != old_len:
+                found = True
+
+    if not found:
+        raise ValueError(f"未找到可删除的自定义模型: {model_id}")
+
+    _save_custom_providers(custom)
+    return {"status": "ok", "provider": provider_id, "model_id": model_id}

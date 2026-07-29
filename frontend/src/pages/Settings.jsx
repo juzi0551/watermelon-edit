@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Form, Input, InputNumber, Button, List, Tag, Typography, Space, message, Popconfirm, Modal, Tabs } from 'antd'
-import { KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined, ApiOutlined, ArrowLeftOutlined, EditOutlined, ThunderboltOutlined, UndoOutlined } from '@ant-design/icons'
+import { Card, Form, Input, InputNumber, Button, List, Tag, Typography, Space, message, Popconfirm, Modal, Tabs, Select } from 'antd'
+import {
+  KeyOutlined, CheckCircleOutlined, DeleteOutlined, SaveOutlined,
+  ApiOutlined, ArrowLeftOutlined, EditOutlined, ThunderboltOutlined,
+  UndoOutlined, PlusOutlined, CloseCircleOutlined
+} from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { getProviders, saveApiKey, deleteApiKey, testApiKey, getPrompts, savePrompts, resetPrompts } from '../services/api'
+import {
+  getProviders, saveApiKey, deleteApiKey, testApiKey,
+  getPrompts, savePrompts, resetPrompts,
+  addProvider, deleteProvider, addModel, deleteModel
+} from '../services/api'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -12,6 +20,14 @@ export default function Settings() {
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState(null)
   const [form] = Form.useForm()
+  const [addProviderForm] = Form.useForm()
+  const [addModelForm] = Form.useForm()
+
+  // Modal states
+  const [addProviderModalOpen, setAddProviderModalOpen] = useState(false)
+  const [addProviderSubmitting, setAddProviderSubmitting] = useState(false)
+  const [addModelModalOpen, setAddModelModalOpen] = useState(false)
+  const [addModelSubmitting, setAddModelSubmitting] = useState(false)
 
   // system prompt state
   const [promptProofread, setPromptProofread] = useState('')
@@ -67,7 +83,7 @@ export default function Settings() {
     if (res.error) {
       message.error(res.error)
     } else {
-      message.success(`${provider.name || providerId} 配置已保存`)
+      message.success(`${provider?.name || providerId} 配置已保存`)
       form.setFieldsValue({ [`key_${providerId}`]: '' })
       load()
     }
@@ -77,6 +93,75 @@ export default function Settings() {
     await deleteApiKey(providerId)
     message.success(`${providerId} API Key 已删除`)
     load()
+  }
+
+  const handleDeleteCustomProvider = async (providerId, providerName) => {
+    const res = await deleteProvider(providerId)
+    if (res.error) {
+      message.error(res.error)
+    } else {
+      message.success(`已删除服务商: ${providerName}`)
+      load()
+    }
+  }
+
+  const handleDeleteCustomModel = (providerId, modelId, modelName) => {
+    Modal.confirm({
+      title: `确认删除模型 "${modelName}"？`,
+      content: `模型 ID: ${modelId}`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        const res = await deleteModel(providerId, modelId)
+        if (res.error) {
+          message.error(res.error)
+        } else {
+          message.success(`模型 "${modelName}" 已删除`)
+          load()
+        }
+      },
+    })
+  }
+
+  const handleAddProviderSubmit = async () => {
+    try {
+      const values = await addProviderForm.validateFields()
+      setAddProviderSubmitting(true)
+      const res = await addProvider(values)
+      if (res.error) {
+        message.error(res.error)
+      } else {
+        message.success(`已成功添加服务商: ${values.name}`)
+        setAddProviderModalOpen(false)
+        addProviderForm.resetFields()
+        load()
+      }
+    } catch (e) {
+      // form validate failure
+    } finally {
+      setAddProviderSubmitting(false)
+    }
+  }
+
+  const handleAddModelSubmit = async () => {
+    try {
+      const values = await addModelForm.validateFields()
+      setAddModelSubmitting(true)
+      const res = await addModel(values)
+      if (res.error) {
+        message.error(res.error)
+      } else {
+        message.success(`已成功添加模型: ${values.model_name}`)
+        setAddModelModalOpen(false)
+        addModelForm.resetFields()
+        load()
+      }
+    } catch (e) {
+      // form validate failure
+    } finally {
+      setAddModelSubmitting(false)
+    }
   }
 
   const handleTest = async (modelId) => {
@@ -121,41 +206,92 @@ export default function Settings() {
       label: (
         <Space>
           <KeyOutlined />
-          <span>API Key 配置</span>
+          <span>服务商与模型配置</span>
         </Space>
       ),
       children: (
         <Card style={{ borderRadius: 8 }}>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-            按服务商配置 API Key（同一个服务商的模型共用一个 Key）。Key 加密存储在本地（backend/app/data/api_keys.json），不会上传到任何服务器。
-            DeepSeek 为 OpenAI 兼容接口（base_url: https://api.deepseek.com）。
-          </Text>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+            <Text type="secondary" style={{ maxWidth: 650 }}>
+              按服务商配置 API Key（同一个服务商的模型共用一个 Key）。支持添加自定义 OpenAI 兼容接口服务商及扩展新模型。 Key 加密存储在本地。
+            </Text>
+            <Space>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  addProviderForm.resetFields()
+                  setAddProviderModalOpen(true)
+                }}
+              >
+                添加自定义服务商
+              </Button>
+              <Button
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  addModelForm.resetFields()
+                  setAddModelModalOpen(true)
+                }}
+              >
+                添加模型
+              </Button>
+            </Space>
+          </div>
 
           <List
             loading={loading}
             dataSource={providers}
             renderItem={(p) => (
               <List.Item
-                actions={
-                  p.configured ? [
+                actions={[
+                  <Button
+                    key="add-model"
+                    type="link"
+                    icon={<PlusOutlined />}
+                    onClick={() => {
+                      addModelForm.resetFields()
+                      addModelForm.setFieldsValue({ provider: p.provider })
+                      setAddModelModalOpen(true)
+                    }}
+                  >
+                    添加模型
+                  </Button>,
+                  p.configured && (
                     <Popconfirm
-                      key="delete"
+                      key="delete-key"
                       title={`确定删除 ${p.name} 的 API Key？`}
                       onConfirm={() => handleDelete(p.provider)}
                     >
-                      <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
-                    </Popconfirm>,
-                  ] : []
-                }
+                      <Button type="link" danger icon={<DeleteOutlined />}>删除 Key</Button>
+                    </Popconfirm>
+                  ),
+                  p.is_custom && (
+                    <Popconfirm
+                      key="delete-provider"
+                      title={`确定彻底删除自定义服务商 "${p.name}"？`}
+                      description="该服务商下的所有模型和 Key 将一并被移除。"
+                      onConfirm={() => handleDeleteCustomProvider(p.provider, p.name)}
+                    >
+                      <Button type="link" danger icon={<DeleteOutlined />}>删除服务商</Button>
+                    </Popconfirm>
+                  ),
+                ].filter(Boolean)}
               >
                 <List.Item.Meta
                   title={
-                    <Space>
+                    <Space style={{ flexWrap: 'wrap' }}>
                       <Text strong>{p.name}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>({p.provider})</Text>
+                      {p.is_custom && <Tag color="purple">自定义服务商</Tag>}
                       {p.configured ? (
-                        <Tag color="success" icon={<CheckCircleOutlined />}>已配置</Tag>
+                        <Tag color="success" icon={<CheckCircleOutlined />}>已配置 Key</Tag>
                       ) : (
-                        <Tag color="warning">未配置</Tag>
+                        <Tag color="warning">未配置 Key</Tag>
+                      )}
+                      {p.api_base && (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          Base URL: {p.api_base}
+                        </Text>
                       )}
                     </Space>
                   }
@@ -177,7 +313,7 @@ export default function Settings() {
                           </Form.Item>
                           <Form.Item noStyle>
                             <Button type="primary" shape="round" icon={<SaveOutlined />} onClick={() => handleSave(p.provider)}>
-                              保存
+                              保存 Key
                             </Button>
                           </Form.Item>
                           {p.requires_account_id && (
@@ -204,26 +340,38 @@ export default function Settings() {
                           )}
                         </Form>
                       </div>
-                      <div style={{ marginTop: 10 }}>
+                      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {p.models.map((m) => (
                           <Tag
                             key={m.id}
-                            color={m.deprecated ? 'red' : 'default'}
-                            style={{ marginBottom: 6 }}
+                            color={m.deprecated ? 'red' : m.is_custom ? 'cyan' : 'default'}
+                            style={{ margin: 0, paddingRight: m.is_custom ? 4 : 8 }}
                           >
-                            {m.name}
-                            {p.configured && (
-                              <Button
-                                type="link"
-                                size="small"
-                                icon={<ApiOutlined />}
-                                loading={testing === m.id}
-                                onClick={() => handleTest(m.id)}
-                                style={{ padding: '0 4px' }}
-                              >
-                                测试
-                              </Button>
-                            )}
+                            <Space size={4}>
+                              <span>{m.name}</span>
+                              {m.is_custom && <Tag color="blue" style={{ fontSize: 10, margin: 0, padding: '0 2px' }}>自定义</Tag>}
+                              {p.configured && (
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  icon={<ApiOutlined />}
+                                  loading={testing === m.id}
+                                  onClick={() => handleTest(m.id)}
+                                  style={{ padding: '0 2px' }}
+                                >
+                                  测试
+                                </Button>
+                              )}
+                              {m.is_custom && (
+                                <CloseCircleOutlined
+                                  style={{ color: '#ff4d4f', cursor: 'pointer', marginLeft: 2 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteCustomModel(p.provider, m.id, m.name)
+                                  }}
+                                />
+                              )}
+                            </Space>
                           </Tag>
                         ))}
                       </div>
@@ -365,6 +513,115 @@ export default function Settings() {
       </Button>
 
       <Tabs defaultActiveKey="keys" items={tabItems} size="large" />
+
+      {/* Modal 1: 添加自定义服务商 */}
+      <Modal
+        title="添加自定义服务商"
+        open={addProviderModalOpen}
+        onOk={handleAddProviderSubmit}
+        confirmLoading={addProviderSubmitting}
+        onCancel={() => setAddProviderModalOpen(false)}
+        destroyOnClose
+      >
+        <Form form={addProviderForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item
+            name="provider"
+            label="服务商唯一标识"
+            rules={[
+              { required: true, message: '请输入服务商标识（字母/数字/下划线）' },
+              { pattern: /^[a-zA-Z0-9_-]+$/, message: '仅支持字母、数字、下划线及横杠' }
+            ]}
+          >
+            <Input placeholder="例如: groq, vllm, ollama, custom_api" />
+          </Form.Item>
+
+          <Form.Item
+            name="name"
+            label="服务商显示名称"
+            rules={[{ required: true, message: '请输入服务商显示名称' }]}
+          >
+            <Input placeholder="例如: Groq AI, 本地 vLLM 代理" />
+          </Form.Item>
+
+          <Form.Item
+            name="api_base"
+            label="API Base URL (OpenAI 兼容端点)"
+          >
+            <Input placeholder="例如: https://api.groq.com/openai/v1 或 http://localhost:11434/v1" />
+          </Form.Item>
+
+          <Form.Item
+            name="litellm_prefix"
+            label="LiteLLM 路由前缀"
+            initialValue="openai"
+          >
+            <Input placeholder="默认为 openai" />
+          </Form.Item>
+
+          <Form.Item
+            name="initial_model_id"
+            label="初始模型 ID (可选)"
+          >
+            <Input placeholder="例如: llama-3.3-70b-versatile" />
+          </Form.Item>
+
+          <Form.Item
+            name="initial_model_name"
+            label="初始模型显示名称 (可选)"
+          >
+            <Input placeholder="例如: Llama 3.3 70B" />
+          </Form.Item>
+
+          <Form.Item
+            name="api_key"
+            label="API Key (可选)"
+          >
+            <Input.Password placeholder="可在此直接粘贴 API Key" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Modal 2: 添加模型 */}
+      <Modal
+        title="添加模型"
+        open={addModelModalOpen}
+        onOk={handleAddModelSubmit}
+        confirmLoading={addModelSubmitting}
+        onCancel={() => setAddModelModalOpen(false)}
+        destroyOnClose
+      >
+        <Form form={addModelForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item
+            name="provider"
+            label="所属服务商"
+            rules={[{ required: true, message: '请选择所属服务商' }]}
+          >
+            <Select placeholder="选择服务商">
+              {providers.map((p) => (
+                <Select.Option key={p.provider} value={p.provider}>
+                  {p.name} ({p.provider})
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="model_id"
+            label="模型 ID"
+            rules={[{ required: true, message: '请输入模型 ID' }]}
+          >
+            <Input placeholder="例如: deepseek-r1, qwen3.7-coder, gpt-4o" />
+          </Form.Item>
+
+          <Form.Item
+            name="model_name"
+            label="模型显示名称"
+            rules={[{ required: true, message: '请输入模型显示名称' }]}
+          >
+            <Input placeholder="例如: DeepSeek R1" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

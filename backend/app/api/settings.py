@@ -1,6 +1,10 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from config import list_providers_status, set_api_key, delete_api_key, get_account_id, PROVIDERS, _load_keys, _save_keys
+from config import (
+    list_providers_status, set_api_key, delete_api_key, get_account_id,
+    get_all_providers, _load_keys, _save_keys,
+    add_custom_provider, delete_custom_provider, add_model_to_provider, delete_model_from_provider
+)
 from app.core.llm import test_llm
 from app.core.database import get_all_settings, set_setting
 
@@ -13,19 +17,81 @@ class SetKeyRequest(BaseModel):
     account_id: str | None = None
 
 
+class AddProviderRequest(BaseModel):
+    provider: str
+    name: str
+    api_base: str = ""
+    litellm_prefix: str = "openai"
+    initial_model_id: str = ""
+    initial_model_name: str = ""
+    api_key: str | None = None
+
+
+class AddModelRequest(BaseModel):
+    provider: str
+    model_id: str
+    model_name: str
+
+
 @router.get("/settings/providers")
 async def list_providers():
     return {"providers": list_providers_status()}
 
 
+@router.post("/settings/providers")
+async def create_provider(req: AddProviderRequest):
+    try:
+        res = add_custom_provider(
+            provider_id=req.provider,
+            name=req.name,
+            api_base=req.api_base,
+            litellm_prefix=req.litellm_prefix,
+            initial_model_id=req.initial_model_id,
+            initial_model_name=req.initial_model_name,
+            api_key=req.api_key,
+        )
+        return res
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+@router.delete("/settings/providers/{provider_id}")
+async def remove_provider(provider_id: str):
+    try:
+        return delete_custom_provider(provider_id)
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+@router.post("/settings/models")
+async def create_model(req: AddModelRequest):
+    try:
+        return add_model_to_provider(
+            provider_id=req.provider,
+            model_id=req.model_id,
+            model_name=req.model_name,
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+@router.delete("/settings/models/{provider_id}/{model_id:path}")
+async def remove_model(provider_id: str, model_id: str):
+    try:
+        return delete_model_from_provider(provider_id, model_id)
+    except ValueError as e:
+        return {"error": str(e)}
+
+
 @router.post("/settings/keys")
 async def save_key(req: SetKeyRequest):
-    if req.provider not in PROVIDERS:
+    all_providers = get_all_providers()
+    if req.provider not in all_providers:
         return {"error": f"不支持的服务商: {req.provider}"}
     acct = req.account_id.strip() if req.account_id else None
     key = req.api_key.strip() if req.api_key else None
 
-    if PROVIDERS.get(req.provider, {}).get("account_id_env_key"):
+    if all_providers.get(req.provider, {}).get("account_id_env_key"):
         # Cloudflare 等需要 account_id 的服务商：允许只保存 account_id
         if not key and not acct:
             return {"error": "API Key 和 Account ID 至少提供一个"}

@@ -149,12 +149,12 @@ export default function CharacterGraph({
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* 1. 角色卡片网络（4列宽屏展示） */}
+          {/* 1. 角色卡片列表（横向平铺展示） */}
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: color.textSecondary, marginBottom: 10 }}>
               👤 已登场角色 ({graphData.nodes.length})
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+            <div style={{ display: 'flex', overflowX: 'auto', gap: 12, paddingBottom: 8 }}>
               {graphData.nodes.map((node) => (
                 <Tooltip key={node.id} title={`点击跳转至首次登场段落 (第 ${node.first_appear_idx} 段)`}>
                   <Card
@@ -166,6 +166,8 @@ export default function CharacterGraph({
                       borderColor: color.border,
                       borderRadius: 8,
                       cursor: 'pointer',
+                      width: 220,
+                      flexShrink: 0,
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>

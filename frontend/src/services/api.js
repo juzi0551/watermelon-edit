@@ -110,6 +110,26 @@ export async function deleteApiKey(provider) {
   return data
 }
 
+export async function addProvider(payload) {
+  const { data } = await api.post('/settings/providers', payload)
+  return data
+}
+
+export async function deleteProvider(providerId) {
+  const { data } = await api.delete(`/settings/providers/${providerId}`)
+  return data
+}
+
+export async function addModel(payload) {
+  const { data } = await api.post('/settings/models', payload)
+  return data
+}
+
+export async function deleteModel(providerId, modelId) {
+  const { data } = await api.delete(`/settings/models/${providerId}/${encodeURIComponent(modelId)}`)
+  return data
+}
+
 export async function testApiKey(modelId) {
   const { data } = await api.post(`/settings/test/${modelId}`)
   return data
