@@ -1118,6 +1118,7 @@ const ParaRow = React.memo(function ParaRow({
         onMouseLeave={onMouseLeave}
         onClick={(e) => onParaClick(e, para.idx)}
         style={{
+          scrollMarginTop: 60,
           marginBottom: 16,
           display: 'flex',
           gap: 6,
@@ -1486,12 +1487,12 @@ function ReviewReaderInner({
     isJumpingRef.current = true
     if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current)
 
-    // 步骤 1：锁定基准 scrollTop，锁定 50 行虚拟视口切片包含目标段落
-    const baseTop = Math.max(0, posIndex * ITEM_HEIGHT - offset)
+    // 步骤 1：锁定基准 scrollTop，让虚拟视口切片包含目标段落
+    const baseTop = Math.max(0, posIndex * ITEM_HEIGHT - 60)
     container.scrollTop = baseTop
     setScrollTop(baseTop)
 
-    // 步骤 2：DOM 挂载完成后使用浏览器原生引擎 block: 'start' 做物理绝对齐顶对齐
+    // 步骤 2：DOM 挂载完成后使用浏览器原生引擎结合 scrollMarginTop 精准对齐
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (!flowRef.current) return
@@ -1985,7 +1986,7 @@ function ReviewReaderInner({
     if (paraEl) {
       const cRect = container.getBoundingClientRect()
       const pRect = paraEl.getBoundingClientRect()
-      const isVisible = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 20
+      const isVisible = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 40
       if (isVisible) {
         // 目标段落已经在可视区域内：正文绝对保持静止，仅定位卡片！
         updatePos()
@@ -1993,14 +1994,9 @@ function ReviewReaderInner({
       }
     }
 
-    // 只有当目标段落不在当前视口内时，才触发正文滚动
-    const posIndex = paraIndexMap.get(err.paragraph_index)
-    if (posIndex != null) {
-      const targetTop = Math.max(0, posIndex * ITEM_HEIGHT - 80)
-      container.scrollTop = targetTop
-      setScrollTop(targetTop)
-    }
-  }, [selectedId, flatErrors, paraIndexMap, ITEM_HEIGHT, updatePos])
+    // 当目标段落不在规定可视窗口内时，调用原生引擎精准定位到顶部（配合 scrollMarginTop）
+    jumpToParagraphExact(err.paragraph_index)
+  }, [selectedId, flatErrors, jumpToParagraphExact, updatePos])
 
   const prevSelectedChapterRef = useRef(selectedChapter)
   useEffect(() => {
