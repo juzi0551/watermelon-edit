@@ -34,25 +34,29 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pyinstaller
 
-      - name: Debug - list installed packages
+      - name: Debug - verify fastapi import
         shell: pwsh
-        run: pip list
+        run: python -c "import fastapi; import starlette; import pydantic; import uvicorn; print('ALL OK:', fastapi.__version__, starlette.__version__, pydantic.__version__, uvicorn.__version__)"
 
       - name: Bundle with PyInstaller
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "backend/app/data"
           pyinstaller --name "西瓜少年" --onedir --noconfirm --clean `
+            --log-level DEBUG `
             --paths "backend" `
             --add-data "backend/static;backend/static" `
             --add-data "backend/app/data;backend/app/data" `
             --collect-all litellm `
+            --hidden-import fastapi --hidden-import starlette --hidden-import pydantic `
             --hidden-import app --hidden-import app.api --hidden-import app.core --hidden-import app.models --hidden-import app.utils `
             run.py
 
-      - name: Debug - list collected modules
+      - name: Debug - list collected packages
         shell: pwsh
-        run: Get-ChildItem -Recurse -Directory -Path "dist/西瓜少年/_internal" | Select-Object -ExpandProperty Name | Sort-Object
+        run: |
+          Get-ChildItem -Recurse -Directory -Path "dist/西瓜少年/_internal" `
+            | Select-Object -ExpandProperty Name | Sort-Object | Select-Object -First 200
 
       - name: Prepare data files and compress artifact
         shell: pwsh
