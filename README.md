@@ -1,103 +1,96 @@
-# Watermelon Edit — 小说与图书辅助校稿工具
+# 🍉 Watermelon Edit (西瓜审校)
 
-一款面向小说作者与图书编辑的 AI 辅助校稿与轻排版工具。
+> **专为图书出版社、文字编辑与长篇小说作者打造的 AI 智能审校与稿件排版工作台**
 
-项目集成了 **多大模型智能校对引擎** 与 **`python-docx` / `lxml` 文档处理模块**。支持自动检查错别字、语法、标点与格式问题，并在导出 Word 时尽可能保留原有排版结构与分页设置。
-
----
-
-## 💡 核心功能
-
-* 🤖 **多模型辅助校对**：聚合 DeepSeek、Moonshot (Kimi)、Google Gemini 等主流大模型，按 30 段滑动窗口分批处理，支持长文档断点续校。
-* 📝 **交互式审校阅读器**：逐条对比原文与修改建议，支持自定义编辑建议、一键全部采纳以及即时编辑正文。
-* 📄 **硬分页与章节管理**：自动识别大章节开页，区分“原文硬分页”、“章节开页”与“新增硬分页”，提供淡化分割线展示。
-* 🎯 **段落快捷操作**：点击段落弹出微型浮条（编辑、硬分页、设章节、删除），自动跟随光标位置并进行卡片边界保护。
-* 🔒 **项目锁定与防误删**：支持一键锁定项目，锁定状态下限制删除项目、删除段落与清理空行。
-* 🧹 **空行清理与序号重排**：一键识别并清除原稿中的空白段落，自动从 0 开始重新连续编排段号 `idx`，并同步更新关联索引。
-* 📤 **带修订导出**：导出带时间戳的 `.docx` 校稿版（如 `{项目名称}_校稿版_{YYYYMMDD_HHMMSS}.docx`），尽量减少对原文档样式的破坏。
+[![AI Powered](https://img.shields.io/badge/AI-Proofreading-brightgreen)]()
+[![Word Compatible](https://img.shields.io/badge/Docx-Preserved_Formatting-blue)]()
+[![License](https://img.shields.io/badge/License-MIT-orange)]()
 
 ---
 
-## 🛠️ 技术栈
+## 📌 为什么选择 Watermelon Edit？
+
+审校数十万字的长篇小说或图书稿件，是一项极度消耗精力的专业工作：
+- **疲劳漏审**：几十万字的长篇文稿，人工反复通读仍难免漏过错别字、标点误用或病句。
+- **设定矛盾**：长篇巨制中，角色名字前后不一、人物关系突然发生突变、前文设定与后文剧情脱节。
+- **格式混乱**：作者交来的 Word (`.docx`) 稿件充斥着大量多余空行与乱打的分页符，常规工具处理后极易破坏原有的版式与字体样式。
+
+**Watermelon Edit** 正是为了彻底解决上述痛点而生。我们将**大语言模型（LLM）的深度文本理解能力**与**专业的 Word 文档解析技术**深度结合，为编辑与作者提供一个沉浸式、高效且精准的智能审校与排版环境。
+
+---
+
+## 🌟 核心功能与业务价值
+
+### 1. 🔍 AI 深度多维校对，拒绝错漏
+不仅能检查字词错误，更能结合整段语境进行语义级审校：
+- **错字与标点**：精准识别错别字、异体字、标点符号误用（如双引号未闭合、英文标点混用）。
+- **语法与病句**：纠正主谓不搭配、语序倒置、成分残缺等常见表达缺陷。
+- **逻辑与润色**：针对长句、晦涩语句提供修辞优化建议，提升文稿整体可读性。
+
+### 2. 👥 全书人物图谱与剧情演进线索
+长篇小说审校最头疼的“设定跑偏”与“角色混淆”，在此一目了然：
+- **角色关系网萃取**：自动提取全书所有已登场角色、别名及其主配角身份。
+- **动态关系追踪**：随着剧情推进（滑动段落时间轴），实时查看角色间的关系变动（结盟、敌对、倾慕、家族等）。
+- **剧情关键事件高亮**：按段落定位核心事件节点，防止前后设定脱节。点击事件即可一键跳转至正文对应段落。
+
+### 3. 📖 沉浸式双栏对照审校阅读器
+打破传统校对软件割裂的操作体验：
+- **修改前后清晰对比**：原文与 AI 修改建议同屏对照，支持一键“采纳修改”或手动微调。
+- **段落快捷编辑**：点击任意段落即可弹出快捷工具条（快速插入/取消硬分页、标记章节标题、编辑正文）。
+
+### 4. 📄 格式零破坏，带修订完美导出
+- 导出标准的 `.docx` 校稿版文档，**完美保留原稿原本的字体、字号、段落间距与标题样式**。
+- 支持一键清除文稿中多余的空白段落，并自动重排段落编号 `idx`，彻底告别手动排版烦恼。
+- 提供**项目锁稿防护**，防止误删段落或误清格式。
+
+### 5. 🔒 自定义大模型与数据隐私安全
+- **主流模型全兼容**：支持 DeepSeek、Kimi (Moonshot)、Google Gemini、MiniMax、阿里云百炼、NVIDIA Cloud 等，亦支持添加自定义 OpenAI 兼容端点及自建大模型。
+- **密钥纯本地存储**：API Key 仅加密存储于您本地机器，文本不经过任何第三方中转服务，保障图书出版物版权与数据安全。
+
+---
+
+## 🔍 适用场景与关键字
+
+- **图书出版社 / 独立编辑**：长篇大作初审、复审与终审辅助，大幅缩短审稿周期。
+- **网络小说作者 / 连载网文工作室**：连载前快速检查错字病句、整理人物设定网。
+- **文字处理 / 知识管理工作者**：高质高效的 Word 文稿规范化与校对。
+
+**搜索关键词**：`图书校对软件` `小说审校工具` `AI校稿` `Word排版辅助` `错别字检查` `人物关系图谱生成` `出版审稿系统` `DeepSeek校对`
+
+---
+
+## 🛠️ 技术架构
 
 - **后端**：Python / FastAPI / SQLite / `python-docx` / `lxml` / LiteLLM
 - **前端**：React / Ant Design 5 / Vite
 
 ---
 
-## 📁 项目结构
-
-```
-├── backend/                        # FastAPI 后端
-│   ├── app/
-│   │   ├── main.py                 # FastAPI 入口，静态文件托管
-│   │   ├── api/
-│   │   │   ├── projects.py         # 项目 CRUD & 锁定 & 空行清理 API
-│   │   │   ├── upload.py           # docx 上传与解析
-│   │   │   ├── proofread.py        # 校对控制
-│   │   │   ├── results.py          # 结果查询
-│   │   │   ├── apply.py            # docx / lxml 节点修改与导出
-│   │   │   ├── export.py           # 导出控制
-│   │   │   └── settings.py         # 设置（API Key, Prompt）
-│   │   ├── core/
-│   │   │   ├── database.py         # SQLite 数据库与缓存
-│   │   │   ├── document.py         # docx 解析与章节识别
-│   │   │   ├── llm.py              # LiteLLM 调用封装
-│   │   │   └── proofer.py          # 分段校对引擎
-│   │   └── utils/
-│   └── static/                     # 前端静态产物
-├── frontend/                       # React + Ant Design 前端
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── ProjectList.jsx     # 项目列表
-│   │   │   ├── ProjectDetail.jsx   # 项目详情与校对
-│   │   │   └── Settings.jsx        # 设置页
-│   │   ├── components/
-│   │   │   └── ReviewReader.jsx    # 审校阅读器
-│   │   └── services/
-│   │       └── api.js              # API 调用封装
-└── README.md
-```
-
----
-
 ## 🚀 快速开始
 
-### 本地开发
+### 环境要求
+- Node.js 18+
+- Python 3.10+
+
+### 本地启动
 
 ```bash
-# 1. 后端
+# 1. 启动后端 (Backend)
 cd backend
-python -m venv venv && source venv/bin/activate
+python -m venv venv && source venv/bin/activate  # Windows 用户使用 venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 
-# 2. 前端（另开终端）
+# 2. 启动前端 (Frontend)
 cd frontend
 npm install
 npm run dev
 ```
 
-打开浏览器访问 `http://localhost:5173`。
-
----
-
-## 📡 主要 API 概览
-
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/projects` | GET | 获取项目列表 |
-| `/api/projects` | POST | 创建新项目 |
-| `/api/projects/{id}` | GET | 查询项目详情 |
-| `/api/projects/{id}/lock` | POST | 切换项目锁定状态 |
-| `/api/projects/{id}/clean-empty-paragraphs` | POST | 清理空白段落并重排序号 |
-| `/api/projects/{id}/upload` | POST | 上传 docx 文件 |
-| `/api/projects/{id}/proofread` | POST | 开始/继续校对 |
-| `/api/projects/{id}/results` | GET | 查询校对结果与章节 |
-| `/api/projects/{id}/export` | POST | 导出校稿版 docx |
+启动后在浏览器打开 `http://localhost:5173` 即可使用。
 
 ---
 
 ## 📄 许可证
 
-MIT License
+本项目遵循 [MIT License](LICENSE) 许可协议。
