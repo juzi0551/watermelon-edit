@@ -567,15 +567,18 @@ function computeExactLcsDiff(original, suggested) {
   return { origMatched, suggMatched }
 }
 
-function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraIdx, onSelectManualEdit }) {
+function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editNote, paraIdx, onSelectManualEdit }) {
   if (!text) return null
 
   // 1. 过滤活跃未作废错误
   const activeErrs = paraErrors.filter(e => !e.is_obsolete)
 
-  // 手工编辑 LCS 对比
-  const hasManualEdit = Boolean(origText && text && origText !== text)
-  const manualLcs = hasManualEdit ? computeExactLcsDiff(origText, text) : null
+  // 2. 是否存在真正的手工编辑履历
+  const manualNotes = parseEditNotes(editNote)
+  const hasManualEditNotes = Boolean(manualNotes.length > 0)
+  const manualLcs = (hasManualEditNotes && origText && text && origText !== text)
+    ? computeExactLcsDiff(origText, text)
+    : null
 
   // 预构建字典：映射 original_text -> error (O(1) 查询)
   const errByOrigMap = useMemo(() => {
@@ -590,7 +593,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
   const pureDeletionsByPos = {} // pos -> Array of deletion items
   const pureAdditionsByPos = {} // pos -> Array of addition items
 
-  // A. AI 校对待处理的纯新增与锚点内部增字（用 diffChars 精准计算正文插入位移）
+  // A. AI 校对待处理的纯新增与锚点内部增字（排除替换）
   const addPosMap = {}
   activeErrs.forEach(e => {
     if (e.user_status === 'pending' && e.suggested_text) {
@@ -620,25 +623,29 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
           suggestedText: e.suggested_text,
         })
       } else {
-        // 包含 original_text 锚点，用 diffChars 检测新增片段的绝对插入位移
+        // 包含 original_text 锚点，使用 diffChars 精准排除替换，仅捕获纯增字
         const from = addPosMap[e.original_text] ?? 0
         const start = text.indexOf(e.original_text, from)
         if (start >= 0) {
           addPosMap[e.original_text] = start + 1
           const changes = diffChars(e.original_text, e.suggested_text)
           let origOffset = 0
-          changes.forEach(c => {
+          changes.forEach((c, idx) => {
             if (c.added) {
-              const insertPos = Math.min(start + origOffset, text.length)
-              if (!pureAdditionsByPos[insertPos]) pureAdditionsByPos[insertPos] = []
-              const exists = pureAdditionsByPos[insertPos].some(item => item.errorId === e.id)
-              if (!exists) {
-                pureAdditionsByPos[insertPos].push({
-                  type: 'ai',
-                  errorId: e.id,
-                  isSelected: e.id === selectedId,
-                  suggestedText: c.value,
-                })
+              const isReplacement = (idx > 0 && changes[idx - 1].removed) ||
+                                    (idx < changes.length - 1 && changes[idx + 1].removed)
+              if (!isReplacement) {
+                const insertPos = Math.min(start + origOffset, text.length)
+                if (!pureAdditionsByPos[insertPos]) pureAdditionsByPos[insertPos] = []
+                const exists = pureAdditionsByPos[insertPos].some(item => item.errorId === e.id)
+                if (!exists) {
+                  pureAdditionsByPos[insertPos].push({
+                    type: 'ai',
+                    errorId: e.id,
+                    isSelected: e.id === selectedId,
+                    suggestedText: c.value,
+                  })
+                }
               }
             } else {
               origOffset += c.value.length
@@ -649,69 +656,45 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     }
   })
 
-  // B. AI 校对已采纳的纯删除（suggested_text 为空）
-  activeErrs.forEach(e => {
-    if (e.user_status === 'accepted' && (!e.suggested_text || e.suggested_text.trim() === '') && e.original_text) {
-      let pos = 0
-      if (origText && text) {
-        const origIdx = origText.indexOf(e.original_text)
-        if (origIdx >= 0) {
-          const prefix = origText.slice(0, origIdx)
-          // 通过 diffChars 找到 prefix 在 text 中的位移
-          const changes = diffChars(prefix, text)
-          let p = 0
-          for (const c of changes) {
-            if (!c.removed) p += c.value.length
-            if (c.value === prefix || p >= prefix.length) break
-          }
-          pos = Math.min(p, text.length)
-        }
-      }
-      if (!pureDeletionsByPos[pos]) pureDeletionsByPos[pos] = []
-      pureDeletionsByPos[pos].push({
-        type: 'ai',
-        errorId: e.id,
-        isSelected: e.id === selectedId,
-      })
-    }
-  })
+  // B. 利用 diffChars 直接从 (origText -> text) 原生变动中计算删除点与其在正文中的精确位置 textPos
+  if (origText && text && origText !== text) {
+    const changes = diffChars(origText, text)
+    let textPos = 0
 
-  // B. 手工编辑或从 diffChars 匹配到的删字片段
-  if (hasManualEdit) {
-    const changes = diffChars(origText || '', text)
-    let suggIdx = 0
-    for (let idx = 0; idx < changes.length; idx++) {
-      const c = changes[idx]
-      if (c.added) {
-        suggIdx += c.value.length
-      } else if (c.removed) {
+    changes.forEach((c, idx) => {
+      if (c.removed) {
         const isReplacement = (idx < changes.length - 1 && changes[idx + 1].added) ||
                               (idx > 0 && changes[idx - 1].added)
         if (!isReplacement) {
-          const pos = Math.min(suggIdx, text.length)
-          const alreadyMapped = pureDeletionsByPos[pos]?.some(item => item.type === 'ai')
-          if (!alreadyMapped) {
+          const pos = Math.min(textPos, text.length)
+          // 查找匹配此删除片段的已采纳 AI 错误
+          const matchedErr = activeErrs.find(e =>
+            e.user_status === 'accepted' &&
+            e.original_text &&
+            (e.original_text === c.value || c.value.includes(e.original_text) || e.original_text.includes(c.value))
+          )
+          if (matchedErr) {
             if (!pureDeletionsByPos[pos]) pureDeletionsByPos[pos] = []
-            // 优先查找删除片段是否匹配 AI 问题
-            const matchedErr = errByOrigMap.get(c.value) || activeErrs.find(e => e.original_text && c.value.includes(e.original_text))
-            if (matchedErr) {
+            const exists = pureDeletionsByPos[pos].some(item => item.type === 'ai' && item.errorId === matchedErr.id)
+            if (!exists) {
               pureDeletionsByPos[pos].push({
                 type: 'ai',
                 errorId: matchedErr.id,
                 isSelected: matchedErr.id === selectedId,
               })
-            } else {
-              pureDeletionsByPos[pos].push({
-                type: 'manual',
-                paraIdx,
-              })
             }
+          } else if (hasManualEditNotes) {
+            if (!pureDeletionsByPos[pos]) pureDeletionsByPos[pos] = []
+            pureDeletionsByPos[pos].push({
+              type: 'manual',
+              paraIdx,
+            })
           }
         }
       } else {
-        suggIdx += c.value.length
+        textPos += c.value.length
       }
-    }
+    })
   }
 
   const posMap = {}
@@ -756,12 +739,12 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     }
   })
 
-  if (intervals.length === 0 && !hasManualEdit && Object.keys(pureDeletionsByPos).length === 0 && Object.keys(pureAdditionsByPos).length === 0) {
+  if (intervals.length === 0 && !hasManualEditNotes && Object.keys(pureDeletionsByPos).length === 0 && Object.keys(pureAdditionsByPos).length === 0) {
     return <span>{text}</span>
   }
 
-  // 手工编辑切点注入
-  if (hasManualEdit) {
+  // 手工编辑切点注入（仅当存在真实手修履历时）
+  if (hasManualEditNotes) {
     for (let k = 0; k <= text.length; k++) {
       bounds.add(k)
     }
@@ -774,13 +757,17 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     const items = pureDeletionsByPos[pos]
     if (!items || items.length === 0) return null
     return items.map((item, idx) => {
-      const isSel = item.type === 'ai' && item.isSelected
+      const isAi = item.type === 'ai'
+      const isSel = isAi && item.isSelected
+      const color = isAi ? (isSel ? '#262626' : '#8c8c8c') : '#1890ff'
       return (
         <span
           key={`del_${pos}_${idx}`}
+          data-error-id={isAi ? item.errorId : undefined}
+          data-manual-edit={!isAi ? 'true' : undefined}
           onClick={(ev) => {
             ev.stopPropagation()
-            if (item.type === 'ai') {
+            if (isAi) {
               onSelect(item.errorId)
             } else {
               onSelectManualEdit?.(item.paraIdx)
@@ -788,11 +775,12 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
           }}
           style={{
             cursor: 'pointer',
-            color: isSel ? '#262626' : '#8c8c8c',
+            color,
             fontSize: 12,
             fontWeight: isSel ? 600 : 400,
             userSelect: 'none',
             display: 'inline',
+            margin: '0 2px',
           }}
         >
           [已删字]
@@ -890,8 +878,8 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
       }
     }
 
-    // 手工修改字符下划线
-    if (!isCharDiff && hasManualEdit && manualLcs) {
+    // 手工修改字符下划线（仅当存在真实手修履历且字符未被 AI 覆盖时）
+    if (!isCharDiff && covering.length === 0 && hasManualEditNotes && manualLcs) {
       const isUserEditedChar = manualLcs.suggMatched[start] === false
       if (isUserEditedChar) {
         borderBottom = '2.5px solid #1890ff'
@@ -1304,6 +1292,7 @@ const ParaRow = React.memo(function ParaRow({
                   selectedId={selectedId}
                   onSelect={onSelectError}
                   origText={para.text}
+                  editNote={para.edit_note}
                   paraIdx={para.idx}
                   onSelectManualEdit={onSelectManualEdit}
                 />
