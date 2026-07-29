@@ -47,6 +47,11 @@ jobs:
             --collect-all httpcore `
             --collect-all h2 `
             --hidden-import app --hidden-import app.api --hidden-import app.core --hidden-import app.models --hidden-import app.utils `
+            --collect-all fastapi `
+            --collect-all starlette `
+            --collect-all pydantic `
+            --collect-all pydantic_core `
+            --hidden-import python_multipart `
             --hidden-import jinja2.ext `
             --hidden-import uvicorn --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto `
             --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto `
