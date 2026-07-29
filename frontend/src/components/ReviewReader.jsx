@@ -1564,6 +1564,7 @@ function ReviewReaderInner({
               display: 'flex',
               flexDirection: 'column',
               minHeight: 0,
+              position: 'relative',
             }}
           >
             <style>{`
@@ -1586,6 +1587,36 @@ function ReviewReaderInner({
                 border: 1px solid transparent;
               }
             `}</style>
+            {/* 顶部边界 100% 纯色透明羽化遮罩（最顶部时 opacity 为 0 隐退） */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 12,
+                background: `linear-gradient(to bottom, ${color.bgPage} 0%, rgba(255, 255, 255, 0) 100%)`,
+                pointerEvents: 'none',
+                zIndex: 10,
+                borderRadius: `${radius.md}px ${radius.md}px 0 0`,
+                opacity: scrollTop < 5 ? 0 : 1,
+                transition: 'opacity 0.2s ease',
+              }}
+            />
+            {/* 底部边界 100% 纯色透明羽化遮罩 */}
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 12,
+                background: `linear-gradient(to top, ${color.bgPage} 0%, rgba(255, 255, 255, 0) 100%)`,
+                pointerEvents: 'none',
+                zIndex: 10,
+                borderRadius: `0 0 ${radius.md}px ${radius.md}px`,
+              }}
+            />
             <div
               ref={flowRef}
               className="custom-reader-scroll"
@@ -1594,7 +1625,7 @@ function ReviewReaderInner({
                 flex: 1,
                 minHeight: 0,
                 overflowY: 'auto',
-                padding: '0 24px',
+                padding: '12px 24px',
                 background: color.bgReader,
                 borderRadius: radius.md,
                 position: 'relative',
