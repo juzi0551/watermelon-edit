@@ -34,6 +34,10 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pyinstaller
 
+      - name: Debug - list installed packages
+        shell: pwsh
+        run: pip list
+
       - name: Bundle with PyInstaller
         shell: pwsh
         run: |
@@ -42,21 +46,16 @@ jobs:
             --paths "backend" `
             --add-data "backend/static;backend/static" `
             --add-data "backend/app/data;backend/app/data" `
-            --collect-all litellm `
-            --collect-all httpx `
-            --collect-all httpcore `
-            --collect-all h2 `
+            --collect-all litellm --collect-all httpx --collect-all httpcore --collect-all h2 `
+            --collect-all fastapi --collect-all starlette --collect-all pydantic `
+            --collect-all uvicorn `
             --hidden-import app --hidden-import app.api --hidden-import app.core --hidden-import app.models --hidden-import app.utils `
-            --collect-all fastapi `
-            --collect-all starlette `
-            --collect-all pydantic `
-            --collect-all pydantic_core `
-            --hidden-import python_multipart `
-            --hidden-import jinja2.ext `
-            --hidden-import uvicorn --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto `
-            --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto `
-            --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto `
-            --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on run.py
+            --hidden-import python_multipart --hidden-import jinja2.ext `
+            run.py
+
+      - name: Debug - list collected modules
+        shell: pwsh
+        run: Get-ChildItem -Recurse -Directory -Path "dist/西瓜少年/_internal" | Select-Object -ExpandProperty Name | Sort-Object
 
       - name: Prepare data files and compress artifact
         shell: pwsh
