@@ -586,10 +586,70 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     return map
   }, [activeErrs])
 
-  // 收集所有纯删除记录及发生位置
+  // 收集所有纯删除及纯新增记录与发生位置
   const pureDeletionsByPos = {} // pos -> Array of deletion items
+  const pureAdditionsByPos = {} // pos -> Array of addition items
 
-  // A. AI 校对已采纳的纯删除（suggested_text 为空）
+  // A. AI 校对待处理的纯新增与锚点内部增字（用 diffChars 精准计算正文插入位移）
+  const addPosMap = {}
+  activeErrs.forEach(e => {
+    if (e.user_status === 'pending' && e.suggested_text) {
+      if (!e.original_text || e.original_text.trim() === '') {
+        // 纯新增（无原文锚点）
+        let pos = 0
+        if (e.description) {
+          const mAfter = e.description.match(/在[“"'「]([^”"'」]+)[”"'」](?:之后|后)/)
+          const mBefore = e.description.match(/在[“"'「]([^”"'」]+)[”"'」](?:之前|前)/)
+          const mQuotes = e.description.match(/[“"'「]([^”"'」]+)[”"'」]/)
+
+          if (mAfter && text.indexOf(mAfter[1]) >= 0) {
+            const idx = text.indexOf(mAfter[1])
+            pos = Math.min(idx + mAfter[1].length, text.length)
+          } else if (mBefore && text.indexOf(mBefore[1]) >= 0) {
+            pos = Math.min(text.indexOf(mBefore[1]), text.length)
+          } else if (mQuotes && text.indexOf(mQuotes[1]) >= 0) {
+            const idx = text.indexOf(mQuotes[1])
+            pos = Math.min(idx + mQuotes[1].length, text.length)
+          }
+        }
+        if (!pureAdditionsByPos[pos]) pureAdditionsByPos[pos] = []
+        pureAdditionsByPos[pos].push({
+          type: 'ai',
+          errorId: e.id,
+          isSelected: e.id === selectedId,
+          suggestedText: e.suggested_text,
+        })
+      } else {
+        // 包含 original_text 锚点，用 diffChars 检测新增片段的绝对插入位移
+        const from = addPosMap[e.original_text] ?? 0
+        const start = text.indexOf(e.original_text, from)
+        if (start >= 0) {
+          addPosMap[e.original_text] = start + 1
+          const changes = diffChars(e.original_text, e.suggested_text)
+          let origOffset = 0
+          changes.forEach(c => {
+            if (c.added) {
+              const insertPos = Math.min(start + origOffset, text.length)
+              if (!pureAdditionsByPos[insertPos]) pureAdditionsByPos[insertPos] = []
+              const exists = pureAdditionsByPos[insertPos].some(item => item.errorId === e.id)
+              if (!exists) {
+                pureAdditionsByPos[insertPos].push({
+                  type: 'ai',
+                  errorId: e.id,
+                  isSelected: e.id === selectedId,
+                  suggestedText: c.value,
+                })
+              }
+            } else {
+              origOffset += c.value.length
+            }
+          })
+        }
+      }
+    }
+  })
+
+  // B. AI 校对已采纳的纯删除（suggested_text 为空）
   activeErrs.forEach(e => {
     if (e.user_status === 'accepted' && (!e.suggested_text || e.suggested_text.trim() === '') && e.original_text) {
       let pos = 0
@@ -658,8 +718,9 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
   const intervals = []
   const bounds = new Set([0, text.length])
 
-  // 注入纯删除位置点
+  // 注入纯删除与纯新增位置点
   Object.keys(pureDeletionsByPos).forEach(p => bounds.add(Number(p)))
+  Object.keys(pureAdditionsByPos).forEach(p => bounds.add(Number(p)))
 
   activeErrs.forEach(e => {
     const isAccepted = e.user_status === 'accepted'
@@ -695,7 +756,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     }
   })
 
-  if (intervals.length === 0 && !hasManualEdit && Object.keys(pureDeletionsByPos).length === 0) {
+  if (intervals.length === 0 && !hasManualEdit && Object.keys(pureDeletionsByPos).length === 0 && Object.keys(pureAdditionsByPos).length === 0) {
     return <span>{text}</span>
   }
 
@@ -735,6 +796,39 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
           }}
         >
           [已删字]
+        </span>
+      )
+    })
+  }
+
+  const renderAdditionTags = (pos) => {
+    const items = pureAdditionsByPos[pos]
+    if (!items || items.length === 0) return null
+    return items.map((item, idx) => {
+      const isSel = item.isSelected
+      return (
+        <span
+          key={`add_${pos}_${idx}`}
+          data-error-id={item.errorId}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            onSelect(item.errorId)
+          }}
+          style={{
+            cursor: 'pointer',
+            display: 'inline',
+            margin: '0 1px',
+            padding: '0 1px',
+            fontSize: 'inherit',
+            fontWeight: isSel ? 800 : 700,
+            color: isSel ? '#d46b08' : '#faad14',
+            backgroundColor: 'transparent',
+            border: 'none',
+            userSelect: 'none',
+            transition: 'color 0.15s ease',
+          }}
+        >
+          +
         </span>
       )
     })
@@ -807,6 +901,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     segs.push(
       <React.Fragment key={`seg${start}`}>
         {renderDeletionTags(start)}
+        {renderAdditionTags(start)}
         <span
           data-error-id={ids.join(',')}
           data-manual-edit={ids.length === 0 && borderBottom === '2.5px solid #1890ff' ? 'true' : undefined}
@@ -837,12 +932,13 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     )
   }
 
-  // 结尾处的纯删除标签
+  // 结尾处的纯删除与纯新增标签
   const lastPos = points[points.length - 1]
-  if (lastPos === text.length && pureDeletionsByPos[lastPos]) {
+  if (lastPos === text.length && (pureDeletionsByPos[lastPos] || pureAdditionsByPos[lastPos])) {
     segs.push(
       <React.Fragment key={`seg_last`}>
         {renderDeletionTags(lastPos)}
+        {renderAdditionTags(lastPos)}
       </React.Fragment>
     )
   }
