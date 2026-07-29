@@ -51,7 +51,7 @@ function computeInlineDiff(original, suggested) {
   let added = ''
   let prefix = ''
   let suffix = ''
-  
+
   changes.forEach(c => {
     if (c.removed) removed += c.value
     else if (c.added) added += c.value
@@ -633,7 +633,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editN
           changes.forEach((c, idx) => {
             if (c.added) {
               const isReplacement = (idx > 0 && changes[idx - 1].removed) ||
-                                    (idx < changes.length - 1 && changes[idx + 1].removed)
+                (idx < changes.length - 1 && changes[idx + 1].removed)
               if (!isReplacement) {
                 const insertPos = Math.min(start + origOffset, text.length)
                 if (!pureAdditionsByPos[insertPos]) pureAdditionsByPos[insertPos] = []
@@ -664,7 +664,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editN
     changes.forEach((c, idx) => {
       if (c.removed) {
         const isReplacement = (idx < changes.length - 1 && changes[idx + 1].added) ||
-                              (idx > 0 && changes[idx - 1].added)
+          (idx > 0 && changes[idx - 1].added)
         if (!isReplacement) {
           const pos = Math.min(textPos, text.length)
           // 查找匹配此删除片段的已采纳 AI 错误
@@ -1131,17 +1131,17 @@ const ParaRow = React.memo(function ParaRow({
           background: isActive
             ? 'rgba(19, 194, 194, 0.09)'
             : isHover
-            ? 'rgba(19, 194, 194, 0.04)'
-            : isCh
-            ? 'rgba(212, 163, 89, 0.04)'
-            : 'transparent',
+              ? 'rgba(19, 194, 194, 0.04)'
+              : isCh
+                ? 'rgba(212, 163, 89, 0.04)'
+                : 'transparent',
           borderLeft: isActive
             ? '4px solid #13c2c2'
             : isHover
-            ? '4px solid #87e8de'
-            : isCh
-            ? '4px solid #ffe58f'
-            : '4px solid transparent',
+              ? '4px solid #87e8de'
+              : isCh
+                ? '4px solid #ffe58f'
+                : '4px solid transparent',
         }}
       >
         {showCheckboxes && (
@@ -1251,10 +1251,10 @@ const ParaRow = React.memo(function ParaRow({
                   <Tag color="gold" style={{ marginBottom: 4, marginRight: 4 }}>
                     📖 章节 ({
                       chapterObj?.level === 1 ? '1级 卷/部' :
-                      chapterObj?.level === 2 ? '2级 章' :
-                      chapterObj?.level === 3 ? '3级 节/回' :
-                      chapterObj?.level === 4 ? '4级 小节' :
-                      chapterObj?.level === 5 ? '5级 目' : '6级 细目'
+                        chapterObj?.level === 2 ? '2级 章' :
+                          chapterObj?.level === 3 ? '3级 节/回' :
+                            chapterObj?.level === 4 ? '4级 小节' :
+                              chapterObj?.level === 5 ? '5级 目' : '6级 细目'
                     })
                   </Tag>
                   {chapterObj?.detected_by === 'manual' ? (
@@ -1453,7 +1453,7 @@ function ReviewReaderInner({
   }, [sortedParas])
 
   const ITEM_HEIGHT = 48
-  const BUFFER_SIZE = 50
+  const BUFFER_SIZE = 200
   const [scrollTop, setScrollTop] = useState(0)
   const [fontSizeOffset, setFontSizeOffset] = useState(() => {
     try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
@@ -2415,190 +2415,192 @@ function ReviewReaderInner({
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 16px', gap: 12 }}>
-        {/* left: 选段模式切换 | 选段操作 | 校对配置 */}
-        {!(inProgress || proofreading) && <>
-          <Button
-            type="text"
-            size="small"
-            onClick={() => {
-              if (showCheckboxes) {
-                setShowCheckboxes(false)
-                onSelectionChange?.(new Set())
-              } else {
-                setShowCheckboxes(true)
-              }
-            }}
-            style={{
-              fontSize: 13, color: showCheckboxes ? color.warning : color.textTertiary,
-              whiteSpace: 'nowrap', flexShrink: 0,
-            }}
-          >
-            {showCheckboxes ? '☑' : '☐'} 选段
-          </Button>
-          <Button
-            type="text"
-            size="small"
-            onClick={() => setShowAllOriginals(!showAllOriginals)}
-            style={{
-              fontSize: 13,
-              color: showAllOriginals ? '#1890ff' : color.textTertiary,
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            {showAllOriginals ? '👁 隐藏对照原文' : '👁 对照原文'}
-          </Button>
-          {showCheckboxes && selectedParas?.size > 0 && (
-            <Space size={4} style={{ flexShrink: 0 }}>
-              <Tag style={{ fontSize: 12, margin: 0 }}>已选 {selectedParas.size} 段</Tag>
-              <Button
-                type="text"
-                size="small"
-                onClick={() => {
-                  const errIdxs = new Set(errors.map(e => e.paragraph_index))
-                  onSelectionChange?.(errIdxs)
-                }}
-                style={{ fontSize: 12, color: color.textSecondary }}
+          {/* left: 选段模式切换 | 选段操作 | 校对配置 */}
+          {!(inProgress || proofreading) && <>
+            <Button
+              type="text"
+              size="small"
+              onClick={() => {
+                if (showCheckboxes) {
+                  setShowCheckboxes(false)
+                  onSelectionChange?.(new Set())
+                } else {
+                  setShowCheckboxes(true)
+                }
+              }}
+              style={{
+                fontSize: 13, color: showCheckboxes ? color.warning : color.textTertiary,
+                whiteSpace: 'nowrap', flexShrink: 0,
+              }}
+            >
+              {showCheckboxes ? '☑' : '☐'} 选段
+            </Button>
+            <Button
+              type="text"
+              size="small"
+              onClick={() => setShowAllOriginals(!showAllOriginals)}
+              style={{
+                fontSize: 13,
+                color: showAllOriginals ? '#1890ff' : color.textTertiary,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {showAllOriginals ? '👁 隐藏对照原文' : '👁 对照原文'}
+            </Button>
+            {showCheckboxes && selectedParas?.size > 0 && (
+              <Space size={4} style={{ flexShrink: 0 }}>
+                <Tag style={{ fontSize: 12, margin: 0 }}>已选 {selectedParas.size} 段</Tag>
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => {
+                    const errIdxs = new Set(errors.map(e => e.paragraph_index))
+                    onSelectionChange?.(errIdxs)
+                  }}
+                  style={{ fontSize: 12, color: color.textSecondary }}
+                >
+                  选取错误段落
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => onSelectionChange?.(new Set())}
+                  style={{ fontSize: 12, color: color.textSecondary }}
+                >
+                  清除
+                </Button>
+              </Space>
+            )}
+            {!showCheckboxes && (
+              <Popover
+                trigger="click"
+                open={showOptions}
+                onOpenChange={setShowOptions}
+                placement="topLeft"
+                styles={{ body: { padding: '12px 16px', width: 440 } }}
+                content={
+                  <ControlsRow
+                    showOptions={true}
+                    selectedModel={selectedModel} onModelChange={onModelChange}
+                    models={models}
+                    selectedTypes={selectedTypes} onTypesChange={onTypesChange}
+                    batchMaxConcurrent={batchMaxConcurrent} onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
+                    proofreadWindowSize={proofreadWindowSize} onWindowSizeChange={onWindowSizeChange}
+                    inProgress={inProgress}
+                  />
+                }
               >
-                选取错误段落
-              </Button>
-              <Button
-                type="text"
-                size="small"
-                onClick={() => onSelectionChange?.(new Set())}
-                style={{ fontSize: 12, color: color.textSecondary }}
-              >
-                清除
-              </Button>
-            </Space>
-          )}
-          {!showCheckboxes && (
+                <Button
+                  type="text"
+                  size="middle"
+                  style={{
+                    color: color.textPrimary, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
+                    maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
+                  }}
+                >
+                  {showOptions ? '◀' : '▶'} 校对配置 ({
+                    (() => {
+                      const m = models.find(x => x.model_id === selectedModel)
+                      return m ? `${m.provider_name || m.provider} · ${m.name}` : selectedModel
+                    })()
+                  })
+                </Button>
+              </Popover>
+            )}
+          </>}
+
+          {/* 批量校对状态胶囊 Tag（弹出 Popover 详情） */}
+          {batchInfo && (
             <Popover
               trigger="click"
-              open={showOptions}
-              onOpenChange={setShowOptions}
-              placement="topLeft"
-              styles={{ body: { padding: '12px 16px', width: 440 } }}
+              placement="top"
+              styles={{ body: { padding: '12px 16px', maxWidth: 380 } }}
               content={
-                <ControlsRow
-                  showOptions={true}
-                  selectedModel={selectedModel} onModelChange={onModelChange}
-                  models={models}
-                  selectedTypes={selectedTypes} onTypesChange={onTypesChange}
-                  batchMaxConcurrent={batchMaxConcurrent} onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
-                  proofreadWindowSize={proofreadWindowSize} onWindowSizeChange={onWindowSizeChange}
-                  inProgress={inProgress}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {batchInfo.status === 'running' ? '🔄 批量校对中'
+                        : batchInfo.status === 'ok' ? '✓ 批量完成'
+                          : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
+                            : '✖ 全部失败'}
+                    </span>
+                    <span style={{ fontSize: 12, opacity: 0.6 }}>
+                      第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
+                      {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    {(batchInfo.windows || []).map(w => {
+                      const isRetrying = retryingWindow === w.window_index
+                      return (
+                        <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <span style={{
+                            fontSize: 16,
+                            color: isRetrying ? '#d4a359'
+                              : w.status === 'ok' ? '#52c41a'
+                                : w.status === 'failed' ? '#ff4d4f'
+                                  : '#d4a359'
+                          }}>
+                            {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
+                          </span>
+                          <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
+                          {w.status === 'failed' && (
+                            <Button
+                              size="small"
+                              type="link"
+                              danger
+                              loading={isRetrying}
+                              style={{ padding: 0, height: 'auto', fontSize: 11 }}
+                              disabled={inProgress || retryingWindow !== null}
+                              onClick={() => onRetryWindow?.(batchInfo.batch_id, w.window_index)}
+                            >
+                              {isRetrying ? '重试中' : '重试'}
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               }
             >
-              <Button
-                type="text"
-                size="middle"
-                style={{
-                  color: color.textPrimary, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
-                  maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
-                }}
+              <Tag
+                color={batchInfo.failed_windows > 0 ? 'error' : batchInfo.status === 'ok' ? 'success' : 'processing'}
+                style={{ cursor: 'pointer', padding: '4px 8px', fontSize: 12, borderRadius: 6, margin: 0, flexShrink: 0 }}
               >
-                {showOptions ? '◀' : '▶'} 校对配置 ({
-                  (() => {
-                    const m = models.find(x => x.model_id === selectedModel)
-                    return m ? `${m.provider_name || m.provider} · ${m.name}` : selectedModel
-                  })()
-                })
-              </Button>
+                {batchInfo.status === 'running' ? '🔄 批量中' : batchInfo.status === 'ok' ? '✓ 批量完成' : '⚠ 部分失败'} ({batchInfo.done_windows}/{batchInfo.total_windows}) ▾
+              </Tag>
             </Popover>
           )}
-        </>}
 
-        {/* 批量校对状态胶囊 Tag（弹出 Popover 详情） */}
-        {batchInfo && (
-          <Popover
-            trigger="click"
-            placement="top"
-            styles={{ body: { padding: '12px 16px', maxWidth: 380 } }}
-            content={
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>
-                    {batchInfo.status === 'running' ? '🔄 批量校对中'
-                    : batchInfo.status === 'ok' ? '✓ 批量完成'
-                    : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
-                    : '✖ 全部失败'}
-                  </span>
-                  <span style={{ fontSize: 12, opacity: 0.6 }}>
-                    第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
-                    {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  {(batchInfo.windows || []).map(w => {
-                    const isRetrying = retryingWindow === w.window_index
-                    return (
-                      <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ fontSize: 16,
-                          color: isRetrying ? '#d4a359'
-                            : w.status === 'ok' ? '#52c41a'
-                            : w.status === 'failed' ? '#ff4d4f'
-                            : '#d4a359' }}>
-                          {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
-                        </span>
-                        <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
-                        {w.status === 'failed' && (
-                          <Button
-                            size="small"
-                            type="link"
-                            danger
-                            loading={isRetrying}
-                            style={{ padding: 0, height: 'auto', fontSize: 11 }}
-                            disabled={inProgress || retryingWindow !== null}
-                            onClick={() => onRetryWindow?.(batchInfo.batch_id, w.window_index)}
-                          >
-                            {isRetrying ? '重试中' : '重试'}
-                          </Button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            }
-          >
-            <Tag
-              color={batchInfo.failed_windows > 0 ? 'error' : batchInfo.status === 'ok' ? 'success' : 'processing'}
-              style={{ cursor: 'pointer', padding: '4px 8px', fontSize: 12, borderRadius: 6, margin: 0, flexShrink: 0 }}
-            >
-              {batchInfo.status === 'running' ? '🔄 批量中' : batchInfo.status === 'ok' ? '✓ 批量完成' : '⚠ 部分失败'} ({batchInfo.done_windows}/{batchInfo.total_windows}) ▾
-            </Tag>
-          </Popover>
-        )}
-
-        {/* center: main content */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, minWidth: 0 }}>
-        {inProgress || proofreading ? (
-          <>
-            <Progress
-              percent={percent}
-              status="active"
-              style={{ width: 200, margin: 0 }}
-              size="small"
-            />
-            <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, whiteSpace: 'nowrap' }}>
-              <LoadingOutlined spin style={{ marginRight: 6 }} />
-              {bannerText || '正在校对，请稍候…'}
-            </span>
-          </>
-        ) : flatErrors.length > 0 && pending.length > 0 ? (
-          <>
-            {selectedError && selIsPending ? (
+          {/* center: main content */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            {inProgress || proofreading ? (
               <>
-                <Input
-                  value={customEdit}
-                  onChange={(e) => setCustomEdit(e.target.value)}
-                  style={{ maxWidth: 360, minWidth: 160, flex: '1 1 240px', fontSize: 15 }}
-                  size="large"
-                  placeholder="修改结果…"
+                <Progress
+                  percent={percent}
+                  status="active"
+                  style={{ width: 200, margin: 0 }}
+                  size="small"
                 />
-                <style>{`
+                <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, whiteSpace: 'nowrap' }}>
+                  <LoadingOutlined spin style={{ marginRight: 6 }} />
+                  {bannerText || '正在校对，请稍候…'}
+                </span>
+              </>
+            ) : flatErrors.length > 0 && pending.length > 0 ? (
+              <>
+                {selectedError && selIsPending ? (
+                  <>
+                    <Input
+                      value={customEdit}
+                      onChange={(e) => setCustomEdit(e.target.value)}
+                      style={{ maxWidth: 360, minWidth: 160, flex: '1 1 240px', fontSize: 15 }}
+                      size="large"
+                      placeholder="修改结果…"
+                    />
+                    <style>{`
                   .bar-action-btn {
                     transition: transform 0.08s cubic-bezier(0, 0, 0.2, 1), background 0.15s, box-shadow 0.15s !important;
                   }
@@ -2606,130 +2608,130 @@ function ReviewReaderInner({
                     transform: scale(0.95) !important;
                   }
                 `}</style>
+                    <Button
+                      type="primary"
+                      shape="round"
+                      size="large"
+                      className="bar-action-btn"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => { setFlashSide('accepted'); setTimeout(() => { setFlashSide(null); handleStatus('accepted') }, 100) }}
+                      disabled={inProgress}
+                      style={{
+                        height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
+                        backgroundColor: flashSide === 'accepted' ? '#52c41a' : undefined,
+                        borderColor: flashSide === 'accepted' ? '#52c41a' : undefined,
+                        boxShadow: 'none',
+                      }}
+                    >
+                      ← 采纳
+                    </Button>
+                    <Button
+                      size="large"
+                      className="bar-action-btn"
+                      icon={<CloseCircleOutlined />}
+                      onClick={() => { setFlashSide('rejected'); setTimeout(() => { setFlashSide(null); handleStatus('rejected') }, 100) }}
+                      disabled={inProgress}
+                      style={{
+                        height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
+                        backgroundColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
+                        color: flashSide === 'rejected' ? '#fff' : undefined,
+                        borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
+                        boxShadow: 'none',
+                      }}
+                    >
+                      拒绝 →
+                    </Button>
+                    <Tag style={{ marginLeft: 4, fontSize: 15, padding: '4px 10px', borderRadius: 999, flexShrink: 0 }}>
+                      {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
+                    </Tag>
+                    <ShortcutHint />
+                  </>
+                ) : (
+                  <span style={{ color: color.textTertiary }}>
+                    点击文中有标记的文本查看错误详情
+                  </span>
+                )}
+              </>
+            ) : selectedParas?.size > 0 ? (
+              <>
                 <Button
                   type="primary"
                   shape="round"
                   size="large"
                   className="bar-action-btn"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => { setFlashSide('accepted'); setTimeout(() => { setFlashSide(null); handleStatus('accepted') }, 100) }}
+                  icon={<ThunderboltOutlined />}
+                  loading={proofreading}
+                  onClick={() => onStartSelectionProofread?.([...selectedParas])}
                   disabled={inProgress}
-                  style={{
-                    height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
-                    backgroundColor: flashSide === 'accepted' ? '#52c41a' : undefined,
-                    borderColor: flashSide === 'accepted' ? '#52c41a' : undefined,
-                    boxShadow: 'none',
-                  }}
+                  style={{ height: 52, paddingInline: 36, fontSize: 17 }}
                 >
-                  ← 采纳
+                  校对选中（{selectedParas.size} 段）
                 </Button>
-                <Button
-                  size="large"
-                  className="bar-action-btn"
-                  icon={<CloseCircleOutlined />}
-                  onClick={() => { setFlashSide('rejected'); setTimeout(() => { setFlashSide(null); handleStatus('rejected') }, 100) }}
-                  disabled={inProgress}
-                  style={{
-                    height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
-                    backgroundColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
-                    color: flashSide === 'rejected' ? '#fff' : undefined,
-                    borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
-                    boxShadow: 'none',
-                  }}
-                >
-                  拒绝 →
-                </Button>
-                <Tag style={{ marginLeft: 4, fontSize: 15, padding: '4px 10px', borderRadius: 999, flexShrink: 0 }}>
-                  {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
-                </Tag>
                 <ShortcutHint />
               </>
             ) : (
-              <span style={{ color: color.textTertiary }}>
-                点击文中有标记的文本查看错误详情
-              </span>
+              <>
+                <Button
+                  type="primary"
+                  shape="round"
+                  size="large"
+                  className="bar-action-btn"
+                  icon={<ThunderboltOutlined />}
+                  loading={proofreading}
+                  onClick={onStartProofread}
+                  disabled={inProgress}
+                  style={{ height: 52, paddingInline: 36, fontSize: 17 }}
+                >
+                  {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
+                </Button>
+                <Button
+                  shape="round"
+                  size="large"
+                  className="bar-action-btn"
+                  icon={<ThunderboltOutlined />}
+                  loading={proofreading}
+                  onClick={onStartBatchProofread}
+                  disabled={inProgress}
+                  style={{ height: 52, paddingInline: 24, fontSize: 16, marginLeft: 8 }}
+                  title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
+                >
+                  批量校对
+                </Button>
+                <ShortcutHint />
+              </>
             )}
-          </>
-        ) : selectedParas?.size > 0 ? (
-          <>
-            <Button
-              type="primary"
-              shape="round"
-              size="large"
-              className="bar-action-btn"
-              icon={<ThunderboltOutlined />}
-              loading={proofreading}
-              onClick={() => onStartSelectionProofread?.([...selectedParas])}
-              disabled={inProgress}
-              style={{ height: 52, paddingInline: 36, fontSize: 17 }}
-            >
-              校对选中（{selectedParas.size} 段）
-            </Button>
-            <ShortcutHint />
-          </>
-        ) : (
-          <>
-            <Button
-              type="primary"
-              shape="round"
-              size="large"
-              className="bar-action-btn"
-              icon={<ThunderboltOutlined />}
-              loading={proofreading}
-              onClick={onStartProofread}
-              disabled={inProgress}
-              style={{ height: 52, paddingInline: 36, fontSize: 17 }}
-            >
-              {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
-            </Button>
-            <Button
-              shape="round"
-              size="large"
-              className="bar-action-btn"
-              icon={<ThunderboltOutlined />}
-              loading={proofreading}
-              onClick={onStartBatchProofread}
-              disabled={inProgress}
-              style={{ height: 52, paddingInline: 24, fontSize: 16, marginLeft: 8 }}
-              title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
-            >
-              批量校对
-            </Button>
-            <ShortcutHint />
-          </>
-        )}
-        </div>
+          </div>
 
-        {/* right: 字号调节 */}
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          background: color.bgCard,
-          borderRadius: radius.md,
-          border: `1px solid ${color.border}`,
-          padding: '4px 10px',
-        }}>
-          <Button
-            type="text"
-            size="small"
-            icon={<MinusOutlined />}
-            disabled={currentBodyFontSize <= 14}
-            onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
-            style={{ width: 28, height: 28, fontSize: 14 }}
-          />
-          <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
-            {currentBodyFontSize}
-          </span>
-          <Button
-            type="text"
-            size="small"
-            icon={<PlusOutlined />}
-            disabled={currentBodyFontSize >= 24}
-            onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
-            style={{ width: 28, height: 28, fontSize: 14 }}
-          />
-        </div>
-        </div>
+          {/* right: 字号调节 */}
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: color.bgCard,
+              borderRadius: radius.md,
+              border: `1px solid ${color.border}`,
+              padding: '4px 10px',
+            }}>
+              <Button
+                type="text"
+                size="small"
+                icon={<MinusOutlined />}
+                disabled={currentBodyFontSize <= 14}
+                onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
+                style={{ width: 28, height: 28, fontSize: 14 }}
+              />
+              <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
+                {currentBodyFontSize}
+              </span>
+              <Button
+                type="text"
+                size="small"
+                icon={<PlusOutlined />}
+                disabled={currentBodyFontSize >= 24}
+                onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
+                style={{ width: 28, height: 28, fontSize: 14 }}
+              />
+            </div>
+          </div>
         </div>
       </div>
       {selectedError && (
