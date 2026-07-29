@@ -226,84 +226,237 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
 
 const ErrorDetailCard = forwardRef(ErrorDetailCardInner)
 
+function computeExactLcsDiff(original, suggested) {
+  const m = original.length
+  const n = suggested.length
+  if (m === 0 || n === 0) {
+    return {
+      origMatched: new Array(m).fill(false),
+      suggMatched: new Array(n).fill(false),
+    }
+  }
+
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (original[i - 1] === suggested[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
+      }
+    }
+  }
+
+  const origMatched = new Array(m).fill(false)
+  const suggMatched = new Array(n).fill(false)
+  let i = m, j = n
+  while (i > 0 && j > 0) {
+    if (original[i - 1] === suggested[j - 1]) {
+      origMatched[i - 1] = true
+      suggMatched[j - 1] = true
+      i--
+      j--
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--
+    } else {
+      j--
+    }
+  }
+
+  return { origMatched, suggMatched }
+}
+
 function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
   if (!text) return null
-  // 对同一原文多次出现，按顺序分配不同位置
+
+  // 1. 过滤活跃未作废错误
+  const activeErrs = paraErrors.filter(e => !e.is_obsolete)
+
   const posMap = {}
   const intervals = []
-  paraErrors.forEach(e => {
-    const t = e.user_status === 'accepted' ? e.suggested_text : e.original_text
-    if (!t) return
-    const from = posMap[t] ?? 0
-    const idx = text.indexOf(t, from)
+  const bounds = new Set([0, text.length])
+
+  activeErrs.forEach(e => {
+    const isAccepted = e.user_status === 'accepted'
+    const targetStr = isAccepted ? e.suggested_text : e.original_text
+    if (!targetStr) return
+
+    const from = posMap[targetStr] ?? 0
+    const idx = text.indexOf(targetStr, from)
     if (idx >= 0) {
-      intervals.push({ error: e, start: idx, end: idx + t.length })
-      posMap[t] = idx + 1
+      const origStr = e.original_text || ''
+      const suggStr = e.suggested_text || ''
+      const lcs = computeExactLcsDiff(origStr, suggStr)
+
+      const start = idx
+      const end = idx + targetStr.length
+
+      intervals.push({
+        error: e,
+        start,
+        end,
+        targetStr,
+        isAccepted,
+        lcs,
+      })
+
+      bounds.add(start)
+      bounds.add(end)
+      for (let k = 0; k <= targetStr.length; k++) {
+        bounds.add(start + k)
+      }
+
+      posMap[targetStr] = idx + 1
     }
   })
+
   if (intervals.length === 0) return <span>{text}</span>
-  intervals.sort((a, b) => a.start - b.start || a.end - b.end)
 
-  // 按所有区间边界切分正文，每段只渲染一次（无重复），标注覆盖它的所有错误 id
-  const bounds = new Set([0, text.length])
-  intervals.forEach(iv => { bounds.add(iv.start); bounds.add(iv.end) })
   const points = [...bounds].sort((a, b) => a - b)
-
   const segs = []
+
   for (let i = 0; i < points.length - 1; i++) {
     const start = points[i]
     const end = points[i + 1]
     if (start >= end) continue
+
     const segText = text.slice(start, end)
     const covering = intervals.filter(iv => iv.start <= start && iv.end >= end)
+
     if (covering.length === 0) {
       segs.push(<span key={`t${start}`}>{segText}</span>)
       continue
     }
+
     const ids = covering.map(iv => iv.error.id)
     const isSelected = ids.includes(selectedId)
     const srcIv = covering.find(iv => iv.error.id === selectedId) || covering[0]
     const source = srcIv.error
-    const accepted = source.user_status === 'accepted'
-    const pending = source.user_status === 'pending'
-    const displayText = (() => {
-      // 单错误覆盖且已采纳：将 segment 按原文长度比例映射到 suggested_text
-      if (covering.length === 1 && accepted) {
-        const origSegLen = end - start
-        const origErrLen = srcIv.end - srcIv.start
-        const sugErrLen = source.suggested_text.length
-        const off = start - srcIv.start
-        if (origErrLen > 0) {
-          const sugSegLen = Math.round(origSegLen * sugErrLen / origErrLen)
-          return source.suggested_text.slice(off, off + sugSegLen)
+    const isAccepted = source.user_status === 'accepted'
+    const isPending = source.user_status === 'pending'
+    const { lcs, targetStr } = srcIv
+
+    // 计算当前 1 个或多个字符在 targetStr 内部的精准下标
+    const offsetInTarget = start - srcIv.start
+
+    // LCS 单字符精准对比判定：该字符在 LCS 算法中是否匹配相同
+    let isCharDiff = false
+    let isPunctOrDel = false
+
+    if (isAccepted) {
+      const matched = lcs.suggMatched[offsetInTarget]
+      if (matched === false) isCharDiff = true
+    } else {
+      const matched = lcs.origMatched[offsetInTarget]
+      if (matched === false) {
+        isCharDiff = true
+        const ch = targetStr[offsetInTarget]
+        if (ch && (/[，。！？；：“”‘’（）《》、\.,!\?\:\;]/.test(ch) || source.type === 'punctuation' || source.type === 'redundant')) {
+          isPunctOrDel = true
         }
       }
-      return segText
-    })()
+    }
+
+    // 精确判断已采纳删减项的真实缝隙位置
+    const hasDeletion = isAccepted && source.original_text && (!source.suggested_text || source.original_text.length > source.suggested_text.length)
+    let showDeletionBefore = false
+    let showDeletionAfter = false
+
+    if (hasDeletion) {
+      const delDiff = computeInlineDiff(source.original_text || '', source.suggested_text || '')
+      const pLen = delDiff.prefix.length
+      if (pLen === 0 && offsetInTarget === 0) {
+        showDeletionBefore = true
+      } else if (pLen > 0 && pLen < targetStr.length && offsetInTarget === pLen) {
+        showDeletionBefore = true
+      } else if (pLen >= targetStr.length && offsetInTarget === targetStr.length - 1) {
+        showDeletionAfter = true
+      }
+    }
+
+    let borderBottom = 'none'
+    let textDecoration = undefined
+    let colorStyle = undefined
+
+    if (isCharDiff) {
+      if (isAccepted) {
+        // 已采纳状态：加粗明亮翡翠绿实线
+        borderBottom = isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a'
+      } else if (isPending) {
+        if (isPunctOrDel || source.type === 'redundant' || (srcIv.diff && srcIv.diff.removed && !srcIv.diff.added)) {
+          // 待处理多余/冗余删减字：中划线 + 加粗明红实线
+          borderBottom = isSelected ? '3.5px solid #cf1322' : '2.5px solid #ff4d4f'
+          textDecoration = 'line-through'
+          colorStyle = isSelected ? '#cf1322' : '#ff4d4f'
+        } else {
+          // 待处理错字/异形词：加粗明黄实线
+          borderBottom = isSelected ? '3.5px solid #d46b08' : '2.5px solid #faad14'
+        }
+      }
+    }
+
     segs.push(
-      <span
-        key={`seg${start}`}
-        data-error-id={ids.join(',')}
-        onClick={() => {
-          if (ids.length <= 1) { onSelect(ids[0]); return }
-          const cur = ids.indexOf(selectedId)
-          onSelect(ids[(cur + 1) % ids.length])
-        }}
-        title={covering.length > 1
-          ? covering.map(iv => `${iv.error.original_text} → ${iv.error.suggested_text}`).join('\n')
-          : undefined}
-        style={{
-          cursor: 'pointer',
-          padding: '0 2px',
-          borderRadius: 2,
-          backgroundColor: isSelected ? color.bgHighlight : 'transparent',
-          borderBottom: accepted
-            ? `1px dashed ${color.textTertiary}`
-            : pending
-              ? (isSelected ? `2px solid ${color.warning}` : `1px dotted ${color.warning}`)
-              : 'none',
-        }}
-      >{displayText}</span>,
+      <React.Fragment key={`seg${start}`}>
+        {showDeletionBefore && (
+          <span
+            data-error-id={source.id}
+            onClick={(ev) => { ev.stopPropagation(); onSelect(source.id) }}
+            title={`已删除文字: ${source.original_text}`}
+            style={{
+              cursor: 'pointer',
+              color: isSelected ? '#237804' : '#389e0d',
+              fontSize: 11,
+              fontWeight: 500,
+              borderBottom: isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a',
+              borderRadius: 3,
+              padding: '0 3px',
+              margin: '0 2px',
+              userSelect: 'none',
+              backgroundColor: isSelected ? 'rgba(82,196,26,0.15)' : 'transparent',
+            }}
+          >[已删字]</span>
+        )}
+        <span
+          data-error-id={ids.join(',')}
+          onClick={() => {
+            if (ids.length <= 1) { onSelect(ids[0]); return }
+            const cur = ids.indexOf(selectedId)
+            onSelect(ids[(cur + 1) % ids.length])
+          }}
+          title={covering.length > 1
+            ? covering.map(iv => `${iv.error.original_text} → ${iv.error.suggested_text}`).join('\n')
+            : undefined}
+          style={{
+            cursor: 'pointer',
+            padding: isCharDiff ? '0 1px' : '0',
+            backgroundColor: isSelected ? color.bgHighlight : 'transparent',
+            borderBottom,
+            textDecoration,
+            color: colorStyle,
+            borderRadius: isCharDiff ? 3 : 0,
+            transition: 'border-bottom 0.1s ease',
+          }}
+        >{segText}</span>
+        {showDeletionAfter && (
+          <span
+            data-error-id={source.id}
+            onClick={(ev) => { ev.stopPropagation(); onSelect(source.id) }}
+            title={`已删除文字: ${source.original_text}`}
+            style={{
+              cursor: 'pointer',
+              color: isSelected ? '#237804' : '#389e0d',
+              fontSize: 11,
+              fontWeight: 500,
+              borderBottom: isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a',
+              borderRadius: 3,
+              padding: '0 3px',
+              margin: '0 2px',
+              userSelect: 'none',
+              backgroundColor: isSelected ? 'rgba(82,196,26,0.15)' : 'transparent',
+            }}
+          >[已删字]</span>
+        )}
+      </React.Fragment>,
     )
   }
   return <>{segs}</>
