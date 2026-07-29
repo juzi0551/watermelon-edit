@@ -6,6 +6,14 @@ import os
 import sys
 import shutil
 
+# PyInstaller 静态依赖锚点：确保以下包被自动追踪打包
+import fastapi  # noqa: F401
+import starlette  # noqa: F401
+import pydantic  # noqa: F401
+import uvicorn  # noqa: F401
+import python_multipart  # noqa: F401
+import jinja2.ext  # noqa: F401
+
 
 def get_base_dir():
     """获取基础目录：打包后用 exe 所在目录，开发时用项目根目录。"""

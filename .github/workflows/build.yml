@@ -46,11 +46,8 @@ jobs:
             --paths "backend" `
             --add-data "backend/static;backend/static" `
             --add-data "backend/app/data;backend/app/data" `
-            --collect-all litellm --collect-all httpx --collect-all httpcore --collect-all h2 `
-            --collect-all fastapi --collect-all starlette --collect-all pydantic `
-            --collect-all uvicorn `
+            --collect-all litellm `
             --hidden-import app --hidden-import app.api --hidden-import app.core --hidden-import app.models --hidden-import app.utils `
-            --hidden-import python_multipart --hidden-import jinja2.ext `
             run.py
 
       - name: Debug - list collected modules
