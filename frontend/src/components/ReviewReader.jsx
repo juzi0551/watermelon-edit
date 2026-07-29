@@ -43,28 +43,79 @@ const kbdStyle = {
 }
 
 function computeInlineDiff(original, suggested) {
+  const orig = original || ''
+  const sugg = suggested || ''
   let prefixLen = 0
-  while (prefixLen < original.length && prefixLen < suggested.length &&
-         original[prefixLen] === suggested[prefixLen]) {
+  while (prefixLen < orig.length && prefixLen < sugg.length && orig[prefixLen] === sugg[prefixLen]) {
     prefixLen++
   }
   let suffixLen = 0
-  while (suffixLen < original.length - prefixLen &&
-         suffixLen < suggested.length - prefixLen &&
-         original[original.length - 1 - suffixLen] === suggested[suggested.length - 1 - suffixLen]) {
+  while (suffixLen < orig.length - prefixLen &&
+         suffixLen < sugg.length - prefixLen &&
+         orig[orig.length - 1 - suffixLen] === sugg[sugg.length - 1 - suffixLen]) {
     suffixLen++
   }
   return {
-    prefix: original.slice(0, prefixLen),
-    removed: original.slice(prefixLen, original.length - suffixLen),
-    added: suggested.slice(prefixLen, suggested.length - suffixLen),
-    suffix: original.slice(original.length - suffixLen),
+    prefix: orig.slice(0, prefixLen),
+    removed: orig.slice(prefixLen, orig.length - suffixLen),
+    added: sugg.slice(prefixLen, sugg.length - suffixLen),
+    suffix: orig.slice(orig.length - suffixLen),
   }
 }
 
+function computeLcsDiffChunks(original, suggested) {
+  const orig = original || ''
+  const sugg = suggested || ''
+  const m = orig.length
+  const n = sugg.length
+  if (m === 0 && n === 0) return []
+  if (m === 0) return [{ type: 'added', text: sugg }]
+  if (n === 0) return [{ type: 'removed', text: orig }]
+
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (orig[i - 1] === sugg[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
+      }
+    }
+  }
+
+  const ops = []
+  let i = m, j = n
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && orig[i - 1] === sugg[j - 1]) {
+      ops.push({ type: 'unchanged', char: orig[i - 1] })
+      i--
+      j--
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ type: 'added', char: sugg[j - 1] })
+      j--
+    } else if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
+      ops.push({ type: 'removed', char: orig[i - 1] })
+      i--
+    }
+  }
+
+  ops.reverse()
+
+  const chunks = []
+  ops.forEach(op => {
+    if (chunks.length > 0 && chunks[chunks.length - 1].type === op.type) {
+      chunks[chunks.length - 1].text += op.char
+    } else {
+      chunks.push({ type: op.type, text: op.char })
+    }
+  })
+
+  return chunks
+}
+
 function DiffView({ original, suggested }) {
-  const { prefix, removed, added, suffix } = useMemo(
-    () => computeInlineDiff(original, suggested),
+  const chunks = useMemo(
+    () => computeLcsDiffChunks(original, suggested),
     [original, suggested],
   )
   return (
@@ -75,33 +126,48 @@ function DiffView({ original, suggested }) {
       fontSize: fontSize.bodySm,
       lineHeight: 1.8,
       border: `1px solid ${color.border}`,
+      wordBreak: 'break-all',
     }}>
-      {prefix && <span style={{ color: color.textPrimary }}>{prefix}</span>}
-      {removed && (
-        <span style={{
-          background: color.diffRemovedBg,
-          color: color.diffRemovedText,
-          textDecoration: 'line-through',
-          padding: '1px 4px',
-          borderRadius: radius.sm,
-          margin: '0 1px',
-        }}>
-          {removed}
-        </span>
-      )}
-      {added && (
-        <span style={{
-          background: color.diffAddedBg,
-          color: color.diffAddedText,
-          fontWeight: 600,
-          padding: '1px 4px',
-          borderRadius: radius.sm,
-          margin: '0 1px',
-        }}>
-          {added}
-        </span>
-      )}
-      {suffix && <span style={{ color: color.textPrimary }}>{suffix}</span>}
+      {chunks.map((chunk, idx) => {
+        if (chunk.type === 'unchanged') {
+          return <span key={idx} style={{ color: color.textPrimary }}>{chunk.text}</span>
+        }
+        if (chunk.type === 'removed') {
+          return (
+            <span
+              key={idx}
+              style={{
+                background: color.diffRemovedBg,
+                color: color.diffRemovedText,
+                textDecoration: 'line-through',
+                padding: '1px 4px',
+                borderRadius: radius.sm,
+                margin: '0 1px',
+              }}
+            >
+              {chunk.text}
+            </span>
+          )
+        }
+        if (chunk.type === 'added') {
+          return (
+            <span
+              key={idx}
+              style={{
+                background: color.diffAddedBg,
+                color: color.diffAddedText,
+                fontWeight: 600,
+                padding: '1px 4px',
+                borderRadius: radius.sm,
+                margin: '0 1px',
+              }}
+            >
+              {chunk.text}
+            </span>
+          )
+        }
+        return null
+      })}
     </div>
   )
 }
