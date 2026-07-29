@@ -12,7 +12,9 @@ SQLite 数据库模块
 import sqlite3
 import os
 import json
+from datetime import datetime
 from contextlib import contextmanager
+from app.utils.helpers import generate_id
 
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 DB_PATH = os.path.join(DB_DIR, "novel_proofreader.db")
@@ -149,6 +151,10 @@ def _migrate_schema(conn):
         pass
     try:
         conn.execute("ALTER TABLE paragraphs ADD COLUMN page_break_type TEXT DEFAULT 'none'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE paragraphs ADD COLUMN edit_note TEXT")
     except sqlite3.OperationalError:
         pass
     try:
@@ -712,16 +718,63 @@ def insert_paragraphs(document_id: str, rows: list[tuple]):
         )
 
 
-def update_paragraph_text(document_id: str, idx: int, new_text: str):
-    """更新段落文本（写入 revised_text）并重算字符数，同时自动归档受影响废弃错字。"""
+def parse_notes_history(raw_note_str: str | None) -> list[dict]:
+    if not raw_note_str:
+        return []
+    try:
+        if raw_note_str.startswith("["):
+            res = json.loads(raw_note_str)
+            if isinstance(res, list):
+                return res
+    except Exception:
+        pass
+    return [{"id": "legacy_1", "note": raw_note_str, "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")}]
+
+
+def update_paragraph_text(document_id: str, idx: int, new_text: str, edit_note: str | None = None):
+    """更新段落文本（写入 revised_text）及多轮编辑备注履历，重算字符数，并自动归档受影响废弃错字。"""
     with get_conn() as conn:
+        row = conn.execute(
+            "SELECT text, edit_note FROM paragraphs WHERE document_id = ? AND idx = ?",
+            (document_id, idx),
+        ).fetchone()
+        orig_text = row["text"] if row else None
+        existing_raw_note = row["edit_note"] if row else None
+
+        # 若 new_text 与初始原文相同，则视为恢复初始原文：将 revised_text 与 edit_note 均置为空 NULL
+        if orig_text is not None and new_text == orig_text:
+            revised_val = None
+            note_val = None
+        else:
+            revised_val = new_text
+            notes_list = parse_notes_history(existing_raw_note)
+            note_str = edit_note.strip() if (edit_note and isinstance(edit_note, str) and edit_note.strip()) else ""
+            new_note_item = {
+                "id": generate_id(),
+                "note": note_str,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "revised_text": new_text,
+            }
+            notes_list.append(new_note_item)
+            note_val = json.dumps(notes_list, ensure_ascii=False) if notes_list else None
+
         conn.execute(
             """UPDATE paragraphs 
-               SET revised_text = ?, char_count = ?
+               SET revised_text = ?, char_count = ?, edit_note = ?
                WHERE document_id = ? AND idx = ?""",
-            (new_text, len(new_text), document_id, idx),
+            (revised_val, len(new_text), note_val, document_id, idx),
         )
     mark_unmatched_errors_obsolete(document_id, idx, new_text)
+
+
+def update_paragraph_notes_history(document_id: str, idx: int, notes_list: list[dict]):
+    """覆盖或更新段落多轮备注履历列表。"""
+    with get_conn() as conn:
+        note_val = json.dumps(notes_list, ensure_ascii=False) if notes_list else None
+        conn.execute(
+            "UPDATE paragraphs SET edit_note = ? WHERE document_id = ? AND idx = ?",
+            (note_val, document_id, idx),
+        )
 
 
 def toggle_paragraph_page_break(document_id: str, idx: int, pb_val: str | bool):
@@ -848,6 +901,7 @@ def clean_empty_paragraphs(document_id: str) -> int:
 def set_paragraph_as_chapter(document_id: str, idx: int, level: int = 1, title: str | None = None) -> str:
     """人工设置某个段落为章节。"""
     with get_conn() as conn:
+        conn.execute("UPDATE documents SET last_error = NULL WHERE id = ?", (document_id,))
         if not title:
             row = conn.execute("SELECT text FROM paragraphs WHERE document_id = ? AND idx = ?", (document_id, idx)).fetchone()
             title = row["text"] if row and row["text"] else f"第 {idx+1} 段"

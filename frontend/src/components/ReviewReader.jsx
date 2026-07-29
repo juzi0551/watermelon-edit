@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import { diffChars } from 'diff'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
   Select, Radio, Progress, Input, InputNumber, Badge, Popover, Tooltip, message,
@@ -9,11 +10,11 @@ import {
   ThunderboltOutlined, LoadingOutlined, CloseOutlined,
   MinusOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
   ScissorOutlined, BookOutlined, ExclamationCircleOutlined,
-  MenuFoldOutlined,
+  MenuFoldOutlined, EyeOutlined,
 } from '@ant-design/icons'
 import { color, radius, spacing, fontSize } from '../design-tokens'
 import {
-  updateParagraph, deleteParagraph, togglePageBreak, setChapter,
+  updateParagraph, updateParagraphNotes, deleteParagraph, togglePageBreak, setChapter,
 } from '../services/api'
 
 const EMPTY_ARRAY = Object.freeze([])
@@ -45,72 +46,37 @@ const kbdStyle = {
 function computeInlineDiff(original, suggested) {
   const orig = original || ''
   const sugg = suggested || ''
-  let prefixLen = 0
-  while (prefixLen < orig.length && prefixLen < sugg.length && orig[prefixLen] === sugg[prefixLen]) {
-    prefixLen++
-  }
-  let suffixLen = 0
-  while (suffixLen < orig.length - prefixLen &&
-         suffixLen < sugg.length - prefixLen &&
-         orig[orig.length - 1 - suffixLen] === sugg[sugg.length - 1 - suffixLen]) {
-    suffixLen++
-  }
-  return {
-    prefix: orig.slice(0, prefixLen),
-    removed: orig.slice(prefixLen, orig.length - suffixLen),
-    added: sugg.slice(prefixLen, sugg.length - suffixLen),
-    suffix: orig.slice(orig.length - suffixLen),
-  }
+  const changes = diffChars(orig, sugg)
+  let removed = ''
+  let added = ''
+  let prefix = ''
+  let suffix = ''
+  
+  changes.forEach(c => {
+    if (c.removed) removed += c.value
+    else if (c.added) added += c.value
+    else {
+      if (!removed && !added) prefix += c.value
+      else suffix += c.value
+    }
+  })
+  return { prefix, removed, added, suffix }
 }
 
 function computeLcsDiffChunks(original, suggested) {
   const orig = original || ''
   const sugg = suggested || ''
-  const m = orig.length
-  const n = sugg.length
-  if (m === 0 && n === 0) return []
-  if (m === 0) return [{ type: 'added', text: sugg }]
-  if (n === 0) return [{ type: 'removed', text: orig }]
+  if (!orig && !sugg) return []
+  if (!orig) return [{ type: 'added', text: sugg }]
+  if (!sugg) return [{ type: 'removed', text: orig }]
 
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (orig[i - 1] === sugg[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-      }
-    }
-  }
-
-  const ops = []
-  let i = m, j = n
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && orig[i - 1] === sugg[j - 1]) {
-      ops.push({ type: 'unchanged', char: orig[i - 1] })
-      i--
-      j--
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      ops.push({ type: 'added', char: sugg[j - 1] })
-      j--
-    } else if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
-      ops.push({ type: 'removed', char: orig[i - 1] })
-      i--
-    }
-  }
-
-  ops.reverse()
-
-  const chunks = []
-  ops.forEach(op => {
-    if (chunks.length > 0 && chunks[chunks.length - 1].type === op.type) {
-      chunks[chunks.length - 1].text += op.char
-    } else {
-      chunks.push({ type: op.type, text: op.char })
-    }
+  const changes = diffChars(orig, sugg)
+  return changes.map(c => {
+    let type = 'unchanged'
+    if (c.added) type = 'added'
+    else if (c.removed) type = 'removed'
+    return { type, text: c.value }
   })
-
-  return chunks
 }
 
 function DiffView({ original, suggested }) {
@@ -163,6 +129,72 @@ function DiffView({ original, suggested }) {
               }}
             >
               {chunk.text}
+            </span>
+          )
+        }
+        return null
+      })}
+    </div>
+  )
+}
+
+function CompactDiffView({ original, suggested }) {
+  const chunks = useMemo(
+    () => computeLcsDiffChunks(original, suggested),
+    [original, suggested],
+  )
+  const changeChunks = useMemo(
+    () => chunks.filter(c => c.type !== 'unchanged'),
+    [chunks],
+  )
+
+  if (changeChunks.length === 0) return null
+
+  const hasOnlyDeletions = changeChunks.length > 0 && changeChunks.every(c => c.type === 'removed')
+  const hasOnlyAdditions = changeChunks.length > 0 && changeChunks.every(c => c.type === 'added')
+
+  const labelText = hasOnlyDeletions ? '已删字：' : hasOnlyAdditions ? '新增：' : '变动：'
+  const labelColor = hasOnlyDeletions ? '#cf1322' : hasOnlyAdditions ? '#389e0d' : color.textTertiary
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', margin: '4px 0 6px' }}>
+      <span style={{ fontSize: 11, color: labelColor, fontWeight: 600 }}>
+        {labelText}
+      </span>
+      {changeChunks.map((chunk, idx) => {
+        if (chunk.type === 'removed') {
+          return (
+            <span
+              key={idx}
+              style={{
+                background: '#fff1f0',
+                color: '#cf1322',
+                textDecoration: 'line-through',
+                padding: '1px 6px',
+                borderRadius: radius.sm,
+                fontSize: 12,
+                border: '1px solid #ffa39e',
+              }}
+            >
+              {chunk.text}
+            </span>
+          )
+        }
+        if (chunk.type === 'added') {
+          return (
+            <span
+              key={idx}
+              style={{
+                background: '#d9f7be',
+                color: '#389e0d',
+                fontWeight: 600,
+                padding: '1px 6px',
+                borderRadius: radius.sm,
+                fontSize: 12,
+                border: '1px solid #b7eb8f',
+              }}
+            >
+              + {chunk.text}
             </span>
           )
         }
@@ -292,51 +324,248 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
 
 const ErrorDetailCard = forwardRef(ErrorDetailCardInner)
 
+function getCircledNum(n) {
+  const map = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
+  return map[n - 1] || `(${n})`
+}
+
+function parseEditNotes(editNoteField) {
+  if (!editNoteField) return []
+  if (Array.isArray(editNoteField)) return editNoteField
+  try {
+    if (typeof editNoteField === 'string' && editNoteField.trim().startsWith('[')) {
+      const parsed = JSON.parse(editNoteField)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch { }
+  if (typeof editNoteField === 'string' && editNoteField.trim()) {
+    return [{ id: 'legacy_1', note: editNoteField.trim(), created_at: '前次修改' }]
+  }
+  return []
+}
+
+function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRevert, onClose }, ref) {
+  const [newNoteText, setNewNoteText] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
+
+  const notesList = useMemo(() => parseEditNotes(para?.edit_note), [para?.edit_note])
+  const currentCount = Math.max(1, notesList.length)
+  const circledTag = getCircledNum(currentCount)
+
+  if (!para) return null
+
+  const handleAddNote = async () => {
+    if (!newNoteText.trim()) return
+    setSavingNote(true)
+    try {
+      await onSaveNote?.(para.idx, para.revised_text, newNoteText.trim())
+      setNewNoteText('')
+      setIsAdding(false)
+      message.success('已追加修改备注')
+    } catch {
+      message.error('追加备注失败')
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
+  const handleDeleteItem = async (noteId) => {
+    const updated = notesList.filter(n => n.id !== noteId)
+    try {
+      await onDeleteNoteItem?.(para.idx, updated)
+      message.success('已删除选定备注记录')
+    } catch {
+      message.error('删除失败')
+    }
+  }
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: 'fixed',
+        zIndex: 500,
+        width: 400,
+        padding: '14px 16px 12px',
+        background: color.bgCard,
+        borderRadius: radius.md,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+        border: `1px solid ${color.borderSelected}`,
+        transition: 'all 0.15s ease',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <Space size={6}>
+          <Tag color="blue" style={{ fontSize: 12, margin: 0, fontWeight: 600 }}>
+            📝 手工修改记录
+          </Tag>
+          <Tag style={{ fontSize: 12, margin: 0 }}>第{para.idx}段</Tag>
+        </Space>
+        <Button type="text" size="small" icon={<CloseOutlined />} onClick={onClose} />
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <DiffView original={para.text} suggested={para.revised_text} revisionTag={circledTag} />
+      </div>
+
+      <div style={{ background: '#fafafa', padding: '8px 10px', borderRadius: radius.sm, border: `1px solid ${color.border}`, marginBottom: 10, fontSize: 13, lineHeight: 1.6 }}>
+        <div style={{ color: color.textSecondary, fontSize: 12, marginBottom: 4, fontWeight: 500 }}>
+          📄 初始原文内容：
+        </div>
+        <div style={{ color: color.textPrimary, wordBreak: 'break-all' }}>
+          {para.text}
+        </div>
+      </div>
+
+      <div style={{ background: '#e6f7ff', padding: '10px 12px', borderRadius: radius.sm, border: '1px solid #91d5ff', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ color: '#1890ff', fontSize: 12, fontWeight: 600 }}>
+            📜 修改原因履历 ({notesList.length} 条)
+          </div>
+          {!isAdding && (
+            <Button type="link" size="small" style={{ padding: 0, height: 'auto', fontSize: 12 }} onClick={() => setIsAdding(true)}>
+              + 追加备注
+            </Button>
+          )}
+        </div>
+
+        {notesList.length === 0 && !isAdding ? (
+          <div style={{ color: color.textTertiary, fontStyle: 'italic', fontSize: 12 }}>
+            暂无修改原因备注（编辑段落时可录入）
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', marginBottom: isAdding ? 8 : 0 }}>
+            {notesList.map((item, index) => {
+              const prevText = index === 0 ? para.text : (notesList[index - 1].revised_text || para.text)
+              const thisText = item.revised_text || para.revised_text
+              const hasDiff = prevText && thisText && prevText !== thisText
+
+              return (
+                <div
+                  key={item.id || index}
+                  style={{
+                    background: '#ffffff',
+                    padding: '8px 10px',
+                    borderRadius: radius.sm,
+                    border: '1px solid #bae7ff',
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, color: '#096dd9' }}>
+                      {getCircledNum(index + 1)} 修改
+                    </span>
+                    <Space size={4}>
+                      <span style={{ fontSize: 11, color: color.textTertiary }}>
+                        📅 {item.created_at}
+                      </span>
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined style={{ fontSize: 11 }} />}
+                        style={{ padding: '0 2px', height: 'auto' }}
+                        onClick={() => handleDeleteItem(item.id)}
+                        title="删除该条备注记录"
+                      />
+                    </Space>
+                  </div>
+                  {hasDiff && (
+                    <CompactDiffView original={prevText} suggested={thisText} />
+                  )}
+                  <div style={{ color: color.textPrimary, wordBreak: 'break-all', fontStyle: item.note ? 'normal' : 'italic' }}>
+                    💬 {item.note || '未填写备注'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {isAdding && (
+          <Space direction="vertical" style={{ width: '100%', marginTop: 6 }} size={6}>
+            <Input.TextArea
+              value={newNoteText}
+              onChange={e => setNewNoteText(e.target.value)}
+              placeholder="输入追加修改原因备注..."
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              size="small"
+            />
+            <Space size="small" style={{ justifyContent: 'flex-end', width: '100%' }}>
+              <Button size="small" onClick={() => setIsAdding(false)}>
+                取消
+              </Button>
+              <Button type="primary" size="small" loading={savingNote} onClick={handleAddNote}>
+                追加提交
+              </Button>
+            </Space>
+          </Space>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <Popconfirm
+          title="确定恢复初始原文？"
+          description="恢复后将清除该段落的所有修改与多轮备注履历。"
+          onConfirm={() => onRevert?.(para.idx)}
+          okText="确定恢复"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+        >
+          <Button danger size="small" icon={<ScissorOutlined />}>
+            恢复初始原文
+          </Button>
+        </Popconfirm>
+      </div>
+    </div>
+  )
+}
+const ManualEditDetailCard = forwardRef(ManualEditDetailCardInner)
+
 function computeExactLcsDiff(original, suggested) {
-  const m = original.length
-  const n = suggested.length
-  if (m === 0 || n === 0) {
-    return {
-      origMatched: new Array(m).fill(false),
-      suggMatched: new Array(n).fill(false),
-    }
-  }
-
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (original[i - 1] === suggested[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-      }
-    }
-  }
-
+  const orig = original || ''
+  const sugg = suggested || ''
+  const m = orig.length
+  const n = sugg.length
   const origMatched = new Array(m).fill(false)
   const suggMatched = new Array(n).fill(false)
-  let i = m, j = n
-  while (i > 0 && j > 0) {
-    if (original[i - 1] === suggested[j - 1]) {
-      origMatched[i - 1] = true
-      suggMatched[j - 1] = true
-      i--
-      j--
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
-      i--
+
+  if (m === 0 || n === 0) return { origMatched, suggMatched }
+
+  const changes = diffChars(orig, sugg)
+  let origIdx = 0
+  let suggIdx = 0
+
+  changes.forEach(c => {
+    const len = c.value.length
+    if (c.added) {
+      suggIdx += len
+    } else if (c.removed) {
+      origIdx += len
     } else {
-      j--
+      for (let k = 0; k < len; k++) {
+        if (origIdx + k < m) origMatched[origIdx + k] = true
+        if (suggIdx + k < n) suggMatched[suggIdx + k] = true
+      }
+      origIdx += len
+      suggIdx += len
     }
-  }
+  })
 
   return { origMatched, suggMatched }
 }
 
-function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
+function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraIdx, onSelectManualEdit }) {
   if (!text) return null
 
   // 1. 过滤活跃未作废错误
   const activeErrs = paraErrors.filter(e => !e.is_obsolete)
+
+  // 手工编辑 LCS 对比
+  const hasManualEdit = Boolean(origText && text && origText !== text)
+  const manualLcs = hasManualEdit ? computeExactLcsDiff(origText, text) : null
 
   const posMap = {}
   const intervals = []
@@ -376,7 +605,14 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
     }
   })
 
-  if (intervals.length === 0) return <span>{text}</span>
+  if (intervals.length === 0 && !hasManualEdit) return <span>{text}</span>
+
+  // 手工编辑切点注入
+  if (hasManualEdit) {
+    for (let k = 0; k <= text.length; k++) {
+      bounds.add(k)
+    }
+  }
 
   const points = [...bounds].sort((a, b) => a - b)
   const segs = []
@@ -389,85 +625,87 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
     const segText = text.slice(start, end)
     const covering = intervals.filter(iv => iv.start <= start && iv.end >= end)
 
-    if (covering.length === 0) {
-      segs.push(<span key={`t${start}`}>{segText}</span>)
-      continue
-    }
-
-    const ids = covering.map(iv => iv.error.id)
-    const isSelected = ids.includes(selectedId)
-    const srcIv = covering.find(iv => iv.error.id === selectedId) || covering[0]
-    const source = srcIv.error
-    const isAccepted = source.user_status === 'accepted'
-    const isPending = source.user_status === 'pending'
-    const { lcs, targetStr } = srcIv
-
-    // 计算当前 1 个或多个字符在 targetStr 内部的精准下标
-    const offsetInTarget = start - srcIv.start
-
-    // LCS 单字符精准对比判定：该字符在 LCS 算法中是否匹配相同
-    let isCharDiff = false
-    let isPunctOrDel = false
-
-    if (isAccepted) {
-      const matched = lcs.suggMatched[offsetInTarget]
-      if (matched === false) isCharDiff = true
-    } else {
-      const matched = lcs.origMatched[offsetInTarget]
-      if (matched === false) {
-        isCharDiff = true
-        const ch = targetStr[offsetInTarget]
-        if (ch && (/[，。！？；：“”‘’（）《》、\.,!\?\:\;]/.test(ch) || source.type === 'punctuation' || source.type === 'redundant')) {
-          isPunctOrDel = true
-        }
-      }
-    }
-
-    // 精确判断已采纳删减项的真实缝隙位置
-    const hasDeletion = isAccepted && source.original_text && (!source.suggested_text || source.original_text.length > source.suggested_text.length)
-    let showDeletionBefore = false
-    let showDeletionAfter = false
-
-    if (hasDeletion) {
-      const delDiff = computeInlineDiff(source.original_text || '', source.suggested_text || '')
-      const pLen = delDiff.prefix.length
-      if (pLen === 0 && offsetInTarget === 0) {
-        showDeletionBefore = true
-      } else if (pLen > 0 && pLen < targetStr.length && offsetInTarget === pLen) {
-        showDeletionBefore = true
-      } else if (pLen >= targetStr.length && offsetInTarget === targetStr.length - 1) {
-        showDeletionAfter = true
-      }
-    }
 
     let borderBottom = 'none'
     let textDecoration = undefined
     let colorStyle = undefined
+    let isCharDiff = false
+    let isSelected = false
+    let ids = []
+    let showDeletionBefore = false
+    let showDeletionAfter = false
+    let activeSource = null
 
-    if (isCharDiff) {
+    if (covering.length > 0) {
+      ids = covering.map(iv => iv.error.id)
+      isSelected = ids.includes(selectedId)
+      const srcIv = covering.find(iv => iv.error.id === selectedId) || covering[0]
+      const source = srcIv.error
+      activeSource = source
+      const isAccepted = source.user_status === 'accepted'
+      const isPending = source.user_status === 'pending'
+      const { lcs, targetStr } = srcIv
+
+      const offsetInTarget = start - srcIv.start
+      let isPunctOrDel = false
+
       if (isAccepted) {
-        // 已采纳状态：加粗明亮翡翠绿实线
-        borderBottom = isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a'
-      } else if (isPending) {
-        if (isPunctOrDel || source.type === 'redundant' || (srcIv.diff && srcIv.diff.removed && !srcIv.diff.added)) {
-          // 待处理多余/冗余删减字：中划线 + 加粗明红实线
-          borderBottom = isSelected ? '3.5px solid #cf1322' : '2.5px solid #ff4d4f'
-          textDecoration = 'line-through'
-          colorStyle = isSelected ? '#cf1322' : '#ff4d4f'
-        } else {
-          // 待处理错字/异形词：加粗明黄实线
-          borderBottom = isSelected ? '3.5px solid #d46b08' : '2.5px solid #faad14'
+        const matched = lcs.suggMatched[offsetInTarget]
+        if (matched === false) isCharDiff = true
+      } else {
+        const matched = lcs.origMatched[offsetInTarget]
+        if (matched === false) {
+          isCharDiff = true
+          const ch = targetStr[offsetInTarget]
+          if (ch && (/[，。！？；：“”‘’（）《》、\.,!\?\:\;]/.test(ch) || source.type === 'punctuation' || source.type === 'redundant')) {
+            isPunctOrDel = true
+          }
         }
+      }
+
+      // 只有在完全纯删除（suggested_text 为空）时，才需要插入 [已删字] 点击标记
+      const hasPureDeletion = Boolean(
+        isAccepted &&
+        source.original_text &&
+        (!source.suggested_text || source.suggested_text.trim() === '')
+      )
+
+      if (hasPureDeletion) {
+        if (offsetInTarget === 0) {
+          showDeletionBefore = true
+        }
+      }
+
+      if (isCharDiff) {
+        if (isAccepted) {
+          borderBottom = isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a'
+        } else if (isPending) {
+          if (isPunctOrDel || source.type === 'redundant' || (srcIv.diff && srcIv.diff.removed && !srcIv.diff.added)) {
+            borderBottom = isSelected ? '3.5px solid #cf1322' : '2.5px solid #ff4d4f'
+            textDecoration = 'line-through'
+            colorStyle = isSelected ? '#cf1322' : '#ff4d4f'
+          } else {
+            borderBottom = isSelected ? '3.5px solid #d46b08' : '2.5px solid #faad14'
+          }
+        }
+      }
+    }
+
+    // 如果未被校对错字覆盖，判断是否属于用户手工修改/添加的字符
+    if (!isCharDiff && hasManualEdit && manualLcs) {
+      const isUserEditedChar = manualLcs.suggMatched[start] === false
+      if (isUserEditedChar) {
+        borderBottom = '2.5px solid #1890ff'
       }
     }
 
     segs.push(
       <React.Fragment key={`seg${start}`}>
-        {showDeletionBefore && (
+        {showDeletionBefore && activeSource && (
           <span
-            data-error-id={source.id}
-            onClick={(ev) => { ev.stopPropagation(); onSelect(source.id) }}
-            title={`已删除文字: ${source.original_text}`}
+            data-error-id={activeSource.id}
+            onClick={(ev) => { ev.stopPropagation(); onSelect(activeSource.id) }}
+            title={`已删除文字: ${activeSource.original_text}`}
             style={{
               cursor: 'pointer',
               color: isSelected ? '#237804' : '#389e0d',
@@ -484,8 +722,14 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
         )}
         <span
           data-error-id={ids.join(',')}
-          onClick={() => {
-            if (ids.length <= 1) { onSelect(ids[0]); return }
+          data-manual-edit={ids.length === 0 && borderBottom === '2.5px solid #1890ff' ? 'true' : undefined}
+          onClick={(ev) => {
+            if (ids.length === 0 && borderBottom === '2.5px solid #1890ff') {
+              ev.stopPropagation()
+              onSelectManualEdit?.(paraIdx)
+              return
+            }
+            if (ids.length <= 1) { ids[0] && onSelect(ids[0]); return }
             const cur = ids.indexOf(selectedId)
             onSelect(ids[(cur + 1) % ids.length])
           }}
@@ -503,11 +747,11 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect }) {
             transition: 'border-bottom 0.1s ease',
           }}
         >{segText}</span>
-        {showDeletionAfter && (
+        {showDeletionAfter && activeSource && (
           <span
-            data-error-id={source.id}
-            onClick={(ev) => { ev.stopPropagation(); onSelect(source.id) }}
-            title={`已删除文字: ${source.original_text}`}
+            data-error-id={activeSource.id}
+            onClick={(ev) => { ev.stopPropagation(); onSelect(activeSource.id) }}
+            title={`已删除文字: ${activeSource.original_text}`}
             style={{
               cursor: 'pointer',
               color: isSelected ? '#237804' : '#389e0d',
@@ -614,12 +858,14 @@ const ParaRow = React.memo(function ParaRow({
   pbType,
   pbTooltipIdx,
   editingText,
+  editingNote,
   savingPara,
   onHover,
   onMouseLeave,
   onParaClick,
   onCheckboxToggle,
   onEditingTextChange,
+  onEditingNoteChange,
   onSaveEdit,
   onCancelEdit,
   onStartEdit,
@@ -628,7 +874,12 @@ const ParaRow = React.memo(function ParaRow({
   onSetChapter,
   onPbTooltipIdx,
   onSelectError,
+  showAllOriginals,
+  onSelectManualEdit,
 }) {
+  const [showOriginalThis, setShowOriginalThis] = useState(false)
+  const hasManualEdit = Boolean(para.revised_text && para.revised_text !== para.text)
+  const showOriginal = (showAllOriginals || showOriginalThis) && hasManualEdit
   const activeParaText = para.revised_text ?? para.text
   const isBlank = !activeParaText || activeParaText.trim() === ''
   const showToolbar = isActive && !isEditing && toolbarPos !== null
@@ -758,21 +1009,75 @@ const ParaRow = React.memo(function ParaRow({
           textIndent: (firstLineIndentEnabled && !isCh) ? '2em' : '0',
         }}>
           {isEditing ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
               <Input.TextArea
+                autoFocus
                 value={editingText}
                 onChange={e => onEditingTextChange(e.target.value)}
-                autoSize={{ minRows: 1, maxRows: 8 }}
-                style={{ fontSize: currentBodyFontSize }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    onCancelEdit()
+                  } else if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    onSaveEdit(para.idx)
+                  }
+                }}
+                autoSize={{ minRows: 2, maxRows: 10 }}
+                style={{ fontSize: currentBodyFontSize, borderRadius: 6 }}
+                placeholder="编辑段落文本..."
               />
-              <Space size="small">
-                <Button type="primary" size="small" loading={savingPara} onClick={() => onSaveEdit(para.idx)}>
-                  保存
+              <Input
+                value={editingNote}
+                onChange={e => onEditingNoteChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    onCancelEdit()
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    onSaveEdit(para.idx)
+                  }
+                }}
+                placeholder="可选：追加本次修改原因备注（例如：第2次修改：修正错词）"
+                size="middle"
+                style={{ borderRadius: 6 }}
+              />
+              {(() => {
+                const existingNotes = parseEditNotes(para.edit_note)
+                if (existingNotes.length === 0) return null
+                return (
+                  <div style={{ background: '#f5f7fa', padding: '8px 10px', borderRadius: 6, fontSize: 12, border: `1px solid ${color.border}` }}>
+                    <div style={{ color: color.textSecondary, fontWeight: 600, marginBottom: 4 }}>
+                      📜 历史修改原因履历 ({existingNotes.length}条)：
+                    </div>
+                    {existingNotes.map((item, idx) => (
+                      <div key={item.id || idx} style={{ color: color.textPrimary, marginBottom: 3, display: 'flex', justifyContent: 'space-between' }}>
+                        <span>• {item.note}</span>
+                        <span style={{ color: color.textTertiary, fontSize: 11 }}>📅 {item.created_at}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 2 }}>
+                <Button
+                  size="middle"
+                  onClick={onCancelEdit}
+                  style={{ paddingInline: 16 }}
+                >
+                  取消 (Esc)
                 </Button>
-                <Button size="small" onClick={onCancelEdit}>
-                  取消
+                <Button
+                  type="primary"
+                  size="middle"
+                  loading={savingPara}
+                  onClick={() => onSaveEdit(para.idx)}
+                  style={{ paddingInline: 20, fontWeight: 500 }}
+                >
+                  保存 (Enter)
                 </Button>
-              </Space>
+              </div>
             </div>
           ) : (
             <div onDoubleClick={() => onStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}>
@@ -796,6 +1101,24 @@ const ParaRow = React.memo(function ParaRow({
                   )}
                 </>
               )}
+              {showOriginal && (
+                <div style={{
+                  background: color.bgCard,
+                  borderLeft: '3px solid #1890ff',
+                  padding: '6px 12px',
+                  borderRadius: radius.sm,
+                  marginBottom: 6,
+                  fontSize: currentBodyFontSize - 1,
+                  lineHeight: 1.6,
+                  color: color.textSecondary,
+                  borderTop: `1px solid ${color.border}`,
+                  borderRight: `1px solid ${color.border}`,
+                  borderBottom: `1px solid ${color.border}`,
+                }}>
+                  <span style={{ color: '#1890ff', fontWeight: 'bold', marginRight: 6 }}>[ 初始原文 ]</span>
+                  {para.text}
+                </div>
+              )}
               {isBlank ? (
                 <span style={{ color: '#bfbfbf', fontStyle: 'italic', fontSize: 13, userSelect: 'none' }}>
                   [ 空段落 ]
@@ -806,6 +1129,9 @@ const ParaRow = React.memo(function ParaRow({
                   paraErrors={paraErrs}
                   selectedId={selectedId}
                   onSelect={onSelectError}
+                  origText={para.text}
+                  paraIdx={para.idx}
+                  onSelectManualEdit={onSelectManualEdit}
                 />
               )}
             </div>
@@ -830,6 +1156,7 @@ const ParaRow = React.memo(function ParaRow({
             alignItems: 'center',
             gap: 4,
           }}>
+            {/* 1. 编辑 */}
             <Tooltip title="编辑段落文本">
               <Button
                 type="text"
@@ -841,6 +1168,41 @@ const ParaRow = React.memo(function ParaRow({
                 编辑
               </Button>
             </Tooltip>
+
+            {/* 2. 设为标题 */}
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => onSetChapter(para, 1) },
+                  { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => onSetChapter(para, 2) },
+                  { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => onSetChapter(para, 3) },
+                  { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => onSetChapter(para, 4) },
+                  { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => onSetChapter(para, 5) },
+                  { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => onSetChapter(para, 6) },
+                  ...(isCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => onSetChapter(para, 1, true) }] : []),
+                ],
+              }}
+            >
+              <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>
+                设为标题 ▾
+              </Button>
+            </Dropdown>
+
+            {/* 3. 看原文 */}
+            <Tooltip title={showOriginalThis ? "隐藏原文" : "查看初始原文"}>
+              <Button
+                type="text"
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={(e) => { e.stopPropagation(); setShowOriginalThis(!showOriginalThis); }}
+                style={{ fontSize: 12, color: showOriginalThis ? '#1890ff' : undefined }}
+              >
+                {showOriginalThis ? '藏原文' : '看原文'}
+              </Button>
+            </Tooltip>
+
+            {/* 4. 新增/移除分页 */}
             {(() => {
               const hasHardBreak = pbType === 'original' || pbType === 'manual'
               if (hasHardBreak) {
@@ -876,25 +1238,7 @@ const ParaRow = React.memo(function ParaRow({
               )
             })()}
 
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => onSetChapter(para, 1) },
-                  { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => onSetChapter(para, 2) },
-                  { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => onSetChapter(para, 3) },
-                  { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => onSetChapter(para, 4) },
-                  { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => onSetChapter(para, 5) },
-                  { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => onSetChapter(para, 6) },
-                  ...(isCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => onSetChapter(para, 1, true) }] : []),
-                ],
-              }}
-            >
-              <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>
-                设为标题 ▾
-              </Button>
-            </Dropdown>
-
+            {/* 5. 删除 */}
             <Tooltip title="删除该段落">
               <Button
                 type="text"
@@ -1062,11 +1406,85 @@ function ReviewReaderInner({
 
   const [editingIdx, setEditingIdx] = useState(null)
   const [editingText, setEditingText] = useState('')
+  const [editingNote, setEditingNote] = useState('')
+  const [selectedManualEditIdx, setSelectedManualEditIdx] = useState(null)
+  const manualCardElRef = useRef(null)
   const [savingPara, setSavingPara] = useState(false)
   const [hoverIdx, setHoverIdx] = useState(null)
   const [activeIdx, setActiveIdx] = useState(null)
   const [toolbarPos, setToolbarPos] = useState(null)
   const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
+
+  const selectedManualEditPara = useMemo(() => {
+    if (!selectedManualEditIdx) return null
+    return sortedParas.find(p => p.idx === selectedManualEditIdx) || null
+  }, [sortedParas, selectedManualEditIdx])
+
+  const updateManualEditPos = useCallback(() => {
+    const container = flowRef.current
+    const el = manualCardElRef.current
+    if (!container || !el || !selectedManualEditIdx) return
+    const span = container.querySelector(`[data-para="${selectedManualEditIdx}"]`) || container.querySelector(`[data-manual-edit="true"]`)
+    if (!span) {
+      el.style.opacity = '0'
+      el.style.transform = 'translateY(3px)'
+      return
+    }
+    const rect = span.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const cardW = 380
+    const cardH = el.offsetHeight || 220
+    const minTop = containerRect.top + 8
+    const maxBottom = containerRect.bottom - 72
+
+    let top = rect.bottom + 6
+    if (top + cardH > maxBottom) {
+      const topSpace = rect.top - minTop
+      if (topSpace >= cardH + 6) {
+        top = rect.top - cardH - 6
+      } else {
+        top = Math.max(minTop, maxBottom - cardH)
+      }
+    }
+
+    let left = rect.left
+    if (left + cardW > window.innerWidth - 24) {
+      left = Math.max(12, window.innerWidth - cardW - 24)
+    }
+
+    el.style.top = `${top}px`
+    el.style.left = `${left}px`
+    el.style.opacity = '1'
+    el.style.transform = 'translateY(0)'
+  }, [selectedManualEditIdx])
+
+  useLayoutEffect(() => {
+    updateManualEditPos()
+  }, [selectedManualEditIdx, updateManualEditPos])
+
+  const handleSaveManualEditNote = async (idx, text, note) => {
+    await updateParagraph(project.id, idx, text, note)
+    onReloadProject?.()
+  }
+
+  const handleDeleteNoteItem = async (idx, updatedNotes) => {
+    await updateParagraphNotes(project.id, idx, updatedNotes)
+    const p = sortedParas.find(item => item.idx === idx)
+    if (p) {
+      p.edit_note = JSON.dumps(updatedNotes)
+    }
+    onReloadProject?.()
+  }
+
+  const handleRevertManualEdit = async (idx) => {
+    const p = sortedParas.find(item => item.idx === idx)
+    if (p) {
+      await updateParagraph(project.id, idx, p.text, null)
+      setSelectedManualEditIdx(null)
+      message.success('已恢复初始原文')
+      onReloadProject?.()
+    }
+  }
 
   useEffect(() => {
     const handleGlobalClick = (e) => {
@@ -1116,15 +1534,24 @@ function ReviewReaderInner({
   const handleStartEdit = (para) => {
     setEditingIdx(para.idx)
     setEditingText(para.revised_text ?? para.text ?? '')
+    setEditingNote('')
   }
 
   const handleSaveEdit = async (paraIdx) => {
     if (!project?.id) return
     setSavingPara(true)
+    const noteVal = editingNote?.trim() || null
+    const textVal = editingText
     try {
-      await updateParagraph(project.id, paraIdx, editingText)
+      await updateParagraph(project.id, paraIdx, textVal, noteVal)
+      const p = sortedParas.find(item => item.idx === paraIdx)
+      if (p) {
+        p.edit_note = noteVal
+        p.revised_text = (p.text === textVal) ? null : textVal
+      }
       message.success('段落已更新')
       setEditingIdx(null)
+      setEditingNote('')
       onReloadProject?.()
     } catch (e) {
       message.error(e.message || '更新失败')
@@ -1239,6 +1666,7 @@ function ReviewReaderInner({
   const [showOptions, setShowOptions] = useState(false)
   const [flashSide, setFlashSide] = useState(null) // 'accept' | 'reject' | null
   const [showCheckboxes, setShowCheckboxes] = useState(false)
+  const [showAllOriginals, setShowAllOriginals] = useState(false)
   const flowRef = useRef(null)
   const contentRef = useRef(null)
   const resultsRef = useRef(results)
@@ -1674,12 +2102,14 @@ function ReviewReaderInner({
                             pbType={pbType}
                             pbTooltipIdx={pbTooltipIdx}
                             editingText={isEditing ? editingText : ''}
+                            editingNote={isEditing ? editingNote : ''}
                             savingPara={savingPara}
                             onHover={handleHover}
                             onMouseLeave={handleMouseLeave}
                             onParaClick={handleParaClick}
                             onCheckboxToggle={handleCheckboxToggle}
                             onEditingTextChange={setEditingText}
+                            onEditingNoteChange={setEditingNote}
                             onSaveEdit={handleSaveEdit}
                             onCancelEdit={handleCancelEdit}
                             onStartEdit={handleStartEdit}
@@ -1687,7 +2117,9 @@ function ReviewReaderInner({
                             onTogglePageBreak={handleTogglePageBreak}
                             onSetChapter={handleSetChapter}
                             onPbTooltipIdx={setPbTooltipIdx}
-                            onSelectError={setSelectedId}
+                            onSelectError={(id) => { setSelectedManualEditIdx(null); setSelectedId(id); }}
+                            showAllOriginals={showAllOriginals}
+                            onSelectManualEdit={(idx) => { setSelectedId(null); setSelectedManualEditIdx(idx); }}
                           />
                         )
                       })}
@@ -1826,6 +2258,19 @@ function ReviewReaderInner({
             }}
           >
             {showCheckboxes ? '☑' : '☐'} 选段
+          </Button>
+          <Button
+            type="text"
+            size="small"
+            onClick={() => setShowAllOriginals(!showAllOriginals)}
+            style={{
+              fontSize: 13,
+              color: showAllOriginals ? '#1890ff' : color.textTertiary,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {showAllOriginals ? '👁 隐藏对照原文' : '👁 对照原文'}
           </Button>
           {showCheckboxes && selectedParas?.size > 0 && (
             <Space size={4} style={{ flexShrink: 0 }}>
@@ -2118,6 +2563,16 @@ function ReviewReaderInner({
           onAccept={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
           onReject={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
           onClose={() => setSelectedId(null)}
+        />
+      )}
+      {selectedManualEditPara && (
+        <ManualEditDetailCard
+          ref={manualCardElRef}
+          para={selectedManualEditPara}
+          onSaveNote={handleSaveManualEditNote}
+          onDeleteNoteItem={handleDeleteNoteItem}
+          onRevert={handleRevertManualEdit}
+          onClose={() => setSelectedManualEditIdx(null)}
         />
       )}
 

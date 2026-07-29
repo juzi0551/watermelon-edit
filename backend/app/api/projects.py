@@ -29,6 +29,7 @@ class ProjectLockBody(BaseModel):
 
 class ParagraphUpdateBody(BaseModel):
     text: str
+    edit_note: str | None = None
 
 
 class PageBreakToggleBody(BaseModel):
@@ -147,14 +148,28 @@ async def api_upload_to_project(project_id: str, file: UploadFile = File(...)):
     }
 
 
+class ParagraphNotesBody(BaseModel):
+    notes: list[dict]
+
+
 @router.patch("/projects/{project_id}/paragraphs/{idx}")
 async def api_update_paragraph(project_id: str, idx: int, body: ParagraphUpdateBody):
-    """人工修改段落文本。"""
+    """人工修改段落文本与修改备注。"""
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
-    update_paragraph_text(doc["id"], idx, body.text)
-    return {"status": "ok", "idx": idx, "text": body.text}
+    update_paragraph_text(doc["id"], idx, body.text, edit_note=body.edit_note)
+    return {"status": "ok", "idx": idx, "text": body.text, "edit_note": body.edit_note}
+
+
+@router.put("/projects/{project_id}/paragraphs/{idx}/notes")
+async def api_update_paragraph_notes(project_id: str, idx: int, body: ParagraphNotesBody):
+    """更新维护段落的多轮修改备注履历。"""
+    doc = get_current_document(project_id)
+    if not doc:
+        return {"error": "项目无文档"}
+    update_paragraph_notes_history(doc["id"], idx, body.notes)
+    return {"status": "ok", "idx": idx, "notes": body.notes}
 
 
 @router.delete("/projects/{project_id}/paragraphs/{idx}")

@@ -181,8 +181,13 @@ export async function retryWindow(projectId, payload) {
 
 // ==================== Paragraph & Chapter Editing ====================
 
-export async function updateParagraph(projectId, idx, text) {
-  const { data } = await api.patch(`/projects/${projectId}/paragraphs/${idx}`, { text })
+export async function updateParagraph(projectId, idx, text, editNote = null) {
+  const { data } = await api.patch(`/projects/${projectId}/paragraphs/${idx}`, { text, edit_note: editNote })
+  return data
+}
+
+export async function updateParagraphNotes(projectId, idx, notes) {
+  const { data } = await api.put(`/projects/${projectId}/paragraphs/${idx}/notes`, { notes })
   return data
 }
 
