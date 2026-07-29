@@ -79,7 +79,7 @@ function computeLcsDiffChunks(original, suggested) {
   })
 }
 
-function DiffView({ original, suggested }) {
+function DiffView({ original, suggested, fontSize: customFs }) {
   const chunks = useMemo(
     () => computeLcsDiffChunks(original, suggested),
     [original, suggested],
@@ -89,7 +89,7 @@ function DiffView({ original, suggested }) {
       background: color.bgCard,
       borderRadius: radius.md,
       padding: `${spacing.sm}px ${spacing.md}px`,
-      fontSize: fontSize.bodySm,
+      fontSize: customFs || fontSize.bodySm,
       lineHeight: 1.8,
       border: `1px solid ${color.border}`,
       wordBreak: 'break-all',
@@ -204,17 +204,22 @@ function CompactDiffView({ original, suggested }) {
   )
 }
 
-function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
+function ErrorDetailCardInner({ error, onAccept, onReject, onClose, currentBodyFontSize }, ref) {
   const pending = error.user_status === 'pending'
   const [btnState, setBtnState] = useState(null)
+
+  const baseFs = currentBodyFontSize || 16
+  const scale = baseFs / 16
+  const cardWidth = Math.round(380 * scale)
+
   return (
     <div
       ref={ref}
       style={{
         position: 'fixed',
         zIndex: 500,
-        width: 380,
-        padding: '14px 16px 12px',
+        width: cardWidth,
+        padding: `${Math.round(14 * scale)}px ${Math.round(16 * scale)}px ${Math.round(12 * scale)}px`,
         background: color.bgCard,
         borderRadius: radius.md,
         borderLeft: `3px solid ${color.warning}`,
@@ -228,44 +233,44 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
         <Button
           type="text"
           size="small"
-          icon={<CloseOutlined style={{ fontSize: 12 }} />}
+          icon={<CloseOutlined style={{ fontSize: Math.round(12 * scale) }} />}
           onClick={onClose}
           style={{
             position: 'absolute',
             top: -2,
             right: -4,
             color: color.textMuted,
-            width: 24,
-            height: 24,
+            width: Math.round(24 * scale),
+            height: Math.round(24 * scale),
           }}
         />
         <div style={{ marginBottom: 6, paddingRight: 20 }}>
-          <div style={{ fontSize: fontSize.meta, color: color.textSecondary, marginBottom: 2 }}>
+          <div style={{ fontSize: Math.round(12 * scale), color: color.textSecondary, marginBottom: 2 }}>
             第 {error.paragraph_index} 段
           </div>
           <div style={{ marginBottom: 6 }}>
-            <DiffView original={error.original_text} suggested={error.suggested_text} />
+            <DiffView original={error.original_text} suggested={error.suggested_text} fontSize={Math.round(14 * scale)} />
           </div>
         </div>
       </div>
       <div style={{
-        fontSize: fontSize.bodyXs,
+        fontSize: Math.round(13 * scale),
         color: color.textDescription,
         marginBottom: 10,
         lineHeight: 1.6,
-        padding: '6px 10px',
+        padding: `${Math.round(6 * scale)}px ${Math.round(10 * scale)}px`,
         background: color.bgPage,
         borderRadius: radius.sm,
       }}>
         {error.description}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-        <Tag style={{ margin: 0, fontSize: 11, lineHeight: '20px' }}>{TYPE_LABEL[error.type] || error.type}</Tag>
-        <Tag color={SEVERITY_COLOR[error.severity]} style={{ margin: 0, fontSize: 11, lineHeight: '20px' }}>
+        <Tag style={{ margin: 0, fontSize: Math.round(11 * scale), lineHeight: `${Math.round(20 * scale)}px` }}>{TYPE_LABEL[error.type] || error.type}</Tag>
+        <Tag color={SEVERITY_COLOR[error.severity]} style={{ margin: 0, fontSize: Math.round(11 * scale), lineHeight: `${Math.round(20 * scale)}px` }}>
           {SEVERITY_LABEL[error.severity]}危
         </Tag>
         {!pending && (
-          <Tag color={error.user_status === 'accepted' ? 'green' : 'red'} style={{ margin: '0 0 0 auto', fontSize: 11, lineHeight: '20px' }}>
+          <Tag color={error.user_status === 'accepted' ? 'green' : 'red'} style={{ margin: '0 0 0 auto', fontSize: Math.round(11 * scale), lineHeight: `${Math.round(20 * scale)}px` }}>
             {error.user_status === 'accepted' ? '已采纳' : '已拒绝'}
           </Tag>
         )}
@@ -283,7 +288,7 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
                 }, 100)
               }}
               style={{
-                height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px',
+                height: Math.round(26 * scale), fontSize: Math.round(12 * scale), paddingInline: Math.round(12 * scale), lineHeight: `${Math.round(24 * scale)}px`,
                 backgroundColor: btnState === 'accepted' ? '#52c41a' : 'transparent',
                 color: btnState === 'accepted' ? '#ffffff' : '#52c41a',
                 borderColor: '#52c41a',
@@ -305,7 +310,7 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose }, ref) {
                 }, 100)
               }}
               style={{
-                height: 26, fontSize: 12, paddingInline: 12, lineHeight: '24px',
+                height: Math.round(26 * scale), fontSize: Math.round(12 * scale), paddingInline: Math.round(12 * scale), lineHeight: `${Math.round(24 * scale)}px`,
                 backgroundColor: btnState === 'rejected' ? '#ff4d4f' : 'transparent',
                 color: btnState === 'rejected' ? '#ffffff' : color.textPrimary,
                 borderColor: btnState === 'rejected' ? '#ff4d4f' : color.border,
@@ -344,7 +349,7 @@ function parseEditNotes(editNoteField) {
   return []
 }
 
-function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRevert, onClose }, ref) {
+function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRevert, onClose, currentBodyFontSize }, ref) {
   const [newNoteText, setNewNoteText] = useState('')
   const [isAdding, setIsAdding] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
@@ -352,6 +357,10 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
   const notesList = useMemo(() => parseEditNotes(para?.edit_note), [para?.edit_note])
   const currentCount = Math.max(1, notesList.length)
   const circledTag = getCircledNum(currentCount)
+
+  const baseFs = currentBodyFontSize || 16
+  const scale = baseFs / 16
+  const cardWidth = Math.round(400 * scale)
 
   if (!para) return null
 
@@ -386,8 +395,8 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
       style={{
         position: 'fixed',
         zIndex: 500,
-        width: 400,
-        padding: '14px 16px 12px',
+        width: cardWidth,
+        padding: `${Math.round(14 * scale)}px ${Math.round(16 * scale)}px ${Math.round(12 * scale)}px`,
         background: color.bgCard,
         borderRadius: radius.md,
         boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
@@ -397,20 +406,20 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <Space size={6}>
-          <Tag color="blue" style={{ fontSize: 12, margin: 0, fontWeight: 600 }}>
+          <Tag color="blue" style={{ fontSize: Math.round(12 * scale), margin: 0, fontWeight: 600 }}>
             📝 手工修改记录
           </Tag>
-          <Tag style={{ fontSize: 12, margin: 0 }}>第{para.idx}段</Tag>
+          <Tag style={{ fontSize: Math.round(12 * scale), margin: 0 }}>第{para.idx}段</Tag>
         </Space>
-        <Button type="text" size="small" icon={<CloseOutlined />} onClick={onClose} />
+        <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: Math.round(12 * scale) }} />} onClick={onClose} />
       </div>
 
       <div style={{ marginBottom: 10 }}>
-        <DiffView original={para.text} suggested={para.revised_text} revisionTag={circledTag} />
+        <DiffView original={para.text} suggested={para.revised_text} revisionTag={circledTag} fontSize={Math.round(14 * scale)} />
       </div>
 
-      <div style={{ background: '#fafafa', padding: '8px 10px', borderRadius: radius.sm, border: `1px solid ${color.border}`, marginBottom: 10, fontSize: 13, lineHeight: 1.6 }}>
-        <div style={{ color: color.textSecondary, fontSize: 12, marginBottom: 4, fontWeight: 500 }}>
+      <div style={{ background: '#fafafa', padding: `${Math.round(8 * scale)}px ${Math.round(10 * scale)}px`, borderRadius: radius.sm, border: `1px solid ${color.border}`, marginBottom: 10, fontSize: Math.round(13 * scale), lineHeight: 1.6 }}>
+        <div style={{ color: color.textSecondary, fontSize: Math.round(12 * scale), marginBottom: 4, fontWeight: 500 }}>
           📄 初始原文内容：
         </div>
         <div style={{ color: color.textPrimary, wordBreak: 'break-all' }}>
@@ -418,20 +427,20 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
         </div>
       </div>
 
-      <div style={{ background: '#e6f7ff', padding: '10px 12px', borderRadius: radius.sm, border: '1px solid #91d5ff', marginBottom: 12 }}>
+      <div style={{ background: '#e6f7ff', padding: `${Math.round(10 * scale)}px ${Math.round(12 * scale)}px`, borderRadius: radius.sm, border: '1px solid #91d5ff', marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <div style={{ color: '#1890ff', fontSize: 12, fontWeight: 600 }}>
+          <div style={{ color: '#1890ff', fontSize: Math.round(12 * scale), fontWeight: 600 }}>
             📜 修改原因履历 ({notesList.length} 条)
           </div>
           {!isAdding && (
-            <Button type="link" size="small" style={{ padding: 0, height: 'auto', fontSize: 12 }} onClick={() => setIsAdding(true)}>
+            <Button type="link" size="small" style={{ padding: 0, height: 'auto', fontSize: Math.round(12 * scale) }} onClick={() => setIsAdding(true)}>
               + 追加备注
             </Button>
           )}
         </div>
 
         {notesList.length === 0 && !isAdding ? (
-          <div style={{ color: color.textTertiary, fontStyle: 'italic', fontSize: 12 }}>
+          <div style={{ color: color.textTertiary, fontStyle: 'italic', fontSize: Math.round(12 * scale) }}>
             暂无修改原因备注（编辑段落时可录入）
           </div>
         ) : (
@@ -446,10 +455,10 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
                   key={item.id || index}
                   style={{
                     background: '#ffffff',
-                    padding: '8px 10px',
+                    padding: `${Math.round(8 * scale)}px ${Math.round(10 * scale)}px`,
                     borderRadius: radius.sm,
                     border: '1px solid #bae7ff',
-                    fontSize: 12,
+                    fontSize: Math.round(12 * scale),
                     lineHeight: 1.5,
                   }}
                 >
@@ -458,14 +467,14 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
                       {getCircledNum(index + 1)} 修改
                     </span>
                     <Space size={4}>
-                      <span style={{ fontSize: 11, color: color.textTertiary }}>
+                      <span style={{ fontSize: Math.round(11 * scale), color: color.textTertiary }}>
                         📅 {item.created_at}
                       </span>
                       <Button
                         type="text"
                         size="small"
                         danger
-                        icon={<DeleteOutlined style={{ fontSize: 11 }} />}
+                        icon={<DeleteOutlined style={{ fontSize: Math.round(11 * scale) }} />}
                         style={{ padding: '0 2px', height: 'auto' }}
                         onClick={() => handleDeleteItem(item.id)}
                         title="删除该条备注记录"
@@ -492,12 +501,13 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
               placeholder="输入追加修改原因备注..."
               autoSize={{ minRows: 2, maxRows: 4 }}
               size="small"
+              style={{ fontSize: Math.round(12 * scale) }}
             />
             <Space size="small" style={{ justifyContent: 'flex-end', width: '100%' }}>
-              <Button size="small" onClick={() => setIsAdding(false)}>
+              <Button size="small" style={{ fontSize: Math.round(12 * scale) }} onClick={() => setIsAdding(false)}>
                 取消
               </Button>
-              <Button type="primary" size="small" loading={savingNote} onClick={handleAddNote}>
+              <Button type="primary" size="small" style={{ fontSize: Math.round(12 * scale) }} loading={savingNote} onClick={handleAddNote}>
                 追加提交
               </Button>
             </Space>
@@ -514,7 +524,7 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
           okButtonProps={{ danger: true }}
           cancelText="取消"
         >
-          <Button danger size="small" icon={<ScissorOutlined />}>
+          <Button danger size="small" icon={<ScissorOutlined />} style={{ fontSize: Math.round(12 * scale) }}>
             恢复初始原文
           </Button>
         </Popconfirm>
@@ -567,9 +577,89 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
   const hasManualEdit = Boolean(origText && text && origText !== text)
   const manualLcs = hasManualEdit ? computeExactLcsDiff(origText, text) : null
 
+  // 预构建字典：映射 original_text -> error (O(1) 查询)
+  const errByOrigMap = useMemo(() => {
+    const map = new Map()
+    activeErrs.forEach(e => {
+      if (e.original_text) map.set(e.original_text, e)
+    })
+    return map
+  }, [activeErrs])
+
+  // 收集所有纯删除记录及发生位置
+  const pureDeletionsByPos = {} // pos -> Array of deletion items
+
+  // A. AI 校对已采纳的纯删除（suggested_text 为空）
+  activeErrs.forEach(e => {
+    if (e.user_status === 'accepted' && (!e.suggested_text || e.suggested_text.trim() === '') && e.original_text) {
+      let pos = 0
+      if (origText && text) {
+        const origIdx = origText.indexOf(e.original_text)
+        if (origIdx >= 0) {
+          const prefix = origText.slice(0, origIdx)
+          // 通过 diffChars 找到 prefix 在 text 中的位移
+          const changes = diffChars(prefix, text)
+          let p = 0
+          for (const c of changes) {
+            if (!c.removed) p += c.value.length
+            if (c.value === prefix || p >= prefix.length) break
+          }
+          pos = Math.min(p, text.length)
+        }
+      }
+      if (!pureDeletionsByPos[pos]) pureDeletionsByPos[pos] = []
+      pureDeletionsByPos[pos].push({
+        type: 'ai',
+        errorId: e.id,
+        isSelected: e.id === selectedId,
+      })
+    }
+  })
+
+  // B. 手工编辑或从 diffChars 匹配到的删字片段
+  if (hasManualEdit) {
+    const changes = diffChars(origText || '', text)
+    let suggIdx = 0
+    for (let idx = 0; idx < changes.length; idx++) {
+      const c = changes[idx]
+      if (c.added) {
+        suggIdx += c.value.length
+      } else if (c.removed) {
+        const isReplacement = (idx < changes.length - 1 && changes[idx + 1].added) ||
+                              (idx > 0 && changes[idx - 1].added)
+        if (!isReplacement) {
+          const pos = Math.min(suggIdx, text.length)
+          const alreadyMapped = pureDeletionsByPos[pos]?.some(item => item.type === 'ai')
+          if (!alreadyMapped) {
+            if (!pureDeletionsByPos[pos]) pureDeletionsByPos[pos] = []
+            // 优先查找删除片段是否匹配 AI 问题
+            const matchedErr = errByOrigMap.get(c.value) || activeErrs.find(e => e.original_text && c.value.includes(e.original_text))
+            if (matchedErr) {
+              pureDeletionsByPos[pos].push({
+                type: 'ai',
+                errorId: matchedErr.id,
+                isSelected: matchedErr.id === selectedId,
+              })
+            } else {
+              pureDeletionsByPos[pos].push({
+                type: 'manual',
+                paraIdx,
+              })
+            }
+          }
+        }
+      } else {
+        suggIdx += c.value.length
+      }
+    }
+  }
+
   const posMap = {}
   const intervals = []
   const bounds = new Set([0, text.length])
+
+  // 注入纯删除位置点
+  Object.keys(pureDeletionsByPos).forEach(p => bounds.add(Number(p)))
 
   activeErrs.forEach(e => {
     const isAccepted = e.user_status === 'accepted'
@@ -605,7 +695,9 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     }
   })
 
-  if (intervals.length === 0 && !hasManualEdit) return <span>{text}</span>
+  if (intervals.length === 0 && !hasManualEdit && Object.keys(pureDeletionsByPos).length === 0) {
+    return <span>{text}</span>
+  }
 
   // 手工编辑切点注入
   if (hasManualEdit) {
@@ -617,6 +709,37 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
   const points = [...bounds].sort((a, b) => a - b)
   const segs = []
 
+  const renderDeletionTags = (pos) => {
+    const items = pureDeletionsByPos[pos]
+    if (!items || items.length === 0) return null
+    return items.map((item, idx) => {
+      const isSel = item.type === 'ai' && item.isSelected
+      return (
+        <span
+          key={`del_${pos}_${idx}`}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            if (item.type === 'ai') {
+              onSelect(item.errorId)
+            } else {
+              onSelectManualEdit?.(item.paraIdx)
+            }
+          }}
+          style={{
+            cursor: 'pointer',
+            color: isSel ? '#262626' : '#8c8c8c',
+            fontSize: 12,
+            fontWeight: isSel ? 600 : 400,
+            userSelect: 'none',
+            display: 'inline',
+          }}
+        >
+          [已删字]
+        </span>
+      )
+    })
+  }
+
   for (let i = 0; i < points.length - 1; i++) {
     const start = points[i]
     const end = points[i + 1]
@@ -625,23 +748,18 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
     const segText = text.slice(start, end)
     const covering = intervals.filter(iv => iv.start <= start && iv.end >= end)
 
-
     let borderBottom = 'none'
     let textDecoration = undefined
     let colorStyle = undefined
     let isCharDiff = false
     let isSelected = false
     let ids = []
-    let showDeletionBefore = false
-    let showDeletionAfter = false
-    let activeSource = null
 
     if (covering.length > 0) {
       ids = covering.map(iv => iv.error.id)
       isSelected = ids.includes(selectedId)
       const srcIv = covering.find(iv => iv.error.id === selectedId) || covering[0]
       const source = srcIv.error
-      activeSource = source
       const isAccepted = source.user_status === 'accepted'
       const isPending = source.user_status === 'pending'
       const { lcs, targetStr } = srcIv
@@ -663,19 +781,6 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
         }
       }
 
-      // 只有在完全纯删除（suggested_text 为空）时，才需要插入 [已删字] 点击标记
-      const hasPureDeletion = Boolean(
-        isAccepted &&
-        source.original_text &&
-        (!source.suggested_text || source.suggested_text.trim() === '')
-      )
-
-      if (hasPureDeletion) {
-        if (offsetInTarget === 0) {
-          showDeletionBefore = true
-        }
-      }
-
       if (isCharDiff) {
         if (isAccepted) {
           borderBottom = isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a'
@@ -691,7 +796,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
       }
     }
 
-    // 如果未被校对错字覆盖，判断是否属于用户手工修改/添加的字符
+    // 手工修改字符下划线
     if (!isCharDiff && hasManualEdit && manualLcs) {
       const isUserEditedChar = manualLcs.suggMatched[start] === false
       if (isUserEditedChar) {
@@ -701,25 +806,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
 
     segs.push(
       <React.Fragment key={`seg${start}`}>
-        {showDeletionBefore && activeSource && (
-          <span
-            data-error-id={activeSource.id}
-            onClick={(ev) => { ev.stopPropagation(); onSelect(activeSource.id) }}
-            title={`已删除文字: ${activeSource.original_text}`}
-            style={{
-              cursor: 'pointer',
-              color: isSelected ? '#237804' : '#389e0d',
-              fontSize: 11,
-              fontWeight: 500,
-              borderBottom: isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a',
-              borderRadius: 3,
-              padding: '0 3px',
-              margin: '0 2px',
-              userSelect: 'none',
-              backgroundColor: isSelected ? 'rgba(82,196,26,0.15)' : 'transparent',
-            }}
-          >[已删字]</span>
-        )}
+        {renderDeletionTags(start)}
         <span
           data-error-id={ids.join(',')}
           data-manual-edit={ids.length === 0 && borderBottom === '2.5px solid #1890ff' ? 'true' : undefined}
@@ -733,9 +820,6 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
             const cur = ids.indexOf(selectedId)
             onSelect(ids[(cur + 1) % ids.length])
           }}
-          title={covering.length > 1
-            ? covering.map(iv => `${iv.error.original_text} → ${iv.error.suggested_text}`).join('\n')
-            : undefined}
           style={{
             cursor: 'pointer',
             padding: isCharDiff ? '0 1px' : '0',
@@ -746,29 +830,23 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, paraI
             borderRadius: isCharDiff ? 3 : 0,
             transition: 'border-bottom 0.1s ease',
           }}
-        >{segText}</span>
-        {showDeletionAfter && activeSource && (
-          <span
-            data-error-id={activeSource.id}
-            onClick={(ev) => { ev.stopPropagation(); onSelect(activeSource.id) }}
-            title={`已删除文字: ${activeSource.original_text}`}
-            style={{
-              cursor: 'pointer',
-              color: isSelected ? '#237804' : '#389e0d',
-              fontSize: 11,
-              fontWeight: 500,
-              borderBottom: isSelected ? '3.5px solid #237804' : '2.5px solid #52c41a',
-              borderRadius: 3,
-              padding: '0 3px',
-              margin: '0 2px',
-              userSelect: 'none',
-              backgroundColor: isSelected ? 'rgba(82,196,26,0.15)' : 'transparent',
-            }}
-          >[已删字]</span>
-        )}
+        >
+          {segText}
+        </span>
       </React.Fragment>,
     )
   }
+
+  // 结尾处的纯删除标签
+  const lastPos = points[points.length - 1]
+  if (lastPos === text.length && pureDeletionsByPos[lastPos]) {
+    segs.push(
+      <React.Fragment key={`seg_last`}>
+        {renderDeletionTags(lastPos)}
+      </React.Fragment>
+    )
+  }
+
   return <>{segs}</>
 }
 
@@ -1672,6 +1750,8 @@ function ReviewReaderInner({
   const resultsRef = useRef(results)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
+  const selectedManualEditIdxRef = useRef(selectedManualEditIdx)
+  selectedManualEditIdxRef.current = selectedManualEditIdx
   const floatCardElRef = useRef(null)
   const positionSavedRef = useRef(false)
   const autoSelectRef = useRef(false)
@@ -1949,6 +2029,45 @@ function ReviewReaderInner({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [flatErrors, handleStatus, inProgress, proofreading, pending, onStartProofread])
+
+  useEffect(() => {
+    const handlePointerDown = (e) => {
+      // 1. 点击在卡片内部，不关闭
+      if (floatCardElRef.current && floatCardElRef.current.contains(e.target)) {
+        return
+      }
+      if (manualCardElRef.current && manualCardElRef.current.contains(e.target)) {
+        return
+      }
+
+      // 2. 点击在输入框、文本域、下拉选择器或弹层内部，不关闭
+      const tag = e.target?.tagName
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        e.target?.isContentEditable ||
+        e.target?.closest?.('input, textarea, .ant-popover, .ant-select-dropdown, .ant-modal, .ant-picker-dropdown')
+      ) {
+        return
+      }
+
+      // 3. 点击在段落内问题高亮或手动修改触发标签上，不关闭（避免重复触发或抢占）
+      if (e.target?.closest?.('[data-error-id], [data-manual-edit]')) {
+        return
+      }
+
+      // 4. 点击卡片外部非输入框区域，自动关闭卡片
+      if (selectedIdRef.current) {
+        setSelectedId(null)
+      }
+      if (selectedManualEditIdxRef.current) {
+        setSelectedManualEditIdx(null)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [])
 
   const hasResults = results && paras.length > 0
   const showPanel = panelOpen && hasResults
@@ -2560,6 +2679,7 @@ function ReviewReaderInner({
         <ErrorDetailCard
           ref={floatCardElRef}
           error={selectedError}
+          currentBodyFontSize={currentBodyFontSize}
           onAccept={() => { setFlashSide('accepted'); setTimeout(() => setFlashSide(null), 200); handleStatus('accepted') }}
           onReject={() => { setFlashSide('rejected'); setTimeout(() => setFlashSide(null), 200); handleStatus('rejected') }}
           onClose={() => setSelectedId(null)}
@@ -2569,6 +2689,7 @@ function ReviewReaderInner({
         <ManualEditDetailCard
           ref={manualCardElRef}
           para={selectedManualEditPara}
+          currentBodyFontSize={currentBodyFontSize}
           onSaveNote={handleSaveManualEditNote}
           onDeleteNoteItem={handleDeleteNoteItem}
           onRevert={handleRevertManualEdit}
