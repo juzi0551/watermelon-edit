@@ -30,13 +30,13 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python dependencies
-        run: |
-          pip install -r backend/requirements.txt
-          pip install pyinstaller
-
-      - name: Debug - verify fastapi import
         shell: pwsh
-        run: python -c "import fastapi; import starlette; import pydantic; import uvicorn; print('ALL OK:', fastapi.__version__, starlette.__version__, pydantic.__version__, uvicorn.__version__)"
+        run: |
+          python --version
+          where.exe python
+          python -m pip install -r backend/requirements.txt
+          python -m pip install pyinstaller
+          python -c "import fastapi; import starlette; import pydantic; import uvicorn; print('ALL OK:', fastapi.__version__)"
 
       - name: Bundle with PyInstaller
         shell: pwsh
