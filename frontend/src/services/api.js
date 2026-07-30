@@ -204,34 +204,40 @@ export async function retryWindow(projectId, payload) {
 
 // ==================== Paragraph & Chapter Editing ====================
 
-export async function updateParagraph(projectId, idx, text, editNote = null) {
-  const { data } = await api.patch(`/projects/${projectId}/paragraphs/${idx}`, { text, edit_note: editNote })
+export async function updateParagraph(projectId, idx, text, editNote = null, paragraphUuid = null) {
+  const target = paragraphUuid || idx
+  const { data } = await api.patch(`/projects/${projectId}/paragraphs/${target}`, { text, edit_note: editNote, paragraph_uuid: paragraphUuid })
   return data
 }
 
-export async function updateParagraphNotes(projectId, idx, notes) {
-  const { data } = await api.put(`/projects/${projectId}/paragraphs/${idx}/notes`, { notes })
+export async function updateParagraphNotes(projectId, idx, notes, paragraphUuid = null) {
+  const target = paragraphUuid || idx
+  const { data } = await api.put(`/projects/${projectId}/paragraphs/${target}/notes`, { notes, paragraph_uuid: paragraphUuid })
   return data
 }
 
-export async function deleteParagraph(projectId, idx) {
-  const { data } = await api.delete(`/projects/${projectId}/paragraphs/${idx}`)
+export async function deleteParagraph(projectId, idx, paragraphUuid = null) {
+  const target = paragraphUuid || idx
+  const { data } = await api.delete(`/projects/${projectId}/paragraphs/${target}`, { params: paragraphUuid ? { paragraph_uuid: paragraphUuid } : {} })
   return data
 }
 
-export async function togglePageBreak(projectId, idx, pageBreakType) {
+export async function togglePageBreak(projectId, idx, pageBreakType, paragraphUuid = null) {
+  const target = paragraphUuid || idx
   const payload = typeof pageBreakType === 'string'
-    ? { page_break_type: pageBreakType }
-    : { has_page_break_before: !!pageBreakType }
-  const { data } = await api.post(`/projects/${projectId}/paragraphs/${idx}/page_break`, payload)
+    ? { page_break_type: pageBreakType, paragraph_uuid: paragraphUuid }
+    : { has_page_break_before: !!pageBreakType, paragraph_uuid: paragraphUuid }
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/${target}/page_break`, payload)
   return data
 }
 
-export async function setChapter(projectId, idx, isChapter = true, level = 1, title = null) {
-  const { data } = await api.post(`/projects/${projectId}/paragraphs/${idx}/chapter`, {
+export async function setChapter(projectId, idx, isChapter = true, level = 1, title = null, paragraphUuid = null) {
+  const target = paragraphUuid || idx
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/${target}/chapter`, {
     is_chapter: isChapter,
     level,
     title,
+    paragraph_uuid: paragraphUuid,
   })
   return data
 }
@@ -243,9 +249,10 @@ export async function updateProjectProfile(projectId, profileData) {
   return data
 }
 
-export async function getCharacterGraph(projectId, uptoParagraphIdx) {
+export async function getCharacterGraph(projectId, uptoParagraphIdx, uptoParagraphUuid = null) {
   const params = {}
-  if (uptoParagraphIdx !== undefined) params.upto_paragraph_idx = uptoParagraphIdx
+  if (uptoParagraphUuid) params.upto_paragraph_uuid = uptoParagraphUuid
+  else if (uptoParagraphIdx !== undefined && uptoParagraphIdx !== null) params.upto_paragraph_idx = uptoParagraphIdx
   const { data } = await api.get(`/projects/${projectId}/character-graph`, { params })
   return data
 }

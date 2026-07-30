@@ -40,7 +40,7 @@ def scan_term_consistency(document_id: str) -> dict:
         project_id = doc["project_id"]
         
         paragraphs = conn.execute(
-            "SELECT idx, text FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
+            "SELECT idx, text, uuid FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
             (document_id,),
         ).fetchall()
 
@@ -53,6 +53,7 @@ def scan_term_consistency(document_id: str) -> dict:
 
     for p in paragraphs:
         p_idx = p["idx"]
+        p_uuid = p["uuid"]
         text = p["text"] or ""
         if not text.strip():
             continue
@@ -63,6 +64,7 @@ def scan_term_consistency(document_id: str) -> dict:
                 new_errors.append({
                     "type": "typo",
                     "paragraph_index": p_idx,
+                    "paragraph_uuid": p_uuid,
                     "original_text": non_std,
                     "suggested_text": std,
                     "severity": "medium",
@@ -75,6 +77,7 @@ def scan_term_consistency(document_id: str) -> dict:
                 new_errors.append({
                     "type": "typo",
                     "paragraph_index": p_idx,
+                    "paragraph_uuid": p_uuid,
                     "original_text": term,
                     "suggested_text": replacement,
                     "severity": "high",
@@ -90,7 +93,7 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
     """全书离线扫描 GB/T 15834 标点规范（高精度零假阳性）。"""
     with get_conn() as conn:
         paragraphs = conn.execute(
-            "SELECT idx, text FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
+            "SELECT idx, text, uuid FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
             (document_id,),
         ).fetchall()
 
@@ -99,6 +102,7 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
 
     for p in paragraphs:
         p_idx = p["idx"]
+        p_uuid = p["uuid"]
         text = p["text"] or ""
         t_strip = text.strip()
         if not t_strip:
@@ -110,6 +114,7 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
             new_errors.append({
                 "type": "punctuation",
                 "paragraph_index": p_idx,
+                "paragraph_uuid": p_uuid,
                 "original_text": "”",
                 "suggested_text": "“",
                 "severity": "high",
@@ -119,6 +124,7 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
             new_errors.append({
                 "type": "punctuation",
                 "paragraph_index": p_idx,
+                "paragraph_uuid": p_uuid,
                 "original_text": "’",
                 "suggested_text": "‘",
                 "severity": "high",
@@ -135,6 +141,7 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
             new_errors.append({
                 "type": "punctuation",
                 "paragraph_index": p_idx,
+                "paragraph_uuid": p_uuid,
                 "original_text": matched_str,
                 "suggested_text": suggested,
                 "severity": "low",
@@ -148,6 +155,7 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
             new_errors.append({
                 "type": "punctuation",
                 "paragraph_index": p_idx,
+                "paragraph_uuid": p_uuid,
                 "original_text": matched_str,
                 "suggested_text": single_punct,
                 "severity": "low",
@@ -162,6 +170,7 @@ def scan_gbt15834_punctuation(document_id: str) -> dict:
                 new_errors.append({
                     "type": "punctuation",
                     "paragraph_index": p_idx,
+                    "paragraph_uuid": p_uuid,
                     "original_text": text[:30] + "..." if len(text) > 30 else text,
                     "suggested_text": text[:30] + "...",
                     "severity": "medium",

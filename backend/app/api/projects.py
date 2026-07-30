@@ -14,6 +14,7 @@ from app.core.database import (
     update_paragraph_text, delete_paragraph_and_reorder,
     toggle_paragraph_page_break, set_paragraph_as_chapter, unset_chapter,
     update_project_profile, get_character_graph, upsert_character, insert_relationship,
+    get_paragraph_by_idx, get_paragraph_by_uuid, update_paragraph_notes_history,
 )
 from app.core.nlp_engine import scan_term_consistency, scan_gbt15834_punctuation
 from app.api.proofread import _RUNNING
@@ -30,17 +31,20 @@ class ProjectLockBody(BaseModel):
 class ParagraphUpdateBody(BaseModel):
     text: str
     edit_note: str | None = None
+    paragraph_uuid: str | None = None
 
 
 class PageBreakToggleBody(BaseModel):
     has_page_break_before: bool | None = None
     page_break_type: str | None = None
+    paragraph_uuid: str | None = None
 
 
 class ChapterSetBody(BaseModel):
     level: int = 1
     title: str | None = None
     is_chapter: bool = True
+    paragraph_uuid: str | None = None
 
 
 @router.get("/projects")
@@ -150,30 +154,48 @@ async def api_upload_to_project(project_id: str, file: UploadFile = File(...)):
 
 class ParagraphNotesBody(BaseModel):
     notes: list[dict]
+    paragraph_uuid: str | None = None
+
+
+def _resolve_para(doc_id: str, idx_or_uuid: str | int, body_uuid: str | None = None) -> dict | None:
+    if body_uuid:
+        para = get_paragraph_by_uuid(doc_id, body_uuid)
+        if para:
+            return para
+    target = str(idx_or_uuid)
+    if target.isdigit():
+        return get_paragraph_by_idx(doc_id, int(target))
+    return get_paragraph_by_uuid(doc_id, target)
 
 
 @router.patch("/projects/{project_id}/paragraphs/{idx}")
-async def api_update_paragraph(project_id: str, idx: int, body: ParagraphUpdateBody):
-    """人工修改段落文本与修改备注。"""
+async def api_update_paragraph(project_id: str, idx: str, body: ParagraphUpdateBody):
+    """人工修改段落文本与修改备注（支持 idx 或 uuid）。"""
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
-    update_paragraph_text(doc["id"], idx, body.text, edit_note=body.edit_note)
-    return {"status": "ok", "idx": idx, "text": body.text, "edit_note": body.edit_note}
+    para = _resolve_para(doc["id"], idx, body.paragraph_uuid)
+    if not para:
+        return {"error": "段落不存在"}
+    update_paragraph_text(doc["id"], para["idx"], body.text, edit_note=body.edit_note)
+    return {"status": "ok", "idx": para["idx"], "uuid": para.get("uuid"), "text": body.text, "edit_note": body.edit_note}
 
 
 @router.put("/projects/{project_id}/paragraphs/{idx}/notes")
-async def api_update_paragraph_notes(project_id: str, idx: int, body: ParagraphNotesBody):
+async def api_update_paragraph_notes(project_id: str, idx: str, body: ParagraphNotesBody):
     """更新维护段落的多轮修改备注履历。"""
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
-    update_paragraph_notes_history(doc["id"], idx, body.notes)
-    return {"status": "ok", "idx": idx, "notes": body.notes}
+    para = _resolve_para(doc["id"], idx, body.paragraph_uuid)
+    if not para:
+        return {"error": "段落不存在"}
+    update_paragraph_notes_history(doc["id"], para["idx"], body.notes)
+    return {"status": "ok", "idx": para["idx"], "uuid": para.get("uuid"), "notes": body.notes}
 
 
 @router.delete("/projects/{project_id}/paragraphs/{idx}")
-async def api_delete_paragraph(project_id: str, idx: int):
+async def api_delete_paragraph(project_id: str, idx: str, paragraph_uuid: str | None = None):
     """删除段落，平移后续段落 idx。"""
     project = get_project(project_id)
     if project and project.get("is_locked") == 1:
@@ -182,8 +204,11 @@ async def api_delete_paragraph(project_id: str, idx: int):
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
-    delete_paragraph_and_reorder(doc["id"], idx)
-    return {"status": "ok", "deleted_idx": idx}
+    para = _resolve_para(doc["id"], idx, paragraph_uuid)
+    if not para:
+        return {"error": "段落不存在"}
+    delete_paragraph_and_reorder(doc["id"], para["idx"])
+    return {"status": "ok", "deleted_idx": para["idx"], "deleted_uuid": para.get("uuid")}
 
 
 @router.post("/projects/{project_id}/lock")
@@ -197,28 +222,35 @@ async def api_toggle_project_lock(project_id: str, body: ProjectLockBody):
 
 
 @router.post("/projects/{project_id}/paragraphs/{idx}/page_break")
-async def api_toggle_page_break(project_id: str, idx: int, body: PageBreakToggleBody):
+async def api_toggle_page_break(project_id: str, idx: str, body: PageBreakToggleBody):
     """切换段落前置分页符状态。"""
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
+    para = _resolve_para(doc["id"], idx, body.paragraph_uuid)
+    if not para:
+        return {"error": "段落不存在"}
     val = body.page_break_type if body.page_break_type is not None else body.has_page_break_before
-    toggle_paragraph_page_break(doc["id"], idx, val)
-    return {"status": "ok", "idx": idx, "val": val}
+    toggle_paragraph_page_break(doc["id"], para["idx"], val)
+    return {"status": "ok", "idx": para["idx"], "uuid": para.get("uuid"), "val": val}
 
 
 @router.post("/projects/{project_id}/paragraphs/{idx}/chapter")
-async def api_set_chapter(project_id: str, idx: int, body: ChapterSetBody):
+async def api_set_chapter(project_id: str, idx: str, body: ChapterSetBody):
     """人工设置或取消章节标题。"""
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
+    para = _resolve_para(doc["id"], idx, body.paragraph_uuid)
+    if not para:
+        return {"error": "段落不存在"}
+    p_idx = para["idx"]
     if body.is_chapter:
-        ch_id = set_paragraph_as_chapter(doc["id"], idx, body.level, body.title)
-        return {"status": "ok", "action": "set", "chapter_id": ch_id}
+        ch_id = set_paragraph_as_chapter(doc["id"], p_idx, body.level, body.title)
+        return {"status": "ok", "action": "set", "chapter_id": ch_id, "idx": p_idx, "uuid": para.get("uuid")}
     else:
-        unset_chapter(doc["id"], idx)
-        return {"status": "ok", "action": "unset", "idx": idx}
+        unset_chapter(doc["id"], p_idx)
+        return {"status": "ok", "action": "unset", "idx": p_idx, "uuid": para.get("uuid")}
 
 
 @router.post("/projects/{project_id}/rename")
@@ -311,12 +343,12 @@ async def api_update_project_profile(project_id: str, body: ProjectProfileUpdate
 
 
 @router.get("/projects/{project_id}/character-graph")
-async def api_get_character_graph(project_id: str, upto_paragraph_idx: int | None = None):
+async def api_get_character_graph(project_id: str, upto_paragraph_idx: int | None = None, upto_paragraph_uuid: str | None = None):
     """获取项目的人物演进关系图谱网络数据。"""
     project = get_project(project_id)
     if not project:
         return {"error": "项目不存在"}
-    graph = get_character_graph(project_id, upto_paragraph_idx)
+    graph = get_character_graph(project_id, upto_paragraph_idx, upto_paragraph_uuid)
     return graph
 
 

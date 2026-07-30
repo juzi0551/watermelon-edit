@@ -20,7 +20,7 @@ from app.core.database import (
     # batch 模式专用
     create_batch, get_batch, get_batch_windows, update_batch_window,
     finish_batch, batch_insert_errors, batch_insert_chapters,
-    merge_and_save_chapters,
+    merge_and_save_chapters, resolve_paragraph_uuid,
 )
 from app.utils.helpers import generate_id
 
@@ -197,6 +197,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     if range_start <= e["paragraph_index"] < range_end:
                         if not _fix_error_paragraph(e, window_paras):
                             continue
+                        e["paragraph_uuid"] = resolve_paragraph_uuid(doc_id, e["paragraph_index"])
                         e.pop("chapter_id", None)
                         logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
                         insert_error(doc_id, e)
@@ -250,6 +251,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                             continue
                         if not _fix_error_paragraph(e, window_paras):
                             continue
+                        e["paragraph_uuid"] = resolve_paragraph_uuid(doc_id, e["paragraph_index"])
                         e.pop("chapter_id", None)
                         logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
                         insert_error(doc_id, e)
@@ -304,6 +306,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                         if range_start <= e["paragraph_index"] < range_end:
                             if not _fix_error_paragraph(e, window_paras):
                                 continue
+                            e["paragraph_uuid"] = resolve_paragraph_uuid(doc_id, e["paragraph_index"])
                             e.pop("chapter_id", None)
                             logger.info("INSERT para=%s orig=%r sugg=%r", e["paragraph_index"], e["original_text"][:20], e["suggested_text"][:20])
                             insert_error(doc_id, e)

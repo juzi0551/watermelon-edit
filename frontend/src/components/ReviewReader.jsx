@@ -1111,7 +1111,7 @@ const ParaRow = React.memo(function ParaRow({
         </div>
       )}
       <div
-        data-para={para.idx}
+        data-para={para.uuid || para.idx}
         onMouseEnter={() => onHover(para.idx)}
         onMouseLeave={onMouseLeave}
         onClick={(e) => onParaClick(e, para.idx)}
@@ -1145,7 +1145,7 @@ const ParaRow = React.memo(function ParaRow({
         {showCheckboxes && (
           <Checkbox
             checked={isChecked}
-            onChange={() => onCheckboxToggle(para.idx)}
+            onChange={() => onCheckboxToggle(para.uuid || para.idx)}
             style={{ lineHeight: '1.9', paddingTop: 2 }}
           />
         )}
@@ -1348,6 +1348,9 @@ function ReviewReaderInner({
   const toolbarOffsetRef = useRef({ x: 0, y: 0 })
   const scrollRestoreTimerRef = useRef(null)
 
+  const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.uuid || p.idx, p])), [paras])
+  const paraMapByIdx = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
+
   const handleScroll = useCallback((e) => {
     if (isJumpingRef.current) return
     const st = e.target.scrollTop
@@ -1369,7 +1372,11 @@ function ReviewReaderInner({
       scrollRestoreTimerRef.current = setTimeout(() => {
         const container = flowRef.current
         if (!container) return
-        const el = container.querySelector(`[data-para="${savedIdx}"]`)
+        let el = container.querySelector(`[data-para="${savedIdx}"]`)
+        if (!el && typeof savedIdx === 'number' && paraMapByIdx[savedIdx]) {
+          const u = paraMapByIdx[savedIdx].uuid
+          if (u) el = container.querySelector(`[data-para="${u}"]`)
+        }
         if (!el) return
         const rect = el.getBoundingClientRect()
         const clientX = rect.left + toolbarOffsetRef.current.x
@@ -1384,15 +1391,22 @@ function ReviewReaderInner({
         setActiveIdx(savedIdx)
       }, 150)
     }
-  }, [])
+  }, [paraMapByIdx])
 
   const chaptersByParaIdx = useMemo(() => {
     const map = new Map()
     chapters.forEach(c => {
-      map.set(c.title_paragraph_idx, c)
+      if (c.title_paragraph_idx !== null && c.title_paragraph_idx !== undefined) {
+        map.set(c.title_paragraph_idx, c)
+      }
+      if (c.title_paragraph_uuid) {
+        map.set(c.title_paragraph_uuid, c)
+      }
     })
     return map
   }, [chapters])
+
+
 
   const jumpToParagraphExact = useCallback((targetIdx, offset = 0) => {
     const container = flowRef.current
@@ -1401,21 +1415,24 @@ function ReviewReaderInner({
     isJumpingRef.current = true
     if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current)
 
-    const el = container.querySelector(`[data-para="${targetIdx}"]`)
+    let el = container.querySelector(`[data-para="${targetIdx}"]`)
+    if (!el && typeof targetIdx === 'number' && paraMapByIdx[targetIdx]) {
+      const u = paraMapByIdx[targetIdx].uuid
+      if (u) el = container.querySelector(`[data-para="${u}"]`)
+    }
     if (el) {
       el.scrollIntoView({ behavior: 'auto', block: offset > 0 ? 'center' : 'start' })
     }
     jumpTimerRef.current = setTimeout(() => {
       isJumpingRef.current = false
     }, 150)
-  }, [])
+  }, [paraMapByIdx])
 
   useImperativeHandle(ref, () => ({
     scrollToParagraph: (idx) => {
       jumpToParagraphExact(idx, 0)
     }
   }))
-  const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
 
   const flatErrors = useMemo(
     () => [...errors].sort((a, b) => a.paragraph_index - b.paragraph_index),
@@ -1435,29 +1452,30 @@ function ReviewReaderInner({
   const unmatchedIds = useMemo(() => {
     const ids = new Set()
     errors.forEach(e => {
-      const para = paraMap[e.paragraph_index]
+      const para = (e.paragraph_uuid && paraMap[e.paragraph_uuid]) || paraMapByIdx[e.paragraph_index]
       if (!para || !para.text || (e.original_text && para.text.indexOf(e.original_text) < 0)) {
         ids.add(e.id)
       }
     })
     return ids
-  }, [errors, paraMap])
+  }, [errors, paraMap, paraMapByIdx])
 
   const errorsByParaIdx = useMemo(() => {
     const map = new Map()
     activeErrors.forEach(e => {
-      const list = map.get(e.paragraph_index)
+      const key = e.paragraph_uuid || e.paragraph_index
+      const list = map.get(key)
       if (list) list.push(e)
-      else map.set(e.paragraph_index, [e])
+      else map.set(key, [e])
     })
     return map
   }, [activeErrors])
 
-  const handleCheckboxToggle = useCallback((idx) => {
+  const handleCheckboxToggle = useCallback((paraKey) => {
     onSelectionChange?.((prev) => {
       const next = new Set(prev || [])
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
+      if (next.has(paraKey)) next.delete(paraKey)
+      else next.add(paraKey)
       return next
     })
   }, [onSelectionChange])
@@ -1539,15 +1557,16 @@ function ReviewReaderInner({
   }, [selectedManualEditIdx, updateManualEditPos])
 
   const handleSaveManualEditNote = async (idx, text, note) => {
-    await updateParagraph(project.id, idx, text, note)
+    const p = sortedParas.find(item => item.idx === idx)
+    await updateParagraph(project.id, idx, text, note, p?.uuid)
     onReloadProject?.()
   }
 
   const handleDeleteNoteItem = async (idx, updatedNotes) => {
-    await updateParagraphNotes(project.id, idx, updatedNotes)
     const p = sortedParas.find(item => item.idx === idx)
+    await updateParagraphNotes(project.id, idx, updatedNotes, p?.uuid)
     if (p) {
-      p.edit_note = JSON.dumps(updatedNotes)
+      p.edit_note = JSON.stringify(updatedNotes)
     }
     onReloadProject?.()
   }
@@ -1555,7 +1574,7 @@ function ReviewReaderInner({
   const handleRevertManualEdit = async (idx) => {
     const p = sortedParas.find(item => item.idx === idx)
     if (p) {
-      await updateParagraph(project.id, idx, p.text, null)
+      await updateParagraph(project.id, idx, p.text, null, p.uuid)
       setSelectedManualEditIdx(null)
       message.success('已恢复初始原文')
       onReloadProject?.()
@@ -1616,12 +1635,13 @@ function ReviewReaderInner({
     setSavingPara(true)
     const noteVal = editingNote?.trim() || null
     const textVal = editingText
+    const targetPara = sortedParas.find(item => item.idx === paraIdx)
+    const pUuid = targetPara?.uuid
     try {
-      await updateParagraph(project.id, paraIdx, textVal, noteVal)
-      const p = sortedParas.find(item => item.idx === paraIdx)
-      if (p) {
-        p.edit_note = noteVal
-        p.revised_text = (p.text === textVal) ? null : textVal
+      await updateParagraph(project.id, paraIdx, textVal, noteVal, pUuid)
+      if (targetPara) {
+        targetPara.edit_note = noteVal
+        targetPara.revised_text = (targetPara.text === textVal) ? null : textVal
       }
       message.success('段落已更新')
       setEditingIdx(null)
@@ -1642,7 +1662,7 @@ function ReviewReaderInner({
     }
     const isBlank = !para.text || para.text.trim() === ''
     if (isBlank) {
-      deleteParagraph(project.id, para.idx).then(() => {
+      deleteParagraph(project.id, para.idx, para.uuid).then(() => {
         message.success('已删除空段落')
         onReloadProject?.()
       }).catch(e => message.error(e.message || '删除失败'))
@@ -1667,7 +1687,7 @@ function ReviewReaderInner({
       cancelText: '取消',
       onOk: async () => {
         try {
-          await deleteParagraph(project.id, para.idx)
+          await deleteParagraph(project.id, para.idx, para.uuid)
           message.success('段落已删除')
           onReloadProject?.()
         } catch (e) {
@@ -1719,10 +1739,10 @@ function ReviewReaderInner({
 
     try {
       if (isRemove) {
-        await setChapter(project.id, para.idx, false, 1, '')
+        await setChapter(project.id, para.idx, false, 1, '', para.uuid)
         message.success('已取消章节标记')
       } else {
-        await setChapter(project.id, para.idx, true, level, para.text.trim())
+        await setChapter(project.id, para.idx, true, level, para.text.trim(), para.uuid)
         message.success(`已将该段设为 ${levelNames[level] || level + '级'} 标题`)
       }
       await onReloadProject?.()
@@ -1891,21 +1911,20 @@ function ReviewReaderInner({
     if (!err) return
 
     const container = flowRef.current
-    const paraEl = container.querySelector(`[data-para="${err.paragraph_index}"]`)
+    const key = err.paragraph_uuid || err.paragraph_index
+    const paraEl = container.querySelector(`[data-para="${key}"]`) || container.querySelector(`[data-para="${err.paragraph_index}"]`)
 
     if (paraEl) {
       const cRect = container.getBoundingClientRect()
       const pRect = paraEl.getBoundingClientRect()
       const isVisible = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 40
       if (isVisible) {
-        // 目标段落已经在可视区域内：正文绝对保持静止，仅定位卡片！
         updatePos()
         return
       }
     }
 
-    // 当目标段落不在规定可视窗口内时，调用原生引擎精准定位到顶部（配合 scrollMarginTop）
-    jumpToParagraphExact(err.paragraph_index)
+    jumpToParagraphExact(key)
   }, [selectedId, flatErrors, jumpToParagraphExact, updatePos])
 
   const prevSelectedChapterRef = useRef(selectedChapter)
@@ -2171,12 +2190,12 @@ function ReviewReaderInner({
             >
               <div style={{ position: 'relative', width: '100%' }}>
                 {sortedParas.map(para => {
-                  const paraErrs = errorsByParaIdx.get(para.idx) || EMPTY_ARRAY
-                  const chapterObj = chaptersByParaIdx.get(para.idx)
+                  const paraErrs = errorsByParaIdx.get(para.uuid) || errorsByParaIdx.get(para.idx) || EMPTY_ARRAY
+                  const chapterObj = chaptersByParaIdx.get(para.uuid) || chaptersByParaIdx.get(para.idx)
                   const isCh = Boolean(chapterObj)
                   const isEditing = editingIdx === para.idx
                   const isHover = hoverIdx === para.idx
-                  const isChecked = selectedParas?.has(para.idx) || false
+                  const isChecked = (para.uuid ? selectedParas?.has(para.uuid) : false) || selectedParas?.has(para.idx) || false
 
                   const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
                   const pbInfo = PB_INFO_MAP[pbType]
@@ -2319,7 +2338,7 @@ function ReviewReaderInner({
                             setSelectedId(id)
                             const err = flatErrors.find(e => e.id === id)
                             if (err) {
-                              scrollToParagraph(err.paragraph_index)
+                              scrollToParagraph(err.paragraph_uuid || err.paragraph_index)
                             }
                           }}
                           unmatchedIds={unmatchedIds}
@@ -2680,10 +2699,10 @@ function ReviewReaderInner({
 
       {/* 浮动工具条 - position:fixed 脱离段落容器，不受 contentVisibility 裁剪 */}
       {activeIdx !== null && toolbarPos !== null && editingIdx !== activeIdx && (() => {
-        const activePara = paraMap[activeIdx]
+        const activePara = paraMapByIdx[activeIdx] || paraMap[activeIdx]
         if (!activePara) return null
         const activePbType = activePara.page_break_type || (activePara.has_page_break_before === 1 ? 'auto_chapter' : 'none')
-        const activeIsCh = chaptersByParaIdx.has(activeIdx)
+        const activeIsCh = chaptersByParaIdx.has(activePara.uuid) || chaptersByParaIdx.has(activeIdx)
         const hasHardBreak = activePbType === 'original' || activePbType === 'manual'
         return (
           <div ref={toolbarElRef} style={{

@@ -10,7 +10,7 @@ from datetime import datetime
 from app.core.database import (
     get_project, get_current_document, get_errors, get_error,
     update_error_status, update_error_suggested, update_project_status,
-    get_paragraph_by_idx, update_paragraph_revised, get_revised_paragraphs,
+    get_paragraph_by_idx, get_paragraph_by_uuid, update_paragraph_revised, get_revised_paragraphs,
     get_chapters,
 )
 
@@ -35,18 +35,22 @@ def _apply_heading_style(docx, para, level: int):
             pass
 
 
-def _recompute_paragraph(document_id: str, paragraph_idx: int):
+def _recompute_paragraph(document_id: str, paragraph_idx_or_uuid: int | str):
     """根据该段所有已采纳错误，重算 revised_text（撤回即重新基于原文计算）。
-
-    Bug 1 修复：按 position 排序而非插入顺序。
-    Bug 2 修复：基于 position 切片替换，而非 str.find/replace（避免匹配到错误位置）。
+    支持传入 paragraph_idx (int/str) 或 paragraph_uuid (str)。
     """
-    para = get_paragraph_by_idx(document_id, paragraph_idx)
+    if isinstance(paragraph_idx_or_uuid, str) and not paragraph_idx_or_uuid.isdigit():
+        para = get_paragraph_by_uuid(document_id, paragraph_idx_or_uuid)
+    else:
+        para = get_paragraph_by_idx(document_id, int(paragraph_idx_or_uuid))
     if not para:
         return
+    para_idx = para["idx"]
+    para_uuid = para.get("uuid")
     accepted = [
         e for e in get_errors(document_id)
-        if e["paragraph_index"] == paragraph_idx and e["user_status"] == "accepted"
+        if ((para_uuid and e.get("paragraph_uuid") == para_uuid) or e.get("paragraph_index") == para_idx)
+        and e["user_status"] == "accepted"
     ]
     original_clean = para["text"].lstrip(" \t\r\n\u3000")
     has_lstrip = original_clean != para["text"]
@@ -92,7 +96,7 @@ async def set_error_status(project_id: str, error_id: int, body: StatusBody):
     update_error_status(error_id, body.status)
     e = get_error(error_id)
     if e:
-        _recompute_paragraph(e["document_id"], e["paragraph_index"])
+        _recompute_paragraph(e["document_id"], e.get("paragraph_uuid") or e["paragraph_index"])
     return {"status": "ok"}
 
 
@@ -110,10 +114,10 @@ async def accept_all(project_id: str):
     # 按段落分组，每段只重算一次（Bug 3 修复）
     seen = set()
     for e in errors:
-        pi = e["paragraph_index"]
-        if pi not in seen:
-            seen.add(pi)
-            _recompute_paragraph(doc_id, pi)
+        key = e.get("paragraph_uuid") or e["paragraph_index"]
+        if key not in seen:
+            seen.add(key)
+            _recompute_paragraph(doc_id, key)
     return {"status": "ok", "count": len(errors)}
 
 
@@ -161,7 +165,12 @@ async def export_document(project_id: str):
         indent_enabled = style_cfg.get("first_line_indent_enabled", False)
 
         chapters = get_chapters(doc_id)
-        ch_map = {c["title_paragraph_idx"]: c for c in chapters}
+        ch_map = {}
+        for c in chapters:
+            if c.get("title_paragraph_uuid"):
+                ch_map[c["title_paragraph_uuid"]] = c
+            if c.get("title_paragraph_idx") is not None:
+                ch_map[c["title_paragraph_idx"]] = c
 
         # 按 DB idx 顺序逐段重建正文
         for p_data in paras:
@@ -169,11 +178,12 @@ async def export_document(project_id: str):
             style_name = p_data.get("style_name") or "Normal"
             pb_type = p_data.get("page_break_type", "none")
             idx = p_data.get("idx", 0)
+            p_uuid = p_data.get("uuid")
 
             # 新建段落（python-docx 自动插入到 sectPr 之前）
             new_para = docx.add_paragraph()
 
-            ch_info = ch_map.get(idx)
+            ch_info = (ch_map.get(p_uuid) if p_uuid else None) or ch_map.get(idx)
             if ch_info:
                 # 章节/副节：自动赋予标准的 Heading 1 / Heading 2 标题样式，确保 Word 导航大纲及二次导入完整识别
                 level = ch_info.get("level", 1)
