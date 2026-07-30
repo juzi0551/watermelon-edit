@@ -1013,7 +1013,6 @@ const ParaRow = React.memo(function ParaRow({
   showCheckboxes,
   isChecked,
   selectedId,
-  toolbarPos,
   currentBodyFontSize,
   firstLineIndentEnabled,
   pbInfo,
@@ -1022,6 +1021,7 @@ const ParaRow = React.memo(function ParaRow({
   editingText,
   editingNote,
   savingPara,
+  showOriginalThis,
   onHover,
   onMouseLeave,
   onParaClick,
@@ -1039,12 +1039,10 @@ const ParaRow = React.memo(function ParaRow({
   showAllOriginals,
   onSelectManualEdit,
 }) {
-  const [showOriginalThis, setShowOriginalThis] = useState(false)
   const hasManualEdit = Boolean(para.revised_text && para.revised_text !== para.text)
   const showOriginal = (showAllOriginals || showOriginalThis) && hasManualEdit
   const activeParaText = para.revised_text ?? para.text
   const isBlank = !activeParaText || activeParaText.trim() === ''
-  const showToolbar = isActive && !isEditing && toolbarPos !== null
 
   return (
     <React.Fragment>
@@ -1303,122 +1301,6 @@ const ParaRow = React.memo(function ParaRow({
             </div>
           )}
         </div>
-
-        {showToolbar && (
-          <div style={{
-            position: 'absolute',
-            top: (isActive && toolbarPos) ? toolbarPos.y : -30,
-            left: (isActive && toolbarPos) ? toolbarPos.x : 'auto',
-            right: (isActive && toolbarPos) ? 'auto' : 12,
-            zIndex: 10,
-            background: color.bgCard,
-            backdropFilter: 'blur(4px)',
-            WebkitBackdropFilter: 'blur(4px)',
-            padding: '3px 8px',
-            borderRadius: 20,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.12)',
-            border: `1px solid ${color.borderBar}`,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-          }}>
-            {/* 1. 编辑 */}
-            <Tooltip title="编辑段落文本">
-              <Button
-                type="text"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={(e) => { e.stopPropagation(); onStartEdit(para); }}
-                style={{ fontSize: 12 }}
-              >
-                编辑
-              </Button>
-            </Tooltip>
-
-            {/* 2. 设为标题 */}
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => onSetChapter(para, 1) },
-                  { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => onSetChapter(para, 2) },
-                  { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => onSetChapter(para, 3) },
-                  { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => onSetChapter(para, 4) },
-                  { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => onSetChapter(para, 5) },
-                  { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => onSetChapter(para, 6) },
-                  ...(isCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => onSetChapter(para, 1, true) }] : []),
-                ],
-              }}
-            >
-              <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>
-                设为标题 ▾
-              </Button>
-            </Dropdown>
-
-            {/* 3. 看原文 */}
-            <Tooltip title={showOriginalThis ? "隐藏原文" : "查看初始原文"}>
-              <Button
-                type="text"
-                size="small"
-                icon={<EyeOutlined />}
-                onClick={(e) => { e.stopPropagation(); setShowOriginalThis(!showOriginalThis); }}
-                style={{ fontSize: 12, color: showOriginalThis ? '#1890ff' : undefined }}
-              >
-                {showOriginalThis ? '藏原文' : '看原文'}
-              </Button>
-            </Tooltip>
-
-            {/* 4. 新增/移除分页 */}
-            {(() => {
-              const hasHardBreak = pbType === 'original' || pbType === 'manual'
-              if (hasHardBreak) {
-                return (
-                  <Popconfirm
-                    title="确定移除该硬分页？"
-                    description="移除后该段落导出时将不再另起新页。"
-                    onConfirm={() => onTogglePageBreak(para)}
-                    okText="确定移除"
-                    okButtonProps={{ danger: true }}
-                    cancelText="取消"
-                  >
-                    <Tooltip title="移除段前硬分页（使导出 Word 时本段续接上一页）">
-                      <Button type="text" size="small" danger icon={<ScissorOutlined />} style={{ fontSize: 12 }}>
-                        移除分页
-                      </Button>
-                    </Tooltip>
-                  </Popconfirm>
-                )
-              }
-              return (
-                <Tooltip title="插入段前硬分页（使导出 Word 时从新一页开始）">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<BookOutlined />}
-                    onClick={(e) => { e.stopPropagation(); onTogglePageBreak(para) }}
-                    style={{ fontSize: 12 }}
-                  >
-                    新增分页
-                  </Button>
-                </Tooltip>
-              )
-            })()}
-
-            {/* 5. 删除 */}
-            <Tooltip title="删除该段落">
-              <Button
-                type="text"
-                danger
-                size="small"
-                icon={<DeleteOutlined />}
-                onClick={(e) => { e.stopPropagation(); onDeletePara(para); }}
-                style={{ fontSize: 12 }}
-              >
-                删除
-              </Button>
-            </Tooltip>
-          </div>
-        )}
       </div>
     </React.Fragment>
   )
@@ -1551,6 +1433,9 @@ function ReviewReaderInner({
   const handleHover = useCallback((idx) => setHoverIdx(idx), [])
   const handleMouseLeave = useCallback(() => setHoverIdx(null), [])
   const handleCancelEdit = useCallback(() => setEditingIdx(null), [])
+  const handleToggleOriginal = useCallback((paraIdx) => {
+    setShowOriginalMap(prev => ({ ...prev, [paraIdx]: !prev[paraIdx] }))
+  }, [])
 
   const [selectedId, setSelectedId] = useState(null)
   const [panelTab, setPanelTab] = useState('pending')
@@ -1565,6 +1450,7 @@ function ReviewReaderInner({
   const [hoverIdx, setHoverIdx] = useState(null)
   const [activeIdx, setActiveIdx] = useState(null)
   const [toolbarPos, setToolbarPos] = useState(null)
+  const [showOriginalMap, setShowOriginalMap] = useState({})
   const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
 
   const selectedManualEditPara = useMemo(() => {
@@ -1666,17 +1552,10 @@ function ReviewReaderInner({
       setToolbarPos(null)
       return
     }
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    const containerWidth = rect.width || 600
-
-    // Align the center of [✏️ 编辑] button (first item in toolbar) directly with cursor X (x - 25)
-    const clampedLeft = Math.max(8, Math.min(x - 25, containerWidth - 230))
-
-    let clampedTop = y - 38
-    if (clampedTop < -10 && paraIdx === 0) {
-      clampedTop = y + 22
+    const clampedLeft = Math.max(8, Math.min(e.clientX - 25, window.innerWidth - 230))
+    let clampedTop = e.clientY - 38
+    if (clampedTop < 0) {
+      clampedTop = e.clientY + 22
     }
 
     setToolbarPos({ x: clampedLeft, y: clampedTop })
@@ -2274,7 +2153,6 @@ function ReviewReaderInner({
                       showCheckboxes={showCheckboxes}
                       isChecked={isChecked}
                       selectedId={selectedId}
-                      toolbarPos={isActive ? toolbarPos : null}
                       currentBodyFontSize={currentBodyFontSize}
                       firstLineIndentEnabled={Boolean(project?.style_config?.first_line_indent_enabled)}
                       pbInfo={pbInfo}
@@ -2283,6 +2161,7 @@ function ReviewReaderInner({
                       editingText={isEditing ? editingText : ''}
                       editingNote={isEditing ? editingNote : ''}
                       savingPara={savingPara}
+                      showOriginalThis={!!showOriginalMap[para.idx]}
                       onHover={handleHover}
                       onMouseLeave={handleMouseLeave}
                       onParaClick={handleParaClick}
@@ -2755,6 +2634,92 @@ function ReviewReaderInner({
           onClose={() => setSelectedManualEditIdx(null)}
         />
       )}
+
+      {/* 浮动工具条 - position:fixed 脱离段落容器，不受 contentVisibility 裁剪 */}
+      {activeIdx !== null && toolbarPos !== null && editingIdx !== activeIdx && (() => {
+        const activePara = paraMap[activeIdx]
+        if (!activePara) return null
+        const activePbType = activePara.page_break_type || (activePara.has_page_break_before === 1 ? 'auto_chapter' : 'none')
+        const activeIsCh = chaptersByParaIdx.has(activeIdx)
+        const hasHardBreak = activePbType === 'original' || activePbType === 'manual'
+        return (
+          <div style={{
+            position: 'fixed',
+            top: toolbarPos.y,
+            left: toolbarPos.x,
+            zIndex: 1000,
+            background: color.bgCard,
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            padding: '3px 8px',
+            borderRadius: 20,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.12)',
+            border: `1px solid ${color.borderBar}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}>
+            <Tooltip title="编辑段落文本">
+              <Button type="text" size="small" icon={<EditOutlined />}
+                onClick={(e) => { e.stopPropagation(); handleStartEdit(activePara); }}
+                style={{ fontSize: 12 }}>
+                编辑
+              </Button>
+            </Tooltip>
+
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => handleSetChapter(activePara, 1) },
+                  { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => handleSetChapter(activePara, 2) },
+                  { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => handleSetChapter(activePara, 3) },
+                  { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => handleSetChapter(activePara, 4) },
+                  { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => handleSetChapter(activePara, 5) },
+                  { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => handleSetChapter(activePara, 6) },
+                  ...(activeIsCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => handleSetChapter(activePara, 1, true) }] : []),
+                ],
+              }}>
+              <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>
+                设为标题 ▾
+              </Button>
+            </Dropdown>
+
+            <Tooltip title={showOriginalMap[activeIdx] ? "隐藏原文" : "查看初始原文"}>
+              <Button type="text" size="small" icon={<EyeOutlined />}
+                onClick={(e) => { e.stopPropagation(); handleToggleOriginal(activeIdx); }}
+                style={{ fontSize: 12, color: showOriginalMap[activeIdx] ? '#1890ff' : undefined }}>
+                {showOriginalMap[activeIdx] ? '藏原文' : '看原文'}
+              </Button>
+            </Tooltip>
+
+            {hasHardBreak ? (
+              <Popconfirm title="确定移除该硬分页？" description="移除后该段落导出时将不再另起新页。"
+                onConfirm={() => handleTogglePageBreak(activePara)} okText="确定移除" okButtonProps={{ danger: true }} cancelText="取消">
+                <Tooltip title="移除段前硬分页（使导出 Word 时本段续接上一页）">
+                  <Button type="text" size="small" danger icon={<ScissorOutlined />} style={{ fontSize: 12 }}>
+                    移除分页
+                  </Button>
+                </Tooltip>
+              </Popconfirm>
+            ) : (
+              <Tooltip title="插入段前硬分页（使导出 Word 时从新一页开始）">
+                <Button type="text" size="small" icon={<BookOutlined />}
+                  onClick={(e) => { e.stopPropagation(); handleTogglePageBreak(activePara) }} style={{ fontSize: 12 }}>
+                  新增分页
+                </Button>
+              </Tooltip>
+            )}
+
+            <Tooltip title="删除该段落">
+              <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                onClick={(e) => { e.stopPropagation(); handleDeletePara(activePara); }} style={{ fontSize: 12 }}>
+                删除
+              </Button>
+            </Tooltip>
+          </div>
+        )
+      })()}
 
     </>
   )
