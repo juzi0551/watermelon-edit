@@ -38,7 +38,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if let Some(state) = window.try_state::<BackendProcess>() {
                     if let Ok(mut guard) = state.0.lock() {
-                        if let Some(mut child) = guard.take() {
+                        if let Some(child) = guard.take() {
                             let _ = child.kill();
                         }
                     }

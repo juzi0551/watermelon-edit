@@ -61,14 +61,16 @@ jobs:
 
       - name: Build Tauri desktop app
         shell: pwsh
-        run: npx --prefix frontend tauri build
+        run: |
+          cd src-tauri
+          cargo build --release
 
       - name: Upload Tauri portable bundle
         uses: actions/upload-artifact@v4
         with:
           name: 西瓜审校-windows-portable
           path: |
-            src-tauri/target/release/西瓜审校.exe
+            src-tauri/target/release/watermelon-edit.exe
             src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe
           retention-days: 30
 
