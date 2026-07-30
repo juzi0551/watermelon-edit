@@ -46,6 +46,15 @@ fn show_error_box(title: &str, message: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 全局 panic hook：在 Tauri 初始化前捕获任何崩溃
+    let orig_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let msg = format!("程序崩溃: {panic_info}");
+        log_crash(&msg);
+        show_error_box("西瓜审校 - 程序崩溃", &msg);
+        orig_hook(panic_info);
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
