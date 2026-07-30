@@ -41,7 +41,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "backend/app/data"
-          pyinstaller --name "西瓜少年" --onefile --noconfirm --clean `
+          pyinstaller --name "watermelon-server" --onefile --noconfirm --clean `
             --paths "backend" `
             --add-data "backend/app/data;backend/app/data" `
             --collect-all litellm --collect-all tiktoken --collect-all tiktoken_ext `
@@ -57,22 +57,24 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "src-tauri/binaries"
-          Copy-Item "dist/西瓜少年.exe" "src-tauri/binaries/西瓜少年-x86_64-pc-windows-msvc.exe" -Force
+          Copy-Item "dist/watermelon-server.exe" "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" -Force
 
       - name: Build Tauri desktop app
         shell: pwsh
         run: npx --prefix frontend tauri build
 
-      - name: Upload Tauri portable zip
+      - name: Upload Tauri portable bundle
         uses: actions/upload-artifact@v4
         with:
           name: 西瓜审校-windows-portable
-          path: src-tauri/target/release/*.zip
+          path: |
+            src-tauri/target/release/西瓜审校.exe
+            src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe
           retention-days: 30
 
       - name: Upload backend exe (standalone)
         uses: actions/upload-artifact@v4
         with:
-          name: 西瓜少年-windows-exe
-          path: dist/西瓜少年.exe
+          name: watermelon-server-windows-exe
+          path: dist/watermelon-server.exe
           retention-days: 30

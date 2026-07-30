@@ -1,5 +1,5 @@
 """
-西瓜少年 — PyInstaller 入口脚本
+watermelon-server — PyInstaller 入口（FastAPI 后端）
 打包后自动处理路径问题，数据目录写到 exe 同级的 data/ 下。
 """
 import os
@@ -24,7 +24,7 @@ try:
     _CRASH_LOG = open(_CRASH_LOG_PATH, 'w', encoding='utf-8')
     sys.stdout = _CRASH_LOG
     sys.stderr = _CRASH_LOG
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] 西瓜少年启动中...")
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] watermelon-server 启动中...")
 except Exception:
     pass
 
@@ -138,7 +138,7 @@ def main():
 
         # === 启动 ===
         print("=" * 50)
-        print("  西瓜少年 · 小说校稿工具")
+        print("  Watermelon Edit · 小说校稿工具")
         print("  浏览器打开: http://localhost:8000")
         print("  按 Ctrl+C 停止")
         print("=" * 50)

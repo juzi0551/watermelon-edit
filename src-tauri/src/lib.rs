@@ -12,7 +12,7 @@ pub fn run() {
             // Spawn the Python backend as a sidecar
             let (mut rx, child) = app
                 .shell()
-                .sidecar("西瓜少年")
+                .sidecar("watermelon-server")
                 .expect("failed to find sidecar binary")
                 .spawn()
                 .expect("failed to spawn backend");
