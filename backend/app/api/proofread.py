@@ -390,6 +390,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     for e in errs:
                         if ws <= e["paragraph_index"] < we:
                             if _fix_error_paragraph(e, window_paras):
+                                e["paragraph_uuid"] = resolve_paragraph_uuid(doc_id, e["paragraph_index"])
                                 e.pop("chapter_id", None)
                                 valid_errs.append(e)
                     valid_chs = [
