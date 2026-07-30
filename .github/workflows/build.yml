@@ -61,9 +61,7 @@ jobs:
 
       - name: Build Tauri desktop app
         shell: pwsh
-        run: |
-          cd frontend
-          npm run tauri:build
+        run: npx --prefix frontend tauri build
 
       - name: Upload Tauri portable zip
         uses: actions/upload-artifact@v4
