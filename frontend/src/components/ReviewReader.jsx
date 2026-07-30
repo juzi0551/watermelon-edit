@@ -1089,7 +1089,7 @@ const ParaRow = React.memo(function ParaRow({
                     fontWeight: 500,
                     cursor: 'pointer',
                     boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-                    transition: 'all 0.15s ease',
+          transition: 'border-left 0.08s ease',
                   }}>
                   {pbInfo.label}
                 </span>
@@ -1343,6 +1343,10 @@ function ReviewReaderInner({
 
   const isJumpingRef = useRef(false)
   const jumpTimerRef = useRef(null)
+  const toolbarParaRef = useRef(null)
+  const toolbarElRef = useRef(null)
+  const toolbarOffsetRef = useRef({ x: 0, y: 0 })
+  const scrollRestoreTimerRef = useRef(null)
 
   const handleScroll = useCallback((e) => {
     if (isJumpingRef.current) return
@@ -1352,6 +1356,34 @@ function ReviewReaderInner({
         setScrollTop(st)
       }
     })
+
+    if (toolbarParaRef.current !== null) {
+      // 直接 DOM 隐藏，避免等 React 渲染周期
+      if (toolbarElRef.current) toolbarElRef.current.style.display = 'none'
+      const savedIdx = toolbarParaRef.current
+      toolbarParaRef.current = null
+      setActiveIdx(null)
+      setToolbarPos(null)
+
+      if (scrollRestoreTimerRef.current) clearTimeout(scrollRestoreTimerRef.current)
+      scrollRestoreTimerRef.current = setTimeout(() => {
+        const container = flowRef.current
+        if (!container) return
+        const el = container.querySelector(`[data-para="${savedIdx}"]`)
+        if (!el) return
+        const rect = el.getBoundingClientRect()
+        const clientX = rect.left + toolbarOffsetRef.current.x
+        const clientY = rect.top + toolbarOffsetRef.current.y
+        const clampedLeft = Math.max(8, Math.min(clientX - 25, window.innerWidth - 230))
+        let clampedTop = clientY - 38
+        if (clampedTop < 0) {
+          clampedTop = clientY + 22
+        }
+        toolbarParaRef.current = savedIdx
+        setToolbarPos({ x: clampedLeft, y: clampedTop })
+        setActiveIdx(savedIdx)
+      }, 150)
+    }
   }, [])
 
   const chaptersByParaIdx = useMemo(() => {
@@ -1453,6 +1485,12 @@ function ReviewReaderInner({
   const [showOriginalMap, setShowOriginalMap] = useState({})
   const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
 
+  useEffect(() => {
+    if (activeIdx !== null && toolbarPos !== null) {
+      toolbarParaRef.current = activeIdx
+    }
+  }, [activeIdx, toolbarPos])
+
   const selectedManualEditPara = useMemo(() => {
     if (!selectedManualEditIdx) return null
     return sortedParas.find(p => p.idx === selectedManualEditIdx) || null
@@ -1551,6 +1589,11 @@ function ReviewReaderInner({
       setActiveIdx(null)
       setToolbarPos(null)
       return
+    }
+    const paraRect = e.currentTarget.getBoundingClientRect()
+    toolbarOffsetRef.current = {
+      x: e.clientX - paraRect.left,
+      y: e.clientY - paraRect.top,
     }
     const clampedLeft = Math.max(8, Math.min(e.clientX - 25, window.innerWidth - 230))
     let clampedTop = e.clientY - 38
@@ -2643,7 +2686,7 @@ function ReviewReaderInner({
         const activeIsCh = chaptersByParaIdx.has(activeIdx)
         const hasHardBreak = activePbType === 'original' || activePbType === 'manual'
         return (
-          <div style={{
+          <div ref={toolbarElRef} style={{
             position: 'fixed',
             top: toolbarPos.y,
             left: toolbarPos.x,
