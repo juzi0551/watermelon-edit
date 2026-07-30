@@ -23,7 +23,7 @@ fn log_crash(msg: &str) {
     }
 }
 
-/// Windows 下弹出错误消息框
+// Windows 下弹出错误消息框
 #[cfg(target_os = "windows")]
 extern "system" {
     fn MessageBoxW(
