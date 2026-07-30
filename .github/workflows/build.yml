@@ -59,19 +59,22 @@ jobs:
           New-Item -ItemType Directory -Force -Path "src-tauri/binaries"
           Copy-Item "dist/watermelon-server.exe" "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" -Force
 
-      - name: Build Tauri desktop app
+      - name: Build Tauri desktop app (skip installer)
+        shell: pwsh
+        run: npx --prefix frontend tauri build
+
+      - name: Package portable bundle
         shell: pwsh
         run: |
-          cd src-tauri
-          cargo build --release
+          New-Item -ItemType Directory -Force -Path "tmp-portable/binaries"
+          Copy-Item "src-tauri/target/release/watermelon-edit.exe" "tmp-portable/"
+          Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/binaries/"
 
       - name: Upload Tauri portable bundle
         uses: actions/upload-artifact@v4
         with:
           name: 西瓜审校-windows-portable
-          path: |
-            src-tauri/target/release/watermelon-edit.exe
-            src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe
+          path: tmp-portable/*
           retention-days: 30
 
       - name: Upload backend exe (standalone)
