@@ -15,6 +15,7 @@ import {
 import { color, radius, spacing, fontSize } from '../design-tokens'
 import {
   updateParagraph, updateParagraphNotes, deleteParagraph, togglePageBreak, setChapter,
+  insertParagraph, mergeParagraphs, mergeMultipleParagraphs,
 } from '../services/api'
 
 const EMPTY_ARRAY = Object.freeze([])
@@ -1008,9 +1009,7 @@ const ParaRow = React.memo(function ParaRow({
   isCh,
   chapterObj,
   isEditing,
-  isHover,
   isActive,
-  showCheckboxes,
   isChecked,
   selectedId,
   currentBodyFontSize,
@@ -1022,8 +1021,6 @@ const ParaRow = React.memo(function ParaRow({
   editingNote,
   savingPara,
   showOriginalThis,
-  onHover,
-  onMouseLeave,
   onParaClick,
   onCheckboxToggle,
   onEditingTextChange,
@@ -1031,6 +1028,9 @@ const ParaRow = React.memo(function ParaRow({
   onSaveEdit,
   onCancelEdit,
   onStartEdit,
+  onInsertPara,
+  onEnterMergeMode,
+  onToggleOriginal,
   onDeletePara,
   onTogglePageBreak,
   onSetChapter,
@@ -1038,11 +1038,24 @@ const ParaRow = React.memo(function ParaRow({
   onSelectError,
   showAllOriginals,
   onSelectManualEdit,
+  mergeMode,
+  isMergeChecked,
+  onMergeToggle,
 }) {
   const hasManualEdit = Boolean(para.revised_text && para.revised_text !== para.text)
   const showOriginal = (showAllOriginals || showOriginalThis) && hasManualEdit
   const activeParaText = para.revised_text ?? para.text
   const isBlank = !activeParaText || activeParaText.trim() === ''
+
+  const [localText, setLocalText] = useState('')
+  const [localNote, setLocalNote] = useState('')
+
+  useEffect(() => {
+    if (isEditing) {
+      setLocalText(editingText || para.revised_text || para.text || '')
+      setLocalNote(editingNote || '')
+    }
+  }, [isEditing, editingText, editingNote, para.revised_text, para.text])
 
   return (
     <React.Fragment>
@@ -1112,9 +1125,14 @@ const ParaRow = React.memo(function ParaRow({
       )}
       <div
         data-para={para.uuid || para.idx}
-        onMouseEnter={() => onHover(para.idx)}
-        onMouseLeave={onMouseLeave}
-        onClick={(e) => onParaClick(e, para.idx)}
+        onClick={(e) => {
+          if (mergeMode) {
+            e.stopPropagation()
+            onMergeToggle?.(para)
+          } else {
+            onParaClick(e, para.idx)
+          }
+        }}
         style={{
           scrollMarginTop: 60,
           marginBottom: 16,
@@ -1126,29 +1144,107 @@ const ParaRow = React.memo(function ParaRow({
           transition: 'all 0.15s ease',
           contentVisibility: 'auto',
           containIntrinsicSize: '0 48px',
-          background: isActive
-            ? 'rgba(19, 194, 194, 0.09)'
-            : isHover
-              ? 'rgba(19, 194, 194, 0.04)'
+          cursor: mergeMode ? 'pointer' : 'default',
+          background: isMergeChecked
+            ? 'rgba(19, 194, 194, 0.14)'
+            : isActive
+              ? 'rgba(19, 194, 194, 0.09)'
               : isCh
                 ? 'rgba(212, 163, 89, 0.04)'
                 : 'transparent',
-          borderLeft: isActive
+          borderLeft: isMergeChecked
             ? '4px solid #13c2c2'
-            : isHover
-              ? '4px solid #87e8de'
+            : isActive
+              ? '4px solid #13c2c2'
               : isCh
                 ? '4px solid #ffe58f'
                 : '4px solid transparent',
         }}
       >
-        {showCheckboxes && (
-          <Checkbox
-            checked={isChecked}
-            onChange={() => onCheckboxToggle(para.uuid || para.idx)}
-            style={{ lineHeight: '1.9', paddingTop: 2 }}
-          />
-        )}
+        {isActive && !isEditing && !mergeMode && (() => {
+          const activePbType = pbType || 'none'
+          const activeIsCh = isCh
+          const hasHardBreak = activePbType === 'original' || activePbType === 'manual'
+          return (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 10,
+                zIndex: 100,
+                background: color.bgCard,
+                backdropFilter: 'blur(6px)',
+                WebkitBackdropFilter: 'blur(6px)',
+                padding: '3px 8px',
+                borderRadius: 20,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.08)',
+                border: `1px solid ${color.borderBar}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <Tooltip title="编辑段落文本">
+                <Button type="text" size="small" icon={<EditOutlined />}
+                  onClick={(e) => { e.stopPropagation(); onStartEdit(para); }}
+                  style={{ fontSize: 12 }}>编辑</Button>
+              </Tooltip>
+
+              <Dropdown trigger={['click']} menu={{ items: [
+                { key: 'insert-above', label: '⬆️ 向上插入新段落', onClick: () => onInsertPara(para, 'above') },
+                { key: 'insert-below', label: '⬇️ 向下插入新段落', onClick: () => onInsertPara(para, 'below') },
+              ] }}>
+                <Button type="text" size="small" icon={<PlusOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>新建段落 ▾</Button>
+              </Dropdown>
+
+              <Tooltip title="多段落合并">
+                <Button type="text" size="small" icon={<ScissorOutlined style={{ transform: 'rotate(90deg)' }} />}
+                  onClick={(e) => { e.stopPropagation(); onEnterMergeMode(para); }}
+                  style={{ fontSize: 12 }}>合并段落</Button>
+              </Tooltip>
+
+              <Dropdown trigger={['click']} menu={{ items: [
+                { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => onSetChapter(para, 1) },
+                { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => onSetChapter(para, 2) },
+                { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => onSetChapter(para, 3) },
+                { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => onSetChapter(para, 4) },
+                { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => onSetChapter(para, 5) },
+                { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => onSetChapter(para, 6) },
+                ...(activeIsCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => onSetChapter(para, 1, true) }] : []),
+              ] }}>
+                <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>设为标题 ▾</Button>
+              </Dropdown>
+
+              <Tooltip title={showOriginalThis ? "隐藏原文" : "查看初始原文"}>
+                <Button type="text" size="small" icon={<EyeOutlined />}
+                  onClick={(e) => { e.stopPropagation(); onToggleOriginal(para.idx); }}
+                  style={{ fontSize: 12, color: showOriginalThis ? '#1890ff' : undefined }}>
+                  {showOriginalThis ? '藏原文' : '看原文'}
+                </Button>
+              </Tooltip>
+
+              {hasHardBreak ? (
+                <Popconfirm title="确定移除该硬分页？" description="移除后该段落导出时将不再另起新页。"
+                  onConfirm={() => onTogglePageBreak(para)} okText="确定移除" okButtonProps={{ danger: true }} cancelText="取消">
+                  <Tooltip title="移除段前硬分页">
+                    <Button type="text" size="small" danger icon={<ScissorOutlined />} style={{ fontSize: 12 }}>移除分页</Button>
+                  </Tooltip>
+                </Popconfirm>
+              ) : (
+                <Tooltip title="插入段前硬分页（使导出 Word 时从新一页开始）">
+                  <Button type="text" size="small" icon={<BookOutlined />}
+                    onClick={(e) => { e.stopPropagation(); onTogglePageBreak(para) }} style={{ fontSize: 12 }}>新增分页</Button>
+                </Tooltip>
+              )}
+
+              <Tooltip title="删除该段落">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                  onClick={(e) => { e.stopPropagation(); onDeletePara(para); }} style={{ fontSize: 12 }}>删除</Button>
+              </Tooltip>
+            </div>
+          )
+        })()}
         <span style={{
           color: para?.revised_text ? color.success : color.textTertiary,
           fontWeight: para?.revised_text ? 600 : 400,
@@ -1175,15 +1271,15 @@ const ParaRow = React.memo(function ParaRow({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
               <Input.TextArea
                 autoFocus
-                value={editingText}
-                onChange={e => onEditingTextChange(e.target.value)}
+                value={localText}
+                onChange={e => setLocalText(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     e.preventDefault()
                     onCancelEdit()
                   } else if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    onSaveEdit(para.idx)
+                    onSaveEdit(para.idx, localText, localNote)
                   }
                 }}
                 autoSize={{ minRows: 2, maxRows: 10 }}
@@ -1191,15 +1287,15 @@ const ParaRow = React.memo(function ParaRow({
                 placeholder="编辑段落文本..."
               />
               <Input
-                value={editingNote}
-                onChange={e => onEditingNoteChange(e.target.value)}
+                value={localNote}
+                onChange={e => setLocalNote(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     e.preventDefault()
                     onCancelEdit()
                   } else if (e.key === 'Enter') {
                     e.preventDefault()
-                    onSaveEdit(para.idx)
+                    onSaveEdit(para.idx, localText, localNote)
                   }
                 }}
                 placeholder="可选：追加本次修改原因备注（例如：第2次修改：修正错词）"
@@ -1235,7 +1331,7 @@ const ParaRow = React.memo(function ParaRow({
                   type="primary"
                   size="middle"
                   loading={savingPara}
-                  onClick={() => onSaveEdit(para.idx)}
+                  onClick={() => onSaveEdit(para.idx, localText, localNote)}
                   style={{ paddingInline: 20, fontWeight: 500 }}
                 >
                   保存 (Enter)
@@ -1243,7 +1339,16 @@ const ParaRow = React.memo(function ParaRow({
               </div>
             </div>
           ) : (
-            <div onDoubleClick={() => onStartEdit(para)} style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}>
+            <div
+              onDoubleClick={(e) => {
+                if (mergeMode) {
+                  e.stopPropagation()
+                  return
+                }
+                onStartEdit(para)
+              }}
+              style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}
+            >
               {isCh && (
                 <>
                   <Tag color="gold" style={{ marginBottom: 4, marginRight: 4 }}>
@@ -1336,62 +1441,13 @@ function ReviewReaderInner({
 
   const ITEM_HEIGHT = 48
   const BUFFER_SIZE = 200
-  const [scrollTop, setScrollTop] = useState(0)
-  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
-    try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
-  })
-
-  const isJumpingRef = useRef(false)
-  const jumpTimerRef = useRef(null)
-  const toolbarParaRef = useRef(null)
-  const toolbarElRef = useRef(null)
-  const toolbarOffsetRef = useRef({ x: 0, y: 0 })
-  const scrollRestoreTimerRef = useRef(null)
 
   const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.uuid || p.idx, p])), [paras])
   const paraMapByIdx = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
 
-  const handleScroll = useCallback((e) => {
-    if (isJumpingRef.current) return
-    const st = e.target.scrollTop
-    requestAnimationFrame(() => {
-      if (!isJumpingRef.current) {
-        setScrollTop(st)
-      }
-    })
-
-    if (toolbarParaRef.current !== null) {
-      // 直接 DOM 隐藏，避免等 React 渲染周期
-      if (toolbarElRef.current) toolbarElRef.current.style.display = 'none'
-      const savedIdx = toolbarParaRef.current
-      toolbarParaRef.current = null
-      setActiveIdx(null)
-      setToolbarPos(null)
-
-      if (scrollRestoreTimerRef.current) clearTimeout(scrollRestoreTimerRef.current)
-      scrollRestoreTimerRef.current = setTimeout(() => {
-        const container = flowRef.current
-        if (!container) return
-        let el = container.querySelector(`[data-para="${savedIdx}"]`)
-        if (!el && typeof savedIdx === 'number' && paraMapByIdx[savedIdx]) {
-          const u = paraMapByIdx[savedIdx].uuid
-          if (u) el = container.querySelector(`[data-para="${u}"]`)
-        }
-        if (!el) return
-        const rect = el.getBoundingClientRect()
-        const clientX = rect.left + toolbarOffsetRef.current.x
-        const clientY = rect.top + toolbarOffsetRef.current.y
-        const clampedLeft = Math.max(8, Math.min(clientX - 25, window.innerWidth - 230))
-        let clampedTop = clientY - 38
-        if (clampedTop < 0) {
-          clampedTop = clientY + 22
-        }
-        toolbarParaRef.current = savedIdx
-        setToolbarPos({ x: clampedLeft, y: clampedTop })
-        setActiveIdx(savedIdx)
-      }, 150)
-    }
-  }, [paraMapByIdx])
+  const handleScroll = useCallback(() => {
+    // 固化于段落右上角，无须任何滚屏定位计算
+  }, [])
 
   const chaptersByParaIdx = useMemo(() => {
     const map = new Map()
@@ -1496,18 +1552,17 @@ function ReviewReaderInner({
   const [editingNote, setEditingNote] = useState('')
   const [selectedManualEditIdx, setSelectedManualEditIdx] = useState(null)
   const manualCardElRef = useRef(null)
+  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
+    try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
+  })
   const [savingPara, setSavingPara] = useState(false)
-  const [hoverIdx, setHoverIdx] = useState(null)
   const [activeIdx, setActiveIdx] = useState(null)
-  const [toolbarPos, setToolbarPos] = useState(null)
   const [showOriginalMap, setShowOriginalMap] = useState({})
   const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
 
-  useEffect(() => {
-    if (activeIdx !== null && toolbarPos !== null) {
-      toolbarParaRef.current = activeIdx
-    }
-  }, [activeIdx, toolbarPos])
+  const dismissToolbar = useCallback(() => {
+    setActiveIdx(null)
+  }, [])
 
   const selectedManualEditPara = useMemo(() => {
     if (!selectedManualEditIdx) return null
@@ -1583,15 +1638,13 @@ function ReviewReaderInner({
 
   useEffect(() => {
     const handleGlobalClick = (e) => {
-      if (!e.target.closest('[data-para]')) {
-        setActiveIdx(null)
-        setToolbarPos(null)
+      if (!e.target.closest('[data-para]') && !e.target.closest('.ant-dropdown') && !e.target.closest('.ant-modal-root')) {
+        dismissToolbar()
       }
     }
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        setActiveIdx(null)
-        setToolbarPos(null)
+        dismissToolbar()
       }
     }
     window.addEventListener('click', handleGlobalClick)
@@ -1600,28 +1653,15 @@ function ReviewReaderInner({
       window.removeEventListener('click', handleGlobalClick)
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [])
+  }, [dismissToolbar])
 
   const handleParaClick = (e, paraIdx) => {
     e.stopPropagation()
     if (activeIdx === paraIdx) {
-      setActiveIdx(null)
-      setToolbarPos(null)
-      return
+      dismissToolbar()
+    } else {
+      setActiveIdx(paraIdx)
     }
-    const paraRect = e.currentTarget.getBoundingClientRect()
-    toolbarOffsetRef.current = {
-      x: e.clientX - paraRect.left,
-      y: e.clientY - paraRect.top,
-    }
-    const clampedLeft = Math.max(8, Math.min(e.clientX - 25, window.innerWidth - 230))
-    let clampedTop = e.clientY - 38
-    if (clampedTop < 0) {
-      clampedTop = e.clientY + 22
-    }
-
-    setToolbarPos({ x: clampedLeft, y: clampedTop })
-    setActiveIdx(paraIdx)
   }
 
   const handleStartEdit = (para) => {
@@ -1630,21 +1670,22 @@ function ReviewReaderInner({
     setEditingNote('')
   }
 
-  const handleSaveEdit = async (paraIdx) => {
+  const handleSaveEdit = async (paraIdx, textVal = editingText, noteVal = editingNote) => {
     if (!project?.id) return
     setSavingPara(true)
-    const noteVal = editingNote?.trim() || null
-    const textVal = editingText
+    const finalNote = noteVal?.trim() || null
+    const finalText = textVal
     const targetPara = sortedParas.find(item => item.idx === paraIdx)
     const pUuid = targetPara?.uuid
     try {
-      await updateParagraph(project.id, paraIdx, textVal, noteVal, pUuid)
+      await updateParagraph(project.id, paraIdx, finalText, finalNote, pUuid)
       if (targetPara) {
-        targetPara.edit_note = noteVal
-        targetPara.revised_text = (targetPara.text === textVal) ? null : textVal
+        targetPara.edit_note = finalNote
+        targetPara.revised_text = (targetPara.text === finalText) ? null : finalText
       }
       message.success('段落已更新')
       setEditingIdx(null)
+      setEditingText('')
       setEditingNote('')
       onReloadProject?.()
     } catch (e) {
@@ -1757,10 +1798,174 @@ function ReviewReaderInner({
     }
   }
 
+  const handleInsertPara = async (para, position = 'below') => {
+    if (!project?.id) return
+    dismissToolbar()
+    try {
+      const res = await insertParagraph(project.id, para.idx, position, '', para.uuid)
+      message.success(position === 'above' ? '已在上方插入新段落' : '已在下方插入新段落')
+      await onReloadProject?.()
+
+      const targetIdx = res?.idx ?? (position === 'above' ? para.idx : para.idx + 1)
+      setEditingIdx(targetIdx)
+      setEditingText('')
+      setEditingNote('')
+
+      setTimeout(() => {
+        const container = flowRef.current
+        if (container) {
+          const el = container.querySelector(`[data-para="${res?.uuid || targetIdx}"]`)
+          if (el) {
+            el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+            const textarea = el.querySelector('textarea')
+            if (textarea) {
+              textarea.focus()
+            }
+          }
+        }
+      }, 120)
+    } catch (e) {
+      message.error(e.message || '插入失败')
+    }
+  }
+
+  const handleMergeParas = (para, direction = 'below') => {
+    if (!project?.id) return
+    const targetText = direction === 'above' ? '上一段' : '下一段'
+    Modal.confirm({
+      title: `确认与${targetText}合并？`,
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: '合并后两段文本将自动换行连接，被合并段落标注同步保留。',
+      okText: '确认合并',
+      cancelText: '取消',
+      onOk: async () => {
+        const savedTop = flowRef.current?.scrollTop
+        try {
+          await mergeParagraphs(project.id, para.idx, direction, '', para.uuid)
+          message.success(`已与${targetText}合并`)
+          await onReloadProject?.()
+        } catch (e) {
+          message.error(e.message || '合并失败')
+        } finally {
+          if (savedTop != null && flowRef.current) {
+            requestAnimationFrame(() => {
+              if (flowRef.current) flowRef.current.scrollTop = savedTop
+            })
+          }
+        }
+      },
+    })
+  }
+
   const [showOptions, setShowOptions] = useState(false)
   const [flashSide, setFlashSide] = useState(null) // 'accept' | 'reject' | null
   const [showCheckboxes, setShowCheckboxes] = useState(false)
   const [showAllOriginals, setShowAllOriginals] = useState(false)
+
+  // 多段合并模式状态
+  const [mergeMode, setMergeMode] = useState(false)
+  const [selectedMergeParas, setSelectedMergeParas] = useState(() => new Set())
+
+  const handleEnterMergeMode = useCallback((startPara) => {
+    setMergeMode(true)
+    const seedKey = startPara.uuid || startPara.idx
+    setSelectedMergeParas(new Set([seedKey]))
+    dismissToolbar()
+  }, [dismissToolbar])
+
+  const handleExitMergeMode = useCallback(() => {
+    setMergeMode(false)
+    setSelectedMergeParas(new Set())
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        if (mergeMode) {
+          e.preventDefault()
+          handleExitMergeMode()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [mergeMode, handleExitMergeMode])
+
+  const handleToggleMergeSelect = useCallback((para) => {
+    const key = para.uuid || para.idx
+    setSelectedMergeParas(prev => {
+      const next = new Set(prev)
+      const isPresent = next.has(key) || (para.uuid && next.has(para.uuid)) || (para.idx != null && next.has(para.idx))
+
+      if (isPresent) {
+        if (next.size <= 1) return prev
+        const remainingIdxs = []
+        next.forEach(k => {
+          if (k !== key && k !== para.uuid && k !== para.idx) {
+            const p = paraMap[k] ?? paraMapByIdx[k]
+            if (p) remainingIdxs.push(p.idx)
+          }
+        })
+        remainingIdxs.sort((a, b) => a - b)
+        const isContiguous = remainingIdxs.every((val, i) => i === 0 || val === remainingIdxs[i - 1] + 1)
+        if (!isContiguous) return prev
+        next.delete(key)
+        if (para.uuid) next.delete(para.uuid)
+        if (para.idx != null) next.delete(para.idx)
+      } else {
+        const prevKey = sortedParas[para.idx - 1]?.uuid ?? (para.idx - 1)
+        const nextKey = sortedParas[para.idx + 1]?.uuid ?? (para.idx + 1)
+        const hasPrev = next.has(prevKey) || next.has(para.idx - 1)
+        const hasNext = next.has(nextKey) || next.has(para.idx + 1)
+
+        if (!hasPrev && !hasNext) {
+          message.warning('只能选择与已选段落连续相邻的段落')
+          return prev
+        }
+        next.add(key)
+      }
+      return next
+    })
+  }, [paraMap, paraMapByIdx, sortedParas])
+
+  const handleConfirmMergeBatch = () => {
+    if (!project?.id) return
+    const selectedParasArr = []
+    selectedMergeParas.forEach(k => {
+      const p = paraMap[k] ?? paraMapByIdx[k]
+      if (p) selectedParasArr.push(p)
+    })
+
+    if (selectedParasArr.length <= 1) return
+
+    selectedParasArr.sort((a, b) => a.idx - b.idx)
+    const targetUuids = selectedParasArr.map(p => p.uuid || p.idx)
+
+    Modal.confirm({
+      title: `确认合并选中的 ${selectedParasArr.length} 个段落？`,
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: `将依次合并第 ${selectedParasArr[0].idx} 段 至 第 ${selectedParasArr[selectedParasArr.length - 1].idx} 段。合并后文本无缝连结，标注与履历完整保留。`,
+      okText: `确认合并 (${selectedParasArr.length} 段)`,
+      cancelText: '取消',
+      onOk: async () => {
+        const savedTop = flowRef.current?.scrollTop
+        try {
+          await mergeMultipleParagraphs(project.id, targetUuids, '')
+          message.success(`已成功合并 ${selectedParasArr.length} 个段落`)
+          handleExitMergeMode()
+          await onReloadProject?.()
+        } catch (e) {
+          message.error(e.message || '多段合并失败')
+        } finally {
+          if (savedTop != null && flowRef.current) {
+            requestAnimationFrame(() => {
+              if (flowRef.current) flowRef.current.scrollTop = savedTop
+            })
+          }
+        }
+      },
+    })
+  }
   const flowRef = useRef(null)
   const contentRef = useRef(null)
   const resultsRef = useRef(results)
@@ -1903,7 +2108,7 @@ function ReviewReaderInner({
       updatePos()
     }, 100)
     return () => clearTimeout(timer)
-  }, [selectedId, scrollTop, results, updatePos])
+  }, [selectedId, results, updatePos])
 
   useEffect(() => {
     if (!selectedId || !flowRef.current) return
@@ -2144,7 +2349,7 @@ function ReviewReaderInner({
                 border: 1px solid transparent;
               }
             `}</style>
-            {/* 顶部边界 100% 纯色透明羽化遮罩（最顶部时 opacity 为 0 隐退） */}
+            {/* 顶部边界 100% 纯色透明羽化遮罩 */}
             <div
               style={{
                 position: 'absolute',
@@ -2156,8 +2361,7 @@ function ReviewReaderInner({
                 pointerEvents: 'none',
                 zIndex: 10,
                 borderRadius: `${radius.md}px ${radius.md}px 0 0`,
-                opacity: scrollTop < 5 ? 0 : 1,
-                transition: 'opacity 0.2s ease',
+                opacity: 1,
               }}
             />
             {/* 底部边界 100% 纯色透明羽化遮罩 */}
@@ -2194,7 +2398,6 @@ function ReviewReaderInner({
                   const chapterObj = chaptersByParaIdx.get(para.uuid) || chaptersByParaIdx.get(para.idx)
                   const isCh = Boolean(chapterObj)
                   const isEditing = editingIdx === para.idx
-                  const isHover = hoverIdx === para.idx
                   const isChecked = (para.uuid ? selectedParas?.has(para.uuid) : false) || selectedParas?.has(para.idx) || false
 
                   const pbType = para.page_break_type || (para.has_page_break_before === 1 ? 'auto_chapter' : 'none')
@@ -2210,9 +2413,7 @@ function ReviewReaderInner({
                       isCh={isCh}
                       chapterObj={chapterObj}
                       isEditing={isEditing}
-                      isHover={isHover}
                       isActive={isActive}
-                      showCheckboxes={showCheckboxes}
                       isChecked={isChecked}
                       selectedId={selectedId}
                       currentBodyFontSize={currentBodyFontSize}
@@ -2224,8 +2425,6 @@ function ReviewReaderInner({
                       editingNote={isEditing ? editingNote : ''}
                       savingPara={savingPara}
                       showOriginalThis={!!showOriginalMap[para.idx]}
-                      onHover={handleHover}
-                      onMouseLeave={handleMouseLeave}
                       onParaClick={handleParaClick}
                       onCheckboxToggle={handleCheckboxToggle}
                       onEditingTextChange={setEditingText}
@@ -2233,6 +2432,9 @@ function ReviewReaderInner({
                       onSaveEdit={handleSaveEdit}
                       onCancelEdit={handleCancelEdit}
                       onStartEdit={handleStartEdit}
+                      onInsertPara={handleInsertPara}
+                      onEnterMergeMode={handleEnterMergeMode}
+                      onToggleOriginal={handleToggleOriginal}
                       onDeletePara={handleDeletePara}
                       onTogglePageBreak={handleTogglePageBreak}
                       onSetChapter={handleSetChapter}
@@ -2240,6 +2442,9 @@ function ReviewReaderInner({
                       onSelectError={(id) => { setSelectedManualEditIdx(null); setSelectedId(id); }}
                       showAllOriginals={showAllOriginals}
                       onSelectManualEdit={(idx) => { setSelectedId(null); setSelectedManualEditIdx(idx); }}
+                      mergeMode={mergeMode}
+                      isMergeChecked={mergeMode ? (selectedMergeParas.has(para.uuid) || selectedMergeParas.has(para.idx)) : false}
+                      onMergeToggle={handleToggleMergeSelect}
                     />
                   )
                 })}
@@ -2356,323 +2561,312 @@ function ReviewReaderInner({
       {/* ======== fixed bottom bar ======== */}
       <div style={barStyle}>
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 16px', gap: 12 }}>
-          {/* left: 选段模式切换 | 选段操作 | 校对配置 */}
-          {!(inProgress || proofreading) && <>
-            <Button
-              type="text"
-              size="small"
-              onClick={() => {
-                if (showCheckboxes) {
-                  setShowCheckboxes(false)
-                  onSelectionChange?.(new Set())
-                } else {
-                  setShowCheckboxes(true)
-                }
-              }}
-              style={{
-                fontSize: 13, color: showCheckboxes ? color.warning : color.textTertiary,
-                whiteSpace: 'nowrap', flexShrink: 0,
-              }}
-            >
-              {showCheckboxes ? '☑' : '☐'} 选段
-            </Button>
-            <Button
-              type="text"
-              size="small"
-              onClick={() => setShowAllOriginals(!showAllOriginals)}
-              style={{
-                fontSize: 13,
-                color: showAllOriginals ? '#1890ff' : color.textTertiary,
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              {showAllOriginals ? '👁 隐藏对照原文' : '👁 对照原文'}
-            </Button>
-            {showCheckboxes && selectedParas?.size > 0 && (
-              <Space size={4} style={{ flexShrink: 0 }}>
-                <Tag style={{ fontSize: 12, margin: 0 }}>已选 {selectedParas.size} 段</Tag>
+          {mergeMode ? (
+            <>
+              {/* center: 主操作按钮（严格居中，复用标准 bar-action-btn 样式） */}
+              <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, minWidth: 0 }}>
                 <Button
-                  type="text"
-                  size="small"
-                  onClick={() => {
-                    const errIdxs = new Set(errors.map(e => e.paragraph_index))
-                    onSelectionChange?.(errIdxs)
-                  }}
-                  style={{ fontSize: 12, color: color.textSecondary }}
+                  type="primary"
+                  shape="round"
+                  size="large"
+                  className="bar-action-btn"
+                  icon={<CheckCircleOutlined />}
+                  onClick={handleConfirmMergeBatch}
+                  disabled={selectedMergeParas.size < 2}
+                  style={{ height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0 }}
                 >
-                  选取错误段落
+                  确认合并 ({selectedMergeParas.size} 段)
                 </Button>
                 <Button
-                  type="text"
-                  size="small"
-                  onClick={() => onSelectionChange?.(new Set())}
-                  style={{ fontSize: 12, color: color.textSecondary }}
+                  shape="round"
+                  size="large"
+                  className="bar-action-btn"
+                  icon={<CloseCircleOutlined />}
+                  onClick={handleExitMergeMode}
+                  style={{ height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0 }}
                 >
-                  清除
+                  取消
                 </Button>
-              </Space>
-            )}
-            {!showCheckboxes && (
-              <Popover
-                trigger="click"
-                open={showOptions}
-                onOpenChange={setShowOptions}
-                placement="topLeft"
-                styles={{ body: { padding: '12px 16px', width: 440 } }}
-                content={
-                  <ControlsRow
-                    showOptions={true}
-                    selectedModel={selectedModel} onModelChange={onModelChange}
-                    models={models}
-                    selectedTypes={selectedTypes} onTypesChange={onTypesChange}
-                    batchMaxConcurrent={batchMaxConcurrent} onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
-                    proofreadWindowSize={proofreadWindowSize} onWindowSizeChange={onWindowSizeChange}
-                    inProgress={inProgress}
+              </div>
+
+              {/* right: 字号调节 */}
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: color.bgCard,
+                  borderRadius: radius.md,
+                  border: `1px solid ${color.border}`,
+                  padding: '4px 10px',
+                }}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MinusOutlined />}
+                    disabled={currentBodyFontSize <= 14}
+                    onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
+                    style={{ width: 28, height: 28, fontSize: 14 }}
                   />
-                }
-              >
-                <Button
-                  type="text"
-                  size="middle"
-                  style={{
-                    color: color.textPrimary, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
-                    maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
-                  }}
-                >
-                  {showOptions ? '◀' : '▶'} 校对配置 ({
-                    (() => {
-                      const m = models.find(x => x.model_id === selectedModel)
-                      return m ? `${m.provider_name || m.provider} · ${m.name}` : selectedModel
-                    })()
-                  })
-                </Button>
-              </Popover>
-            )}
-          </>}
-
-          {/* 批量校对状态胶囊 Tag（弹出 Popover 详情） */}
-          {batchInfo && (
-            <Popover
-              trigger="click"
-              placement="top"
-              styles={{ body: { padding: '12px 16px', maxWidth: 380 } }}
-              content={
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>
-                      {batchInfo.status === 'running' ? '🔄 批量校对中'
-                        : batchInfo.status === 'ok' ? '✓ 批量完成'
-                          : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
-                            : '✖ 全部失败'}
-                    </span>
-                    <span style={{ fontSize: 12, opacity: 0.6 }}>
-                      第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
-                      {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    {(batchInfo.windows || []).map(w => {
-                      const isRetrying = retryingWindow === w.window_index
-                      return (
-                        <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                          <span style={{
-                            fontSize: 16,
-                            color: isRetrying ? '#d4a359'
-                              : w.status === 'ok' ? '#52c41a'
-                                : w.status === 'failed' ? '#ff4d4f'
-                                  : '#d4a359'
-                          }}>
-                            {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
-                          </span>
-                          <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
-                          {w.status === 'failed' && (
-                            <Button
-                              size="small"
-                              type="link"
-                              danger
-                              loading={isRetrying}
-                              style={{ padding: 0, height: 'auto', fontSize: 11 }}
-                              disabled={inProgress || retryingWindow !== null}
-                              onClick={() => onRetryWindow?.(batchInfo.batch_id, w.window_index)}
-                            >
-                              {isRetrying ? '重试中' : '重试'}
-                            </Button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
+                    {currentBodyFontSize}
+                  </span>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    disabled={currentBodyFontSize >= 24}
+                    onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
+                    style={{ width: 28, height: 28, fontSize: 14 }}
+                  />
                 </div>
-              }
-            >
-              <Tag
-                color={batchInfo.failed_windows > 0 ? 'error' : batchInfo.status === 'ok' ? 'success' : 'processing'}
-                style={{ cursor: 'pointer', padding: '4px 8px', fontSize: 12, borderRadius: 6, margin: 0, flexShrink: 0 }}
-              >
-                {batchInfo.status === 'running' ? '🔄 批量中' : batchInfo.status === 'ok' ? '✓ 批量完成' : '⚠ 部分失败'} ({batchInfo.done_windows}/{batchInfo.total_windows}) ▾
-              </Tag>
-            </Popover>
-          )}
-
-          {/* center: main content */}
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, minWidth: 0 }}>
-            {inProgress || proofreading ? (
-              <>
-                <Progress
-                  percent={percent}
-                  status="active"
-                  style={{ width: 200, margin: 0 }}
-                  size="small"
-                />
-                <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, whiteSpace: 'nowrap' }}>
-                  <LoadingOutlined spin style={{ marginRight: 6 }} />
-                  {bannerText || '正在校对，请稍候…'}
-                </span>
-              </>
-            ) : flatErrors.length > 0 && pending.length > 0 ? (
-              <>
-                {selectedError && selIsPending ? (
-                  <>
-                    <Input
-                      value={customEdit}
-                      onChange={(e) => setCustomEdit(e.target.value)}
-                      style={{ maxWidth: 360, minWidth: 160, flex: '1 1 240px', fontSize: 15 }}
-                      size="large"
-                      placeholder="修改结果…"
+              </div>
+            </>
+          ) : (
+            <>
+              {/* left: 校对配置 */}
+              {!(inProgress || proofreading) && <>
+                <Popover
+                  trigger="click"
+                  open={showOptions}
+                  onOpenChange={setShowOptions}
+                  placement="topLeft"
+                  styles={{ body: { padding: '12px 16px', width: 440 } }}
+                  content={
+                    <ControlsRow
+                      showOptions={true}
+                      selectedModel={selectedModel} onModelChange={onModelChange}
+                      models={models}
+                      selectedTypes={selectedTypes} onTypesChange={onTypesChange}
+                      batchMaxConcurrent={batchMaxConcurrent} onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
+                      proofreadWindowSize={proofreadWindowSize} onWindowSizeChange={onWindowSizeChange}
+                      inProgress={inProgress}
                     />
-                    <style>{`
-                  .bar-action-btn {
-                    transition: transform 0.08s cubic-bezier(0, 0, 0.2, 1), background 0.15s, box-shadow 0.15s !important;
                   }
-                  .bar-action-btn:active:not(:disabled) {
-                    transform: scale(0.95) !important;
+                >
+                  <Button
+                    type="text"
+                    size="middle"
+                    style={{
+                      color: color.textPrimary, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
+                      maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
+                    }}
+                  >
+                    {showOptions ? '◀' : '▶'} 校对配置 ({
+                      (() => {
+                        const m = models.find(x => x.model_id === selectedModel)
+                        return m ? `${m.provider_name || m.provider} · ${m.name}` : selectedModel
+                      })()
+                    })
+                  </Button>
+                </Popover>
+              </>}
+
+              {/* 批量校对状态胶囊 Tag（弹出 Popover 详情） */}
+              {batchInfo && (
+                <Popover
+                  trigger="click"
+                  placement="top"
+                  styles={{ body: { padding: '12px 16px', maxWidth: 380 } }}
+                  content={
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>
+                          {batchInfo.status === 'running' ? '🔄 批量校对中'
+                            : batchInfo.status === 'ok' ? '✓ 批量完成'
+                              : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
+                                : '✖ 全部失败'}
+                        </span>
+                        <span style={{ fontSize: 12, opacity: 0.6 }}>
+                          第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
+                          {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        {(batchInfo.windows || []).map(w => {
+                          const isRetrying = retryingWindow === w.window_index
+                          return (
+                            <div key={w.window_index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                              <span style={{
+                                fontSize: 16,
+                                color: isRetrying ? '#d4a359'
+                                  : w.status === 'ok' ? '#52c41a'
+                                    : w.status === 'failed' ? '#ff4d4f'
+                                      : '#d4a359'
+                              }}>
+                                {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
+                              </span>
+                              <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
+                              {w.status === 'failed' && (
+                                <Button
+                                  size="small"
+                                  type="link"
+                                  danger
+                                  loading={isRetrying}
+                                  style={{ padding: 0, height: 'auto', fontSize: 11 }}
+                                  disabled={inProgress || retryingWindow !== null}
+                                  onClick={() => onRetryWindow?.(batchInfo.batch_id, w.window_index)}
+                                >
+                                  {isRetrying ? '重试中' : '重试'}
+                                </Button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
                   }
-                `}</style>
+                >
+                  <Tag
+                    color={batchInfo.failed_windows > 0 ? 'error' : batchInfo.status === 'ok' ? 'success' : 'processing'}
+                    style={{ cursor: 'pointer', padding: '4px 8px', fontSize: 12, borderRadius: 6, margin: 0, flexShrink: 0 }}
+                  >
+                    {batchInfo.status === 'running' ? '🔄 批量中' : batchInfo.status === 'ok' ? '✓ 批量完成' : '⚠ 部分失败'} ({batchInfo.done_windows}/{batchInfo.total_windows}) ▾
+                  </Tag>
+                </Popover>
+              )}
+
+              {/* center: main content */}
+              <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                {inProgress || proofreading ? (
+                  <>
+                    <Progress
+                      percent={percent}
+                      status="active"
+                      style={{ width: 200, margin: 0 }}
+                      size="small"
+                    />
+                    <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, whiteSpace: 'nowrap' }}>
+                      <LoadingOutlined spin style={{ marginRight: 6 }} />
+                      {bannerText || '正在校对，请稍候…'}
+                    </span>
+                  </>
+                ) : flatErrors.length > 0 && pending.length > 0 ? (
+                  <>
+                    {selectedError && selIsPending ? (
+                      <>
+                        <Input
+                          value={customEdit}
+                          onChange={(e) => setCustomEdit(e.target.value)}
+                          style={{ maxWidth: 360, minWidth: 160, flex: '1 1 240px', fontSize: 15 }}
+                          size="large"
+                          placeholder="修改结果…"
+                        />
+                        <style>{`
+                      .bar-action-btn {
+                        transition: transform 0.08s cubic-bezier(0, 0, 0.2, 1), background 0.15s, box-shadow 0.15s !important;
+                      }
+                      .bar-action-btn:active:not(:disabled) {
+                        transform: scale(0.95) !important;
+                      }
+                    `}</style>
+                        <Button
+                          type="primary"
+                          shape="round"
+                          size="large"
+                          className="bar-action-btn"
+                          icon={<CheckCircleOutlined />}
+                          onClick={() => { setFlashSide('accepted'); setTimeout(() => { setFlashSide(null); handleStatus('accepted') }, 100) }}
+                          disabled={inProgress}
+                          style={{
+                            height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
+                            backgroundColor: flashSide === 'accepted' ? '#52c41a' : undefined,
+                            borderColor: flashSide === 'accepted' ? '#52c41a' : undefined,
+                            boxShadow: 'none',
+                          }}
+                        >
+                          ← 采纳
+                        </Button>
+                        <Button
+                          size="large"
+                          className="bar-action-btn"
+                          icon={<CloseCircleOutlined />}
+                          onClick={() => { setFlashSide('rejected'); setTimeout(() => { setFlashSide(null); handleStatus('rejected') }, 100) }}
+                          disabled={inProgress}
+                          style={{
+                            height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
+                            backgroundColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
+                            color: flashSide === 'rejected' ? '#fff' : undefined,
+                            borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
+                            boxShadow: 'none',
+                          }}
+                        >
+                          拒绝 →
+                        </Button>
+                        <Tag style={{ marginLeft: 4, fontSize: 15, padding: '4px 10px', borderRadius: 999, flexShrink: 0 }}>
+                          {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
+                        </Tag>
+                        <ShortcutHint />
+                      </>
+                    ) : (
+                      <span style={{ color: color.textTertiary }}>
+                        点击文中有标记的文本查看错误详情
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
                     <Button
                       type="primary"
                       shape="round"
                       size="large"
                       className="bar-action-btn"
-                      icon={<CheckCircleOutlined />}
-                      onClick={() => { setFlashSide('accepted'); setTimeout(() => { setFlashSide(null); handleStatus('accepted') }, 100) }}
+                      icon={<ThunderboltOutlined />}
+                      loading={proofreading}
+                      onClick={onStartProofread}
                       disabled={inProgress}
-                      style={{
-                        height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
-                        backgroundColor: flashSide === 'accepted' ? '#52c41a' : undefined,
-                        borderColor: flashSide === 'accepted' ? '#52c41a' : undefined,
-                        boxShadow: 'none',
-                      }}
+                      style={{ height: 52, paddingInline: 36, fontSize: 17 }}
                     >
-                      ← 采纳
+                      {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
                     </Button>
                     <Button
+                      shape="round"
                       size="large"
                       className="bar-action-btn"
-                      icon={<CloseCircleOutlined />}
-                      onClick={() => { setFlashSide('rejected'); setTimeout(() => { setFlashSide(null); handleStatus('rejected') }, 100) }}
+                      icon={<ThunderboltOutlined />}
+                      loading={proofreading}
+                      onClick={onStartBatchProofread}
                       disabled={inProgress}
-                      style={{
-                        height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
-                        backgroundColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
-                        color: flashSide === 'rejected' ? '#fff' : undefined,
-                        borderColor: flashSide === 'rejected' ? '#ff4d4f' : undefined,
-                        boxShadow: 'none',
-                      }}
+                      style={{ height: 52, paddingInline: 24, fontSize: 16, marginLeft: 8 }}
+                      title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
                     >
-                      拒绝 →
+                      批量校对
                     </Button>
-                    <Tag style={{ marginLeft: 4, fontSize: 15, padding: '4px 10px', borderRadius: 999, flexShrink: 0 }}>
-                      {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
-                    </Tag>
                     <ShortcutHint />
                   </>
-                ) : (
-                  <span style={{ color: color.textTertiary }}>
-                    点击文中有标记的文本查看错误详情
-                  </span>
                 )}
-              </>
-            ) : selectedParas?.size > 0 ? (
-              <>
-                <Button
-                  type="primary"
-                  shape="round"
-                  size="large"
-                  className="bar-action-btn"
-                  icon={<ThunderboltOutlined />}
-                  loading={proofreading}
-                  onClick={() => onStartSelectionProofread?.([...selectedParas])}
-                  disabled={inProgress}
-                  style={{ height: 52, paddingInline: 36, fontSize: 17 }}
-                >
-                  校对选中（{selectedParas.size} 段）
-                </Button>
-                <ShortcutHint />
-              </>
-            ) : (
-              <>
-                <Button
-                  type="primary"
-                  shape="round"
-                  size="large"
-                  className="bar-action-btn"
-                  icon={<ThunderboltOutlined />}
-                  loading={proofreading}
-                  onClick={onStartProofread}
-                  disabled={inProgress}
-                  style={{ height: 52, paddingInline: 36, fontSize: 17 }}
-                >
-                  {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
-                </Button>
-                <Button
-                  shape="round"
-                  size="large"
-                  className="bar-action-btn"
-                  icon={<ThunderboltOutlined />}
-                  loading={proofreading}
-                  onClick={onStartBatchProofread}
-                  disabled={inProgress}
-                  style={{ height: 52, paddingInline: 24, fontSize: 16, marginLeft: 8 }}
-                  title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
-                >
-                  批量校对
-                </Button>
-                <ShortcutHint />
-              </>
-            )}
-          </div>
+              </div>
 
-          {/* right: 字号调节 */}
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: color.bgCard,
-              borderRadius: radius.md,
-              border: `1px solid ${color.border}`,
-              padding: '4px 10px',
-            }}>
-              <Button
-                type="text"
-                size="small"
-                icon={<MinusOutlined />}
-                disabled={currentBodyFontSize <= 14}
-                onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
-                style={{ width: 28, height: 28, fontSize: 14 }}
-              />
-              <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
-                {currentBodyFontSize}
-              </span>
-              <Button
-                type="text"
-                size="small"
-                icon={<PlusOutlined />}
-                disabled={currentBodyFontSize >= 24}
-                onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
-                style={{ width: 28, height: 28, fontSize: 14 }}
-              />
-            </div>
-          </div>
+              {/* right: 字号调节 */}
+              <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: color.bgCard,
+                  borderRadius: radius.md,
+                  border: `1px solid ${color.border}`,
+                  padding: '4px 10px',
+                }}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MinusOutlined />}
+                    disabled={currentBodyFontSize <= 14}
+                    onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
+                    style={{ width: 28, height: 28, fontSize: 14 }}
+                  />
+                  <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
+                    {currentBodyFontSize}
+                  </span>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    disabled={currentBodyFontSize >= 24}
+                    onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
+                    style={{ width: 28, height: 28, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
       {selectedError && (
@@ -2697,91 +2891,6 @@ function ReviewReaderInner({
         />
       )}
 
-      {/* 浮动工具条 - position:fixed 脱离段落容器，不受 contentVisibility 裁剪 */}
-      {activeIdx !== null && toolbarPos !== null && editingIdx !== activeIdx && (() => {
-        const activePara = paraMapByIdx[activeIdx] || paraMap[activeIdx]
-        if (!activePara) return null
-        const activePbType = activePara.page_break_type || (activePara.has_page_break_before === 1 ? 'auto_chapter' : 'none')
-        const activeIsCh = chaptersByParaIdx.has(activePara.uuid) || chaptersByParaIdx.has(activeIdx)
-        const hasHardBreak = activePbType === 'original' || activePbType === 'manual'
-        return (
-          <div ref={toolbarElRef} style={{
-            position: 'fixed',
-            top: toolbarPos.y,
-            left: toolbarPos.x,
-            zIndex: 1000,
-            background: color.bgCard,
-            backdropFilter: 'blur(4px)',
-            WebkitBackdropFilter: 'blur(4px)',
-            padding: '3px 8px',
-            borderRadius: 20,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.12)',
-            border: `1px solid ${color.borderBar}`,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-          }}>
-            <Tooltip title="编辑段落文本">
-              <Button type="text" size="small" icon={<EditOutlined />}
-                onClick={(e) => { e.stopPropagation(); handleStartEdit(activePara); }}
-                style={{ fontSize: 12 }}>
-                编辑
-              </Button>
-            </Tooltip>
-
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => handleSetChapter(activePara, 1) },
-                  { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => handleSetChapter(activePara, 2) },
-                  { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => handleSetChapter(activePara, 3) },
-                  { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => handleSetChapter(activePara, 4) },
-                  { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => handleSetChapter(activePara, 5) },
-                  { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => handleSetChapter(activePara, 6) },
-                  ...(activeIsCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => handleSetChapter(activePara, 1, true) }] : []),
-                ],
-              }}>
-              <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>
-                设为标题 ▾
-              </Button>
-            </Dropdown>
-
-            <Tooltip title={showOriginalMap[activeIdx] ? "隐藏原文" : "查看初始原文"}>
-              <Button type="text" size="small" icon={<EyeOutlined />}
-                onClick={(e) => { e.stopPropagation(); handleToggleOriginal(activeIdx); }}
-                style={{ fontSize: 12, color: showOriginalMap[activeIdx] ? '#1890ff' : undefined }}>
-                {showOriginalMap[activeIdx] ? '藏原文' : '看原文'}
-              </Button>
-            </Tooltip>
-
-            {hasHardBreak ? (
-              <Popconfirm title="确定移除该硬分页？" description="移除后该段落导出时将不再另起新页。"
-                onConfirm={() => handleTogglePageBreak(activePara)} okText="确定移除" okButtonProps={{ danger: true }} cancelText="取消">
-                <Tooltip title="移除段前硬分页（使导出 Word 时本段续接上一页）">
-                  <Button type="text" size="small" danger icon={<ScissorOutlined />} style={{ fontSize: 12 }}>
-                    移除分页
-                  </Button>
-                </Tooltip>
-              </Popconfirm>
-            ) : (
-              <Tooltip title="插入段前硬分页（使导出 Word 时从新一页开始）">
-                <Button type="text" size="small" icon={<BookOutlined />}
-                  onClick={(e) => { e.stopPropagation(); handleTogglePageBreak(activePara) }} style={{ fontSize: 12 }}>
-                  新增分页
-                </Button>
-              </Tooltip>
-            )}
-
-            <Tooltip title="删除该段落">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                onClick={(e) => { e.stopPropagation(); handleDeletePara(activePara); }} style={{ fontSize: 12 }}>
-                删除
-              </Button>
-            </Tooltip>
-          </div>
-        )
-      })()}
 
     </>
   )

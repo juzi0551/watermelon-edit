@@ -15,8 +15,9 @@ from app.core.database import (
     toggle_paragraph_page_break, set_paragraph_as_chapter, unset_chapter,
     update_project_profile, get_character_graph, upsert_character, insert_relationship,
     get_paragraph_by_idx, get_paragraph_by_uuid, update_paragraph_notes_history,
+    insert_paragraph_and_reorder, merge_paragraphs, merge_multiple_paragraphs,
 )
-from app.core.nlp_engine import scan_term_consistency, scan_gbt15834_punctuation
+from app.api.apply import _recompute_paragraph
 from app.api.proofread import _RUNNING
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,23 @@ class ParagraphUpdateBody(BaseModel):
     text: str
     edit_note: str | None = None
     paragraph_uuid: str | None = None
+
+
+class ParagraphInsertBody(BaseModel):
+    position: str = "below"  # "above" | "below"
+    text: str = ""
+    paragraph_uuid: str | None = None
+
+
+class ParagraphMergeBody(BaseModel):
+    direction: str = "below"  # "above" | "below"
+    separator: str = ""
+    paragraph_uuid: str | None = None
+
+
+class ParagraphMergeBatchBody(BaseModel):
+    paragraph_uuids: list[str] = []
+    separator: str = ""
 
 
 class PageBreakToggleBody(BaseModel):
@@ -209,6 +227,57 @@ async def api_delete_paragraph(project_id: str, idx: str, paragraph_uuid: str | 
         return {"error": "段落不存在"}
     delete_paragraph_and_reorder(doc["id"], para["idx"])
     return {"status": "ok", "deleted_idx": para["idx"], "deleted_uuid": para.get("uuid")}
+
+
+@router.post("/projects/{project_id}/paragraphs/{idx}/insert")
+async def api_insert_paragraph(project_id: str, idx: str, body: ParagraphInsertBody):
+    """在该段落上方或下方插入新段落（支持 idx 或 uuid）。"""
+    project = get_project(project_id)
+    if project and project.get("is_locked") == 1:
+        return {"error": "项目已锁定，无法插入段落"}
+
+    doc = get_current_document(project_id)
+    if not doc:
+        return {"error": "项目无文档"}
+    para = _resolve_para(doc["id"], idx, body.paragraph_uuid)
+    target_param = para["uuid"] if para and para.get("uuid") else (para["idx"] if para else idx)
+    result = insert_paragraph_and_reorder(doc["id"], target_param, position=body.position, text=body.text)
+    return {"status": "ok", **result}
+
+
+@router.post("/projects/{project_id}/paragraphs/{idx}/merge")
+async def api_merge_paragraphs(project_id: str, idx: str, body: ParagraphMergeBody):
+    """合并该段落与相邻段落（支持 idx 或 uuid）。"""
+    project = get_project(project_id)
+    if project and project.get("is_locked") == 1:
+        return {"error": "项目已锁定，无法合并段落"}
+
+    doc = get_current_document(project_id)
+    if not doc:
+        return {"error": "项目无文档"}
+    para = _resolve_para(doc["id"], idx, body.paragraph_uuid)
+    target_param = para["uuid"] if para and para.get("uuid") else (para["idx"] if para else idx)
+    result = merge_paragraphs(doc["id"], target_param, direction=body.direction, separator=body.separator)
+    _recompute_paragraph(doc["id"], result["uuid"])
+    return {"status": "ok", **result}
+
+
+@router.post("/projects/{project_id}/paragraphs/merge_batch")
+async def api_merge_multiple_paragraphs(project_id: str, body: ParagraphMergeBatchBody):
+    """批量合并选定的多段连续段落。"""
+    project = get_project(project_id)
+    if project and project.get("is_locked") == 1:
+        return {"error": "项目已锁定，无法合并段落"}
+
+    doc = get_current_document(project_id)
+    if not doc:
+        return {"error": "项目无文档"}
+    if not body.paragraph_uuids:
+        return {"error": "未选择任何要合并的段落"}
+
+    result = merge_multiple_paragraphs(doc["id"], body.paragraph_uuids, separator=body.separator)
+    _recompute_paragraph(doc["id"], result["uuid"])
+    return {"status": "ok", **result}
 
 
 @router.post("/projects/{project_id}/lock")

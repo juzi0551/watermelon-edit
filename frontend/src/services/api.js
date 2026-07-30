@@ -242,6 +242,34 @@ export async function setChapter(projectId, idx, isChapter = true, level = 1, ti
   return data
 }
 
+export async function insertParagraph(projectId, idx, position = 'below', text = '', paragraphUuid = null) {
+  const target = paragraphUuid || idx
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/${target}/insert`, {
+    position,
+    text,
+    paragraph_uuid: paragraphUuid,
+  })
+  return data
+}
+
+export async function mergeParagraphs(projectId, idx, direction = 'below', separator = '', paragraphUuid = null) {
+  const target = paragraphUuid || idx
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/${target}/merge`, {
+    direction,
+    separator,
+    paragraph_uuid: paragraphUuid,
+  })
+  return data
+}
+
+export async function mergeMultipleParagraphs(projectId, paragraphUuids, separator = '') {
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/merge_batch`, {
+    paragraph_uuids: paragraphUuids,
+    separator,
+  })
+  return data
+}
+
 // ==================== Project Profile & Character Graph ====================
 
 export async function updateProjectProfile(projectId, profileData) {

@@ -57,6 +57,8 @@ def _recompute_paragraph(document_id: str, paragraph_idx_or_uuid: int | str):
     base_text = original_clean if has_lstrip else para["text"]
 
     if not accepted:
+        if para.get("edit_note") and para.get("revised_text") and para["revised_text"] != para["text"]:
+            return
         if has_lstrip:
             update_paragraph_revised(para["id"], original_clean)
         else:

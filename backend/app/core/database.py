@@ -935,6 +935,432 @@ def delete_paragraph_and_reorder(document_id: str, idx: int):
             )
 
 
+def _resolve_para_target(conn, document_id: str, idx_or_uuid: int | str) -> tuple[int, str]:
+    """给定 document_id 与 idx 或 uuid，返回 (idx, uuid)"""
+    if isinstance(idx_or_uuid, int) or (isinstance(idx_or_uuid, str) and idx_or_uuid.isdigit()):
+        target_idx = int(idx_or_uuid)
+        row = conn.execute(
+            "SELECT idx, uuid FROM paragraphs WHERE document_id = ? AND idx = ?",
+            (document_id, target_idx),
+        ).fetchone()
+    else:
+        uuid_str = str(idx_or_uuid)
+        row = conn.execute(
+            "SELECT idx, uuid FROM paragraphs WHERE document_id = ? AND uuid = ?",
+            (document_id, uuid_str),
+        ).fetchone()
+    if not row:
+        raise ValueError(f"目标段落不存在 doc={document_id} target={idx_or_uuid}")
+    return row["idx"], row["uuid"]
+
+
+def insert_paragraph_and_reorder(
+    document_id: str,
+    target_idx_or_uuid: int | str,
+    position: str = "below",
+    text: str = "",
+) -> dict:
+    """在指定段落上方或下方插入一个新段落，自动递增平移后续段落 idx 及所有关联表索引。"""
+    with get_conn() as conn:
+        proj = conn.execute(
+            "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
+            (document_id,),
+        ).fetchone()
+        if proj and proj["is_locked"] == 1:
+            raise ValueError("项目已锁定，禁止插入段落")
+        project_id = proj["project_id"] if proj else None
+
+        all_paras = conn.execute(
+            "SELECT * FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
+            (document_id,),
+        ).fetchall()
+
+        if not all_paras:
+            insert_idx = 0
+            target_style = "Normal"
+        else:
+            target_idx, _ = _resolve_para_target(conn, document_id, target_idx_or_uuid)
+            target_row = conn.execute(
+                "SELECT style_name FROM paragraphs WHERE document_id = ? AND idx = ?",
+                (document_id, target_idx),
+            ).fetchone()
+            target_style = target_row["style_name"] if target_row else "Normal"
+            insert_idx = target_idx if position == "above" else target_idx + 1
+
+        # 1. 倒序平移所有 idx >= insert_idx 的段落 (idx -> idx + 1)
+        rows_to_shift = conn.execute(
+            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note FROM paragraphs WHERE document_id = ? AND idx >= ? ORDER BY idx DESC",
+            (document_id, insert_idx),
+        ).fetchall()
+
+        for r in rows_to_shift:
+            old_idx = r["idx"]
+            new_idx = old_idx + 1
+            old_id = f"{document_id}:{old_idx}"
+            new_id = f"{document_id}:{new_idx}"
+            conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
+            conn.execute(
+                """INSERT INTO paragraphs
+                   (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    new_id,
+                    r["uuid"],
+                    document_id,
+                    new_idx,
+                    r["text"],
+                    r["revised_text"],
+                    r["style_name"],
+                    r["char_count"],
+                    r["has_page_break_before"],
+                    r["page_break_type"],
+                    r["edit_note"],
+                ),
+            )
+
+        # 2. 插入新段落 (继承目标段落 style_name)
+        new_uuid = generate_id()
+        new_id = f"{document_id}:{insert_idx}"
+        conn.execute(
+            """INSERT INTO paragraphs
+               (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                new_id,
+                new_uuid,
+                document_id,
+                insert_idx,
+                text,
+                None,
+                target_style,
+                len(text),
+                0,
+                "none",
+                None,
+            ),
+        )
+
+        # 3. 平移 chapters 表
+        chapters = conn.execute(
+            "SELECT * FROM chapters WHERE document_id = ?", (document_id,)
+        ).fetchall()
+        for ch in chapters:
+            t_idx = ch["title_paragraph_idx"]
+            s_idx = ch["start_idx"]
+            e_idx = ch["end_idx"]
+
+            new_t_idx = (t_idx + 1) if (t_idx is not None and t_idx >= insert_idx) else t_idx
+            new_s_idx = (s_idx + 1) if s_idx >= insert_idx else s_idx
+            new_e_idx = (e_idx + 1) if e_idx >= insert_idx else e_idx
+
+            conn.execute(
+                """UPDATE chapters SET title_paragraph_idx = ?, start_idx = ?, end_idx = ? WHERE id = ?""",
+                (new_t_idx, new_s_idx, new_e_idx, ch["id"]),
+            )
+
+        # 4. 平移 errors 表 (paragraph_index >= insert_idx 的递增 +1)
+        conn.execute(
+            "UPDATE errors SET paragraph_index = paragraph_index + 1 WHERE document_id = ? AND paragraph_index >= ?",
+            (document_id, insert_idx),
+        )
+
+        # 5. 平移 character_relationships / plot_events
+        if project_id:
+            conn.execute(
+                "UPDATE character_relationships SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
+                (project_id, insert_idx),
+            )
+            conn.execute(
+                "UPDATE plot_events SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
+                (project_id, insert_idx),
+            )
+
+        return {"uuid": new_uuid, "idx": insert_idx, "text": text}
+
+
+def merge_paragraphs(
+    document_id: str,
+    target_idx_or_uuid: int | str,
+    direction: str = "below",
+    separator: str = "",
+) -> dict:
+    """合并当前段落与相邻段落 (above 或 below)。保留靠前/被选定的段落 UUID，拼接文本并迁移关联信息。"""
+    with get_conn() as conn:
+        proj = conn.execute(
+            "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
+            (document_id,),
+        ).fetchone()
+        if proj and proj["is_locked"] == 1:
+            raise ValueError("项目已锁定，禁止合并段落")
+        project_id = proj["project_id"] if proj else None
+
+        target_idx, target_uuid = _resolve_para_target(conn, document_id, target_idx_or_uuid)
+
+        if direction == "above":
+            keep_idx = target_idx - 1
+            remove_idx = target_idx
+        else:
+            keep_idx = target_idx
+            remove_idx = target_idx + 1
+
+        if keep_idx < 0:
+            raise ValueError("首段无法向上合并")
+
+        p_keep = conn.execute(
+            "SELECT * FROM paragraphs WHERE document_id = ? AND idx = ?",
+            (document_id, keep_idx),
+        ).fetchone()
+        p_remove = conn.execute(
+            "SELECT * FROM paragraphs WHERE document_id = ? AND idx = ?",
+            (document_id, remove_idx),
+        ).fetchone()
+
+        if not p_keep or not p_remove:
+            raise ValueError("要合并的相邻段落不存在")
+
+        keep_uuid = p_keep["uuid"]
+        remove_uuid = p_remove["uuid"]
+
+        # 1. 拼接文本（清除段内换行符）
+        text1 = (p_keep["text"] or "").replace("\r", "").replace("\n", "")
+        text2 = (p_remove["text"] or "").replace("\r", "").replace("\n", "")
+        merged_text = f"{text1}{separator}{text2}" if text1 and text2 else (text1 or text2)
+
+        # 2. 合并 edit_note 履历与 revised_text
+        notes_keep = parse_notes_history(p_keep["edit_note"])
+        notes_remove = parse_notes_history(p_remove["edit_note"])
+        combined_notes = notes_keep + notes_remove
+        note_val = json.dumps(combined_notes, ensure_ascii=False) if combined_notes else None
+
+        rev1 = ((p_keep["revised_text"] or text1) or "").replace("\r", "").replace("\n", "")
+        rev2 = ((p_remove["revised_text"] or text2) or "").replace("\r", "").replace("\n", "")
+        has_revised = (p_keep["revised_text"] is not None) or (p_remove["revised_text"] is not None)
+        merged_revised = f"{rev1}{separator}{rev2}" if has_revised else None
+
+        conn.execute(
+            """UPDATE paragraphs
+               SET text = ?, char_count = ?, edit_note = ?, revised_text = ?
+               WHERE document_id = ? AND idx = ?""",
+            (merged_text, len(merged_text), note_val, merged_revised, document_id, keep_idx),
+        )
+
+        # 3. 将 p_remove 上的 errors 重定向到 p_keep (同时更新 paragraph_uuid 和 paragraph_index)
+        conn.execute(
+            """UPDATE errors
+               SET paragraph_uuid = ?, paragraph_index = ?
+               WHERE document_id = ? AND (paragraph_uuid = ? OR (paragraph_uuid IS NULL AND paragraph_index = ?))""",
+            (keep_uuid, keep_idx, document_id, remove_uuid, remove_idx),
+        )
+
+        # 4. 章节绑定与双章节合并处理
+        ch_keep = conn.execute(
+            "SELECT * FROM chapters WHERE document_id = ? AND (title_paragraph_uuid = ? OR title_paragraph_idx = ?)",
+            (document_id, keep_uuid, keep_idx),
+        ).fetchone()
+        ch_remove = conn.execute(
+            "SELECT * FROM chapters WHERE document_id = ? AND (title_paragraph_uuid = ? OR title_paragraph_idx = ?)",
+            (document_id, remove_uuid, remove_idx),
+        ).fetchone()
+
+        if ch_remove and not ch_keep:
+            # 如果 remove 是章节标题但 keep 不是，重定向到 keep (同时更新 uuid 与 idx!)
+            conn.execute(
+                """UPDATE chapters
+                   SET title_paragraph_uuid = ?, title_paragraph_idx = ?
+                   WHERE id = ?""",
+                (keep_uuid, keep_idx, ch_remove["id"]),
+            )
+        elif ch_remove and ch_keep:
+            # 两者均为章节标题：保留 keep 章节定义，扩展 start_idx/end_idx 吞并 remove
+            new_s = min(ch_keep["start_idx"], ch_remove["start_idx"])
+            new_e = max(ch_keep["end_idx"], ch_remove["end_idx"])
+            conn.execute(
+                "UPDATE chapters SET start_idx = ?, end_idx = ? WHERE id = ?",
+                (new_s, new_e, ch_keep["id"]),
+            )
+            # 删掉被吞并的额外章节记录
+            conn.execute("DELETE FROM chapters WHERE id = ?", (ch_remove["id"],))
+
+        # 5. 重定向 character_relationships 与 plot_events
+        if project_id:
+            conn.execute(
+                """UPDATE character_relationships
+                   SET paragraph_uuid = ?, paragraph_idx = ?
+                   WHERE project_id = ? AND (paragraph_uuid = ? OR (paragraph_uuid IS NULL AND paragraph_idx = ?))""",
+                (keep_uuid, keep_idx, project_id, remove_uuid, remove_idx),
+            )
+            conn.execute(
+                """UPDATE plot_events
+                   SET paragraph_uuid = ?, paragraph_idx = ?
+                   WHERE project_id = ? AND (paragraph_uuid = ? OR (paragraph_uuid IS NULL AND paragraph_idx = ?))""",
+                (keep_uuid, keep_idx, project_id, remove_uuid, remove_idx),
+            )
+
+    # 6. 删除 p_remove 所在行并平移后续段落索引
+    delete_paragraph_and_reorder(document_id, remove_idx)
+
+    return {"uuid": keep_uuid, "idx": keep_idx, "text": merged_text}
+
+
+def merge_multiple_paragraphs(
+    document_id: str,
+    target_identifiers: list[int | str],
+    separator: str = "",
+) -> dict:
+    """批量合并选定的多段连续段落。保留索引最小的段落 UUID，拼接文本并迁移重定向所有关联信息。"""
+    if not target_identifiers:
+        raise ValueError("未选择任何要合并的段落")
+    if len(target_identifiers) == 1:
+        with get_conn() as conn:
+            idx, uuid_str = _resolve_para_target(conn, document_id, target_identifiers[0])
+            para = conn.execute("SELECT text FROM paragraphs WHERE document_id = ? AND idx = ?", (document_id, idx)).fetchone()
+            return {"uuid": uuid_str, "idx": idx, "text": para["text"] if para else ""}
+
+    with get_conn() as conn:
+        proj = conn.execute(
+            "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
+            (document_id,),
+        ).fetchone()
+        if proj and proj["is_locked"] == 1:
+            raise ValueError("项目已锁定，禁止合并段落")
+        project_id = proj["project_id"] if proj else None
+
+        resolved_paras = []
+        for item in target_identifiers:
+            idx, uuid_str = _resolve_para_target(conn, document_id, item)
+            row = conn.execute("SELECT * FROM paragraphs WHERE document_id = ? AND idx = ?", (document_id, idx)).fetchone()
+            if row:
+                resolved_paras.append(dict(row))
+
+        resolved_paras.sort(key=lambda p: p["idx"])
+
+        indices = [p["idx"] for p in resolved_paras]
+        min_idx = indices[0]
+        max_idx = indices[-1]
+        if indices != list(range(min_idx, max_idx + 1)):
+            raise ValueError("选中的段落必须为连续相邻的段落，不能跨段合并")
+
+        p_keep = resolved_paras[0]
+        p_removes = resolved_paras[1:]
+
+        keep_uuid = p_keep["uuid"]
+        keep_idx = p_keep["idx"]
+
+        # 1. 拼接文本与 revised_text（清除段落内部硬换行符）
+        texts = [(p["text"] or "").replace("\r", "").replace("\n", "") for p in resolved_paras]
+        merged_text = separator.join(t for t in texts if t) if any(texts) else ""
+
+        has_revised = any(p["revised_text"] is not None for p in resolved_paras)
+        revised_parts = [
+            (p["revised_text"] if p["revised_text"] is not None else (p["text"] or "")).replace("\r", "").replace("\n", "")
+            for p in resolved_paras
+        ]
+        merged_revised = separator.join(revised_parts) if has_revised else None
+
+        # 2. 合并 edit_note 履历
+        combined_notes = []
+        for p in resolved_paras:
+            combined_notes.extend(parse_notes_history(p["edit_note"]))
+        note_val = json.dumps(combined_notes, ensure_ascii=False) if combined_notes else None
+
+        conn.execute(
+            """UPDATE paragraphs
+               SET text = ?, char_count = ?, edit_note = ?, revised_text = ?
+               WHERE document_id = ? AND idx = ?""",
+            (merged_text, len(merged_text), note_val, merged_revised, document_id, keep_idx),
+        )
+
+        # 3. 重定向所有 p_removes 上的 errors 到 keep_uuid
+        remove_uuids = [p["uuid"] for p in p_removes if p["uuid"]]
+        remove_idxs = [p["idx"] for p in p_removes]
+
+        if remove_uuids:
+            placeholders_uuid = ",".join("?" for _ in remove_uuids)
+            conn.execute(
+                f"""UPDATE errors
+                    SET paragraph_uuid = ?, paragraph_index = ?
+                    WHERE document_id = ? AND paragraph_uuid IN ({placeholders_uuid})""",
+                (keep_uuid, keep_idx, document_id, *remove_uuids),
+            )
+
+        if remove_idxs:
+            placeholders_idx = ",".join("?" for _ in remove_idxs)
+            conn.execute(
+                f"""UPDATE errors
+                    SET paragraph_uuid = ?, paragraph_index = ?
+                    WHERE document_id = ? AND paragraph_index IN ({placeholders_idx})""",
+                (keep_uuid, keep_idx, document_id, *remove_idxs),
+            )
+
+        # 4. 章节绑定与多章节合并处理
+        ch_keep = conn.execute(
+            "SELECT * FROM chapters WHERE document_id = ? AND (title_paragraph_uuid = ? OR title_paragraph_idx = ?)",
+            (document_id, keep_uuid, keep_idx),
+        ).fetchone()
+
+        for p_rem in p_removes:
+            r_uuid = p_rem["uuid"]
+            r_idx = p_rem["idx"]
+            ch_remove = conn.execute(
+                "SELECT * FROM chapters WHERE document_id = ? AND (title_paragraph_uuid = ? OR title_paragraph_idx = ?)",
+                (document_id, r_uuid, r_idx),
+            ).fetchone()
+
+            if ch_remove and not ch_keep:
+                conn.execute(
+                    """UPDATE chapters
+                       SET title_paragraph_uuid = ?, title_paragraph_idx = ?
+                       WHERE id = ?""",
+                    (keep_uuid, keep_idx, ch_remove["id"]),
+                )
+                ch_keep = ch_remove
+            elif ch_remove and ch_keep and ch_remove["id"] != ch_keep["id"]:
+                new_s = min(ch_keep["start_idx"], ch_remove["start_idx"])
+                new_e = max(ch_keep["end_idx"], ch_remove["end_idx"])
+                conn.execute(
+                    "UPDATE chapters SET start_idx = ?, end_idx = ? WHERE id = ?",
+                    (new_s, new_e, ch_keep["id"]),
+                )
+                conn.execute("DELETE FROM chapters WHERE id = ?", (ch_remove["id"],))
+
+        # 5. 重定向 character_relationships 与 plot_events
+        if project_id and remove_uuids:
+            placeholders_uuid = ",".join("?" for _ in remove_uuids)
+            conn.execute(
+                f"""UPDATE character_relationships
+                    SET paragraph_uuid = ?, paragraph_idx = ?
+                    WHERE project_id = ? AND paragraph_uuid IN ({placeholders_uuid})""",
+                (keep_uuid, keep_idx, project_id, *remove_uuids),
+            )
+            conn.execute(
+                f"""UPDATE plot_events
+                    SET paragraph_uuid = ?, paragraph_idx = ?
+                    WHERE project_id = ? AND paragraph_uuid IN ({placeholders_uuid})""",
+                (keep_uuid, keep_idx, project_id, *remove_uuids),
+            )
+
+        if project_id and remove_idxs:
+            placeholders_idx = ",".join("?" for _ in remove_idxs)
+            conn.execute(
+                f"""UPDATE character_relationships
+                    SET paragraph_uuid = ?, paragraph_idx = ?
+                    WHERE project_id = ? AND paragraph_idx IN ({placeholders_idx})""",
+                (keep_uuid, keep_idx, project_id, *remove_idxs),
+            )
+            conn.execute(
+                f"""UPDATE plot_events
+                    SET paragraph_uuid = ?, paragraph_idx = ?
+                    WHERE project_id = ? AND paragraph_idx IN ({placeholders_idx})""",
+                (keep_uuid, keep_idx, project_id, *remove_idxs),
+            )
+
+    # 6. 从后向前删除多余段落行并整体平移后续段落
+    for r_idx in reversed(remove_idxs):
+        delete_paragraph_and_reorder(document_id, r_idx)
+
+    return {"uuid": keep_uuid, "idx": keep_idx, "text": merged_text}
+
+
 
 def clean_empty_paragraphs(document_id: str) -> int:
     """清理所有空白段落，从 0 重新连续编排所有剩余段落 idx，并重算章节、错误索引与总数。"""
