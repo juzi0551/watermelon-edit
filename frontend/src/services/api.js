@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+const API_BASE = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+  ? 'http://localhost:8000/api'
+  : '/api'
+const api = axios.create({ baseURL: API_BASE })
 
 // ==================== Projects ====================
 

@@ -42,7 +42,6 @@ except Exception:
     if _CRASH_LOG:
         _CRASH_LOG.flush()
         os.fsync(_CRASH_LOG.fileno())
-    import time
     time.sleep(30)
     sys.exit(1)
 
@@ -86,7 +85,12 @@ def ensure_user_data(base_dir):
 
 
 def main():
-    base_dir = get_base_dir()
+    # Tauri 侧载时，数据目录通过环境变量传入（指向持久目录）
+    data_override = os.environ.get("WATERMELON_DATA_DIR")
+    if data_override:
+        base_dir = data_override
+    else:
+        base_dir = get_base_dir()
 
     try:
         backend_dir = os.path.join(base_dir, 'backend')

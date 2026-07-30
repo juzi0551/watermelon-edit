@@ -1,9 +1,9 @@
-name: Build Windows EXE
+name: Build Windows EXE + Tauri Installer
 
 on:
   push:
     branches: [main, master]
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -33,19 +33,16 @@ jobs:
         shell: pwsh
         run: |
           python --version
-          where.exe python
           python -m pip install -r backend/requirements.txt
           python -m pip install pyinstaller
           python -c "import fastapi; import starlette; import pydantic; import uvicorn; print('ALL OK:', fastapi.__version__)"
 
-      - name: Bundle with PyInstaller
+      - name: Bundle backend with PyInstaller
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "backend/app/data"
-          pyinstaller --name "西瓜少年" --onedir --noconfirm --clean `
-            --log-level DEBUG `
+          pyinstaller --name "西瓜少年" --onefile --noconfirm --clean `
             --paths "backend" `
-            --add-data "backend/static;backend/static" `
             --add-data "backend/app/data;backend/app/data" `
             --collect-all litellm --collect-all tiktoken --collect-all tiktoken_ext `
             --hidden-import tiktoken_ext.openai_public `
@@ -53,24 +50,31 @@ jobs:
             --hidden-import app --hidden-import app.api --hidden-import app.core --hidden-import app.models --hidden-import app.utils `
             run.py
 
-      - name: Debug - list collected packages
+      - name: Setup Rust (for Tauri)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Copy backend exe to Tauri binaries
         shell: pwsh
         run: |
-          Get-ChildItem -Recurse -Directory -Path "dist/西瓜少年/_internal" `
-            | Select-Object -ExpandProperty Name | Sort-Object | Select-Object -First 200
+          New-Item -ItemType Directory -Force -Path "src-tauri/binaries"
+          Copy-Item "dist/西瓜少年.exe" "src-tauri/binaries/西瓜少年-x86_64-pc-windows-msvc.exe" -Force
 
-      - name: Prepare data files and compress artifact
+      - name: Build Tauri desktop app
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "dist/西瓜少年/data"
-          Set-Content -Path "dist/西瓜少年/data/api_keys.json" -Value "{}"
-          Compress-Archive -Path "dist/西瓜少年/*" -DestinationPath "dist/西瓜少年-windows.zip" -Force
+          cd frontend
+          npm run tauri:build
 
-      - name: Upload artifact
+      - name: Upload Tauri portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: 西瓜审校-windows-portable
+          path: src-tauri/target/release/*.zip
+          retention-days: 30
+
+      - name: Upload backend exe (standalone)
         uses: actions/upload-artifact@v4
         with:
           name: 西瓜少年-windows-exe
-          path: dist/西瓜少年-windows.zip
+          path: dist/西瓜少年.exe
           retention-days: 30
-
-
