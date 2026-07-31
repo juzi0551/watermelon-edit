@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, forwardRef, useImperativeHandle, memo } from 'react'
 import { diffChars } from 'diff'
 import {
   Card, Button, Tag, Space, Typography, Empty, Tabs,
@@ -45,25 +45,7 @@ const kbdStyle = {
   fontFamily: 'inherit',
 }
 
-function computeInlineDiff(original, suggested) {
-  const orig = original || ''
-  const sugg = suggested || ''
-  const changes = diffChars(orig, sugg)
-  let removed = ''
-  let added = ''
-  let prefix = ''
-  let suffix = ''
 
-  changes.forEach(c => {
-    if (c.removed) removed += c.value
-    else if (c.added) added += c.value
-    else {
-      if (!removed && !added) prefix += c.value
-      else suffix += c.value
-    }
-  })
-  return { prefix, removed, added, suffix }
-}
 
 function computeLcsDiffChunks(original, suggested) {
   const orig = original || ''
@@ -417,7 +399,7 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
       </div>
 
       <div style={{ marginBottom: 10 }}>
-        <DiffView original={para.text} suggested={para.revised_text} revisionTag={circledTag} fontSize={Math.round(14 * scale)} />
+        <DiffView original={para.text} suggested={para.revised_text} fontSize={Math.round(14 * scale)} />
       </div>
 
       <div style={{ background: '#fafafa', padding: `${Math.round(8 * scale)}px ${Math.round(10 * scale)}px`, borderRadius: radius.sm, border: `1px solid ${color.border}`, marginBottom: 10, fontSize: Math.round(13 * scale), lineHeight: 1.6 }}>
@@ -936,7 +918,7 @@ function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editN
   return <>{segs}</>
 }
 
-function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) {
+const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) {
   return errors.map(e => {
     const statusColor = e.user_status === 'pending' ? color.warning
       : e.user_status === 'accepted' ? color.success : color.borderRejected
@@ -1000,7 +982,7 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) 
       </div>
     )
   })
-}
+})
 
 function getCaretOffsetFromPoint(x, y) {
   try {
@@ -1041,6 +1023,7 @@ const ParaRow = React.memo(function ParaRow({
   onEditingNoteChange,
   onSaveEdit,
   onCancelEdit,
+  onTogglePageBreak,
   onPbTooltipIdx,
   onSelectError,
   showAllOriginals,
@@ -1394,7 +1377,7 @@ function ReviewReaderInner({
   const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.uuid || p.idx, p])), [paras])
   const paraMapByIdx = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
 
-  const handleScroll = useCallback(() => { }, [])
+
 
   const chaptersByParaIdx = useMemo(() => {
     const map = new Map()
@@ -1415,9 +1398,6 @@ function ReviewReaderInner({
     const container = flowRef.current
     if (!container || targetIdx == null) return
 
-    isJumpingRef.current = true
-    if (jumpTimerRef.current) clearTimeout(jumpTimerRef.current)
-
     let el = container.querySelector(`[data-para="${targetIdx}"]`)
     if (!el && typeof targetIdx === 'number' && paraMapByIdx[targetIdx]) {
       const u = paraMapByIdx[targetIdx].uuid
@@ -1426,9 +1406,6 @@ function ReviewReaderInner({
     if (el) {
       el.scrollIntoView({ behavior: 'auto', block: offset > 0 ? 'center' : 'start' })
     }
-    jumpTimerRef.current = setTimeout(() => {
-      isJumpingRef.current = false
-    }, 150)
   }, [paraMapByIdx])
 
   useImperativeHandle(ref, () => ({
@@ -1483,8 +1460,6 @@ function ReviewReaderInner({
     })
   }, [onSelectionChange])
 
-  const handleHover = useCallback((idx) => setHoverIdx(idx), [])
-  const handleMouseLeave = useCallback(() => setHoverIdx(null), [])
   const handleCancelEdit = useCallback(() => {
     setEditingIdx(null)
     setEditingCaretPos(null)
@@ -1509,6 +1484,8 @@ function ReviewReaderInner({
   const tbFontSize = Math.round(12 * (currentBodyFontSize / fontSize.body))
   const [savingPara, setSavingPara] = useState(false)
   const [activeIdx, setActiveIdx] = useState(null)
+  const activeIdxRef = useRef(activeIdx)
+  useEffect(() => { activeIdxRef.current = activeIdx }, [activeIdx])
   const toolbarRef = useRef(null)
   const [editingCaretPos, setEditingCaretPos] = useState(null)
   const [showOriginalMap, setShowOriginalMap] = useState({})
@@ -1635,23 +1612,42 @@ function ReviewReaderInner({
     }
   }, [dismissToolbar])
 
-  const handleParaClick = (e, paraIdx) => {
+  const handleParaClick = useCallback((e, paraIdx) => {
     e.stopPropagation()
-    if (activeIdx === paraIdx) {
+    if (activeIdxRef.current === paraIdx) {
       dismissToolbar()
     } else {
       setActiveIdx(paraIdx)
     }
-  }
+  }, [dismissToolbar])
 
-  const handleStartEdit = (para, caretPos = null) => {
+  const handleStartEdit = useCallback((para, caretPos = null) => {
     setEditingIdx(para.idx)
     setEditingText(para.revised_text ?? para.text ?? '')
     setEditingNote('')
     setEditingCaretPos(caretPos)
-  }
+  }, [])
 
-  const handleSaveEdit = async (paraIdx, textVal = editingText, noteVal = editingNote) => {
+  const handleSelectError = useCallback((id) => {
+    setSelectedManualEditIdx(null)
+    setSelectedId(id)
+  }, [])
+
+  const handleSelectObsoleteError = useCallback((id) => {
+    setSelectedManualEditIdx(null)
+    setSelectedId(id)
+    const err = flatErrors.find(e => e.id === id)
+    if (err) {
+      scrollToParagraph(err.paragraph_uuid || err.paragraph_index)
+    }
+  }, [flatErrors, scrollToParagraph])
+
+  const handleSelectManualEdit = useCallback((idx) => {
+    setSelectedId(null)
+    setSelectedManualEditIdx(idx)
+  }, [])
+
+  const handleSaveEdit = useCallback(async (paraIdx, textVal, noteVal) => {
     if (!project?.id) return
     setSavingPara(true)
     const finalNote = noteVal?.trim() || null
@@ -1675,7 +1671,7 @@ function ReviewReaderInner({
     } finally {
       setSavingPara(false)
     }
-  }
+  }, [project?.id, sortedParas, onReloadProject])
 
   const handleDeletePara = (para) => {
     if (!project?.id) return
@@ -1950,8 +1946,6 @@ function ReviewReaderInner({
   }
   const flowRef = useRef(null)
   const contentRef = useRef(null)
-  const isJumpingRef = useRef(false)
-  const jumpTimerRef = useRef(null)
   const resultsRef = useRef(results)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
@@ -1960,8 +1954,8 @@ function ReviewReaderInner({
   const floatCardElRef = useRef(null)
   const positionSavedRef = useRef(false)
   const autoSelectRef = useRef(false)
-  const hasAutoSelectedRef = useRef(false)
   const isAutoScrollingRef = useRef(false)
+  const statusSubmittingRef = useRef(false)
 
   useEffect(() => {
     const el = flowRef.current
@@ -2018,7 +2012,6 @@ function ReviewReaderInner({
       if (pending.length > 0) {
         const stillPending = pending.some(e => e.id === selectedIdRef.current)
         if (!stillPending) {
-          hasAutoSelectedRef.current = true
           autoSelectRef.current = true
           positionSavedRef.current = false
           setSelectedId(pending[0].id)
@@ -2026,8 +2019,6 @@ function ReviewReaderInner({
       }
     }
   }, [results, pending])
-
-  const isScrollingRef = useRef(false)
 
   // 切换 selectedId 时，在 Paint 之前同步隐去卡片，防止旧坐标闪烁
   const updatePos = useCallback(() => {
@@ -2042,8 +2033,17 @@ function ReviewReaderInner({
       return
     }
     const strId = String(selectedId)
-    const span = Array.from(container.querySelectorAll('[data-error-id]'))
-      .find(s => s.dataset.errorId.split(',').includes(strId))
+    let span = null
+    const paraKey = err.paragraph_uuid || err.paragraph_index
+    if (paraKey != null) {
+      const paraEl = container.querySelector(`[data-para="${paraKey}"]`)
+      if (paraEl) {
+        span = Array.from(paraEl.querySelectorAll('[data-error-id]')).find(s => s.dataset.errorId.split(',').includes(strId))
+      }
+    }
+    if (!span) {
+      span = Array.from(container.querySelectorAll('[data-error-id]')).find(s => s.dataset.errorId.split(',').includes(strId))
+    }
     if (!span) {
       el.style.opacity = '0'
       el.style.transform = 'translateY(3px)'
@@ -2143,8 +2143,10 @@ function ReviewReaderInner({
   }, [selectedError?.id, selIsPending])
 
 
-  const handleStatus = (status) => {
-    if (!selectedId) return
+  const handleStatus = useCallback((status) => {
+    if (!selectedId || statusSubmittingRef.current) return
+    statusSubmittingRef.current = true
+    setTimeout(() => { statusSubmittingRef.current = false }, 150)
     const curId = selectedId
     const custom = status === 'accepted' && customEdit !== selectedError?.suggested_text
       ? customEdit : undefined
@@ -2163,7 +2165,8 @@ function ReviewReaderInner({
     onSetStatus(curId, status, custom).catch(() => {
       message.error('操作保存失败，请刷新重试')
     })
-  }
+  }, [selectedId, customEdit, selectedError?.suggested_text, pending, onSetStatus])
+
 
   useEffect(() => {
     const handler = (e) => {
@@ -2363,7 +2366,6 @@ function ReviewReaderInner({
             <div
               ref={flowRef}
               className="custom-reader-scroll"
-              onScroll={handleScroll}
               style={{
                 flex: 1,
                 minHeight: 0,
@@ -2413,10 +2415,11 @@ function ReviewReaderInner({
                       onEditingNoteChange={setEditingNote}
                       onSaveEdit={handleSaveEdit}
                       onCancelEdit={handleCancelEdit}
+                      onTogglePageBreak={handleTogglePageBreak}
                       onPbTooltipIdx={setPbTooltipIdx}
-                      onSelectError={(id) => { setSelectedManualEditIdx(null); setSelectedId(id); }}
+                      onSelectError={handleSelectError}
                       showAllOriginals={showAllOriginals}
-                      onSelectManualEdit={(idx) => { setSelectedId(null); setSelectedManualEditIdx(idx); }}
+                      onSelectManualEdit={handleSelectManualEdit}
                       mergeMode={mergeMode}
                       isMergeChecked={mergeMode ? (selectedMergeParas.has(para.uuid) || selectedMergeParas.has(para.idx)) : false}
                       onMergeToggle={handleToggleMergeSelect}
@@ -2490,12 +2493,14 @@ function ReviewReaderInner({
                       </Dropdown>
 
                       <Tooltip title={hasManualEdit ? (showOrig ? '隐藏原文' : '查看初始原文') : '该段落无修改'} mouseEnterDelay={0.5} mouseLeaveDelay={0}>
-                        <Button type="text" size="small" icon={<EyeOutlined />}
-                          onClick={() => handleToggleOriginal(activePara.idx)}
-                          disabled={!hasManualEdit}
-                          style={{ fontSize: tbFontSize, color: showOrig ? '#1890ff' : undefined }}>
-                          原文
-                        </Button>
+                        <span style={{ display: 'inline-block' }}>
+                          <Button type="text" size="small" icon={<EyeOutlined />}
+                            onClick={() => handleToggleOriginal(activePara.idx)}
+                            disabled={!hasManualEdit}
+                            style={{ fontSize: tbFontSize, color: showOrig ? '#1890ff' : undefined }}>
+                            原文
+                          </Button>
+                        </span>
                       </Tooltip>
 
                       {hasHardBreak ? (
@@ -2565,7 +2570,7 @@ function ReviewReaderInner({
                         <ErrorList
                           errors={pending}
                           selectedId={selectedId}
-                          onSelect={(id) => { setSelectedId(id) }}
+                          onSelect={handleSelectError}
                           unmatchedIds={unmatchedIds}
                           onSetStatus={onSetStatus}
                         />
@@ -2580,7 +2585,7 @@ function ReviewReaderInner({
                         <ErrorList
                           errors={accepted}
                           selectedId={selectedId}
-                          onSelect={(id) => { setSelectedId(id) }}
+                          onSelect={handleSelectError}
                           unmatchedIds={unmatchedIds}
                           onSetStatus={onSetStatus}
                         />
@@ -2595,7 +2600,7 @@ function ReviewReaderInner({
                         <ErrorList
                           errors={rejected}
                           selectedId={selectedId}
-                          onSelect={(id) => { setSelectedId(id) }}
+                          onSelect={handleSelectError}
                           unmatchedIds={unmatchedIds}
                           onSetStatus={onSetStatus}
                         />
@@ -2610,13 +2615,7 @@ function ReviewReaderInner({
                         <ErrorList
                           errors={obsolete}
                           selectedId={selectedId}
-                          onSelect={(id) => {
-                            setSelectedId(id)
-                            const err = flatErrors.find(e => e.id === id)
-                            if (err) {
-                              scrollToParagraph(err.paragraph_uuid || err.paragraph_index)
-                            }
-                          }}
+                          onSelect={handleSelectObsoleteError}
                           unmatchedIds={unmatchedIds}
                           onSetStatus={onSetStatus}
                         />
@@ -2835,7 +2834,11 @@ function ReviewReaderInner({
                           size="large"
                           className="bar-action-btn"
                           icon={<CheckCircleOutlined />}
-                          onClick={() => { setFlashSide('accepted'); setTimeout(() => { setFlashSide(null); handleStatus('accepted') }, 100) }}
+                          onClick={() => {
+                            if (inProgress || statusSubmittingRef.current) return
+                            setFlashSide('accepted')
+                            setTimeout(() => { setFlashSide(null); handleStatus('accepted') }, 100)
+                          }}
                           disabled={inProgress}
                           style={{
                             height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
@@ -2850,7 +2853,11 @@ function ReviewReaderInner({
                           size="large"
                           className="bar-action-btn"
                           icon={<CloseCircleOutlined />}
-                          onClick={() => { setFlashSide('rejected'); setTimeout(() => { setFlashSide(null); handleStatus('rejected') }, 100) }}
+                          onClick={() => {
+                            if (inProgress || statusSubmittingRef.current) return
+                            setFlashSide('rejected')
+                            setTimeout(() => { setFlashSide(null); handleStatus('rejected') }, 100)
+                          }}
                           disabled={inProgress}
                           style={{
                             height: 48, paddingInline: 24, fontSize: 15, flexShrink: 0,
@@ -2952,6 +2959,7 @@ function ReviewReaderInner({
       )}
       {selectedManualEditPara && (
         <ManualEditDetailCard
+          key={selectedManualEditPara.uuid || selectedManualEditPara.idx}
           ref={manualCardElRef}
           para={selectedManualEditPara}
           currentBodyFontSize={currentBodyFontSize}
