@@ -6,7 +6,7 @@ from fastapi import FastAPI
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from app.api import upload, proofread, results, apply, export, models, projects, settings, debug
+from app.api import upload, proofread, results, apply, export, models, projects, settings, debug, chat
 from app.utils.helpers import ensure_dirs
 from app.core.database import init_db
 
@@ -47,6 +47,7 @@ app.include_router(apply.router, prefix="/api", tags=["apply"])
 app.include_router(export.router, prefix="/api", tags=["export"])
 app.include_router(models.router, prefix="/api", tags=["models"])
 app.include_router(debug.router, prefix="/api", tags=["debug"])
+app.include_router(chat.router, prefix="/api", tags=["chat"])
 
 
 @app.get("/api/health")

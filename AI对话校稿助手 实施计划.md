@@ -262,7 +262,7 @@ const provider = new DefaultChatProvider({
 
 ---
 
-## 六、实施步骤（分 5 阶段，每阶段可独立验证）
+## 六、实施步骤（分 6 阶段，每阶段可独立验证）
 
 ### 阶段 1：后端流式通道打通（核心验证点）
 - [MODIFY] `llm.py` 提取 `stream_llm()`
@@ -289,6 +289,12 @@ const provider = new DefaultChatProvider({
 - 流式中断/错误/重试、thinking 折叠展示、会话标题、空态文案
 - `npm run build` + 全量回归（校对、导出、图谱不受影响）
 - Tauri 打包验证（无新原生依赖，`@ant-design/x` 为纯前端包）
+
+### 阶段 6：Tools & Skills 工具与技能（Function Calling）能力扩展
+- [NEW] `backend/app/core/tools.py`：定义 OpenAI 兼容的 Function Schema 注册表（如 `search_character_info`, `replace_paragraph_text`, `get_plot_timeline`, `query_author_settings`）
+- [MODIFY] `backend/app/core/chat.py` & `llm.py`：接入 LiteLLM `tools` 参数，拦截并路由 `tool_calls` 事件，自动执行工具函数并回传多轮 Agentic 结果
+- [MODIFY] `frontend/src/components/ChatPanel/ChatPanel.jsx`：结合 `@ant-design/x` 的 `<ThoughtChain>` 展示工具链调用轨迹（如 `🔧 调用工具：查询角色智星... 选区修改完成 ✓`）
+- 验证：单元测试 `test_chat_tools.py`（Tool 匹配与调度）+ 联调 AI 助手主动调工具替换正文
 
 ---
 

@@ -12,7 +12,8 @@ SQLite 数据库模块
 import sqlite3
 import os
 import json
-from datetime import datetime
+import uuid
+import datetime
 from contextlib import contextmanager
 from app.utils.helpers import generate_id
 
@@ -102,13 +103,26 @@ DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与�
 }"""
 
 
+DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位温和专业的资深中文小说编辑，正与作者并肩工作。
+
+你的工作方式：
+1. 先指出这段文字的亮点，再提改进建议——批评永远包裹在建设性意见里。
+2. 针对【选中的文字】给出意见，不要越界修改未被选中的内容。
+3. 每条建议说明"为什么"（节奏、语感、视角、信息密度等），并给出 1~2 个可替换的写法示例。
+4. 尊重作者的文风与表达习惯，不把个人偏好强加给作者。
+5. 若原文已足够好，请直说"这段很好，不需要改"，不要为了提建议而提建议。
+6. 语气像一位懂小说的同行，而不是机器。"""
+
+
 def _init_default_settings(conn):
     defaults = {
         "system_prompt_proofread": DEFAULT_SYSTEM_PROMPT_PROOFREAD,
+        "system_prompt_chat": DEFAULT_CHAT_SYSTEM_PROMPT,
+        "chat_context_chars": "100",
     }
     for key, value in defaults.items():
         conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             (key, value),
         )
 
@@ -168,8 +182,8 @@ def _migrate_schema(conn):
                 value TEXT NOT NULL
             )
         """)
-        _init_default_settings(conn)
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '3')")
+    _init_default_settings(conn)
     if version < 4:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS llm_logs (
@@ -335,26 +349,54 @@ def _migrate_schema(conn):
 
         # Task 2：最小回填（幂等，WHERE uuid IS NULL 防止重复写入）
         # Step 1：为历史段落生成 uuid
-        para_rows = conn.execute(
-            "SELECT id FROM paragraphs WHERE uuid IS NULL"
-        ).fetchall()
-        if para_rows:
-            conn.executemany(
-                "UPDATE paragraphs SET uuid = ? WHERE id = ?",
-                [(generate_id(), r["id"]) for r in para_rows],
+        has_paras = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paragraphs'").fetchone()
+        if has_paras:
+            para_rows = conn.execute(
+                "SELECT id FROM paragraphs WHERE uuid IS NULL"
+            ).fetchall()
+            if para_rows:
+                conn.executemany(
+                    "UPDATE paragraphs SET uuid = ? WHERE id = ?",
+                    [(generate_id(), r["id"]) for r in para_rows],
+                )
+            # Step 2：用 idx 关系回填 errors.paragraph_uuid
+            conn.execute(
+                """UPDATE errors
+                   SET paragraph_uuid = (
+                       SELECT p.uuid FROM paragraphs p
+                       WHERE p.idx = errors.paragraph_index
+                         AND p.document_id = errors.document_id
+                   )
+                   WHERE paragraph_uuid IS NULL"""
             )
-        # Step 2：用 idx 关系回填 errors.paragraph_uuid
-        conn.execute(
-            """UPDATE errors
-               SET paragraph_uuid = (
-                   SELECT p.uuid FROM paragraphs p
-                   WHERE p.idx = errors.paragraph_index
-                     AND p.document_id = errors.document_id
-               )
-               WHERE paragraph_uuid IS NULL"""
-        )
 
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '8')")
+
+    if version < 9:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                title TEXT DEFAULT '新对话',
+                model TEXT,
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                updated_at TEXT DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_sess_proj ON chat_sessions(project_id);
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                context TEXT,
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_msgs_session ON chat_messages(session_id);
+        """)
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '9')")
 
 
 
@@ -400,6 +442,7 @@ def init_db():
                 char_count INTEGER,
                 has_page_break_before INTEGER DEFAULT 0,
                 page_break_type TEXT DEFAULT 'none',
+                uuid TEXT DEFAULT NULL,
                 UNIQUE (document_id, idx),
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
@@ -2482,6 +2525,112 @@ def get_glossary_terms(project_id: str) -> list[dict]:
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def create_chat_session(project_id: str, title: str = "新对话", model: str | None = None) -> dict:
+    """新建对话会话。"""
+    session_id = f"cs_{uuid.uuid4().hex[:12]}"
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO chat_sessions (id, project_id, title, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, project_id, title, model, now, now),
+        )
+    return {
+        "id": session_id,
+        "project_id": project_id,
+        "title": title,
+        "model": model,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def list_chat_sessions(project_id: str) -> list[dict]:
+    """获取项目的会话列表（含消息计数）。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.id, s.project_id, s.title, s.model, s.created_at, s.updated_at,
+                   COUNT(m.id) as message_count
+            FROM chat_sessions s
+            LEFT JOIN chat_messages m ON s.id = m.session_id
+            WHERE s.project_id = ?
+            GROUP BY s.id
+            ORDER BY s.updated_at DESC
+            """,
+            (project_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_chat_session(session_id: str) -> dict | None:
+    """获取指定会话详情。"""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM chat_sessions WHERE id = ?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_chat_session(session_id: str) -> bool:
+    """删除会话及其关联的所有消息。"""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+        cur = conn.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+        return cur.rowcount > 0
+
+
+def update_chat_session_title(session_id: str, title: str) -> bool:
+    """更新会话标题与更新时间。"""
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now, session_id),
+        )
+        return cur.rowcount > 0
+
+
+def insert_chat_message(session_id: str, role: str, content: str, context: dict | None = None) -> dict:
+    """新增单条对话消息并更新会话活跃时间。"""
+    msg_id = f"cm_{uuid.uuid4().hex[:12]}"
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    context_str = json.dumps(context, ensure_ascii=False) if context else None
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO chat_messages (id, session_id, role, content, context, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (msg_id, session_id, role, content, context_str, now),
+        )
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
+            (now, session_id),
+        )
+    return {
+        "id": msg_id,
+        "session_id": session_id,
+        "role": role,
+        "content": content,
+        "context": context,
+        "created_at": now,
+    }
+
+
+def list_chat_messages(session_id: str) -> list[dict]:
+    """获取指定会话按时间升序排列的历史消息。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC, rowid ASC",
+            (session_id,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("context"):
+                try:
+                    d["context"] = json.loads(d["context"])
+                except Exception:
+                    pass
+            result.append(d)
+        return result
 
 
 # 启动时初始化表 + 设置缓存

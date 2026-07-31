@@ -12,6 +12,7 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@ant-design/x": "^2.9.0",
     "@tauri-apps/api": "^2.11.1",
     "antd": "^5.21.0",
     "axios": "^1.7.0",

@@ -294,3 +294,30 @@ export async function toggleProjectLock(projectId, isLocked) {
   const { data } = await api.post(`/projects/${projectId}/lock`, { is_locked: isLocked })
   return data
 }
+
+// ==================== AI Chat Assistant (阶段 2 & 3) ====================
+
+export async function listChatSessions(projectId) {
+  const { data } = await api.get(`/projects/${projectId}/chat/sessions`)
+  return data
+}
+
+export async function createChatSession(projectId, title = '新对话', model = null) {
+  const { data } = await api.post(`/projects/${projectId}/chat/sessions`, { title, model })
+  return data
+}
+
+export async function deleteChatSession(projectId, sessionId) {
+  const { data } = await api.delete(`/projects/${projectId}/chat/sessions/${sessionId}`)
+  return data
+}
+
+export async function listChatMessages(projectId, sessionId) {
+  const { data } = await api.get(`/projects/${projectId}/chat/sessions/${sessionId}/messages`)
+  return data
+}
+
+export function getChatStreamUrl(projectId) {
+  return `${API_BASE}/projects/${projectId}/chat/stream`
+}
+

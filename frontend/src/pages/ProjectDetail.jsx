@@ -9,16 +9,19 @@ import {
   MenuFoldOutlined, MenuUnfoldOutlined, EyeOutlined, LockOutlined, UnlockOutlined, ClearOutlined,
   BookOutlined, TeamOutlined, ToolOutlined, ThunderboltOutlined,
   SafetyOutlined, FormatPainterOutlined, BarChartOutlined, TagsOutlined, ContainerOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
   getResults, setErrorStatus, acceptAll, exportDoc,
   getLLMLog, getBatchStatus, retryWindow, getPrompts, saveBatchConcurrency, saveWindowSize,
   toggleProjectLock, cleanEmptyParagraphs, scanProjectTerms, formatProjectIndent,
+  updateParagraph,
 } from '../services/api'
 import ReviewReader from '../components/ReviewReader'
 import ProjectProfileDrawer from '../components/ProjectProfileDrawer'
 import CharacterGraph from '../components/CharacterGraph'
+import ChatPanel from '../components/ChatPanel/ChatPanel'
 import { color } from '../design-tokens'
 
 const { Title, Text } = Typography
@@ -56,6 +59,9 @@ export default function ProjectDetail() {
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
   const [selectedParas, setSelectedParas] = useState(new Set())
+  const [chatPanelOpen, setChatPanelOpen] = useState(false)
+  const [chatSelection, setChatSelection] = useState(null)
+
   const [llmMonitorOpen, setLlmMonitorOpen] = useState(false)
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false)
   const [characterGraphOpen, setCharacterGraphOpen] = useState(false)
@@ -78,6 +84,20 @@ export default function ProjectDetail() {
       try { return parseInt(localStorage.getItem('proofread_window_size') || '30', 10) || 30 } catch { return 30 }
     }
   )
+
+  const handleApplyChatText = async (revisedText, paragraphIdx, paragraphUuid) => {
+    if (paragraphIdx === undefined || paragraphIdx === null) {
+      message.warning('请先在左侧编辑区选中或指定目标段落')
+      return
+    }
+    try {
+      await updateParagraph(projectId, paragraphIdx, revisedText, 'AI助手采纳润色', paragraphUuid)
+      message.success(`已应用 AI 润色结果至第 ${paragraphIdx} 段`)
+      loadProject()
+    } catch (e) {
+      message.error(`应用文本失败: ${e.message || '未知错误'}`)
+    }
+  }
 
   const loadLlmCalls = useCallback(async () => {
     setLlmMonitorLoading(true)
@@ -589,6 +609,14 @@ export default function ProjectDetail() {
             >
               快速工具
             </Button>
+            <Button
+              type={chatPanelOpen ? 'primary' : 'default'}
+              shape="round"
+              icon={<MessageOutlined />}
+              onClick={() => setChatPanelOpen((v) => !v)}
+            >
+              💬 AI 助手
+            </Button>
             <Modal
               title={
                 <Space>
@@ -940,6 +968,16 @@ export default function ProjectDetail() {
                 </Tooltip>
               </div>
             )}
+
+            {/* AI 对话侧边栏面板（挤压式自适应布局） */}
+            <ChatPanel
+              projectId={projectId}
+              visible={chatPanelOpen}
+              onClose={() => setChatPanelOpen(false)}
+              activeSelection={chatSelection}
+              onClearSelection={() => setChatSelection(null)}
+              onApplyText={handleApplyChatText}
+            />
           </div>
         )}
 

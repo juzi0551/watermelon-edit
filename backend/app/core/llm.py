@@ -5,6 +5,7 @@ import datetime
 import asyncio
 import logging
 from collections import deque
+from typing import AsyncIterator
 from config import get_api_key, get_account_id, _provider_of, _litellm_model, _api_base, _model_extra_kwargs
 from app.core.database import get_setting
 
@@ -30,21 +31,25 @@ _TEST_PROMPT = "只回复一个字：好"
 _DEFAULT_SYSTEM_PROMPT_HARDCODED = "你是一个专业的小说校对编辑。请严格以JSON格式返回结果。"
 
 
-async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = "", system_prompt: str | None = None) -> tuple[str, dict]:
-    """调用大模型，返回 (响应内容, token_info)。
+async def stream_llm(
+    prompt: str | None = None,
+    model_id: str = "",
+    timeout: int = 120,
+    tag: str = "",
+    system_prompt: str | None = None,
+    messages: list[dict] | None = None,
+) -> AsyncIterator[dict]:
+    """逐 chunk yield {"type": "thinking"|"delta"|"done"|"error", "text": str, ...}。
 
-    token_info 包含 prompt_tokens / completion_tokens / total_tokens / cost，
-    调用失败时所有字段为 None。
-
-    流式调用（stream=True），timeout 为整体超时（含首 token 等待和 chunk 间等待）。
-    system_prompt 可覆盖默认系统提示词（用于将指令放入 system 而非 user 消息）。
-    传空字符串表示不用 system 消息（仅用于测试）。
+    支持传入 messages 多轮列表，或传入 prompt (+ system_prompt) 自动构造单轮请求。
+    全量更新 LLM_CALL_LOG 供调试面板监控。
     """
     api_key = get_api_key(model_id)
     if not api_key:
-        raise LLMCallError(f"未配置 {model_id} 的 API Key，请到「设置」页面添加")
+        err_msg = f"未配置 {model_id} 的 API Key，请到「设置」页面添加"
+        yield {"type": "error", "error": err_msg}
+        return
 
-    # Cloudflare Workers AI 需要额外设置 Account ID 环境变量
     _pid = _provider_of(model_id)
     _old_acct = None
     if _pid == "cloudflare":
@@ -53,13 +58,38 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
         if acct_id:
             os.environ["CLOUDFLARE_ACCOUNT_ID"] = acct_id
 
+    if messages is not None:
+        req_messages = list(messages)
+    else:
+        req_messages = []
+        if system_prompt is not None:
+            if system_prompt:
+                req_messages.append({"role": "system", "content": system_prompt})
+        else:
+            sp = get_setting("system_prompt_proofread", _DEFAULT_SYSTEM_PROMPT_HARDCODED)
+            if sp:
+                req_messages.append({"role": "system", "content": sp})
+        req_messages.append({"role": "user", "content": prompt or ""})
+
+    logged_sp = system_prompt
+    if logged_sp is None and req_messages:
+        sys_m = next((m for m in req_messages if m.get("role") == "system"), None)
+        if sys_m:
+            logged_sp = sys_m.get("content")
+
+    user_prompt_str = prompt
+    if user_prompt_str is None and req_messages:
+        last_user = next((m for m in reversed(req_messages) if m.get("role") == "user"), None)
+        if last_user:
+            user_prompt_str = last_user.get("content")
+
     entry = {
         "ts": datetime.datetime.now().isoformat(timespec="seconds"),
         "model": model_id,
         "tag": tag,
-        "prompt_len": len(prompt),
-        "prompt": prompt,
-        "system_prompt": system_prompt,
+        "prompt_len": len(user_prompt_str or "") if user_prompt_str else sum(len(m.get("content", "")) for m in req_messages),
+        "prompt": user_prompt_str or "",
+        "system_prompt": logged_sp,
         "status": "running",
         "duration_ms": 0,
         "response": None,
@@ -70,19 +100,10 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
     _record_llm_call(entry)
     t0 = time.time()
     try:
-        messages = []
-        if system_prompt is not None:
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-        else:
-            sp = get_setting("system_prompt_proofread", _DEFAULT_SYSTEM_PROMPT_HARDCODED)
-            if sp:
-                messages.append({"role": "system", "content": sp})
-        messages.append({"role": "user", "content": prompt})
         kwargs = dict(
             model=_litellm_model(model_id),
             api_key=api_key,
-            messages=messages,
+            messages=req_messages,
             timeout=timeout,
             stream=True,
             drop_params=True,  # 自动丢弃不支持的参数
@@ -93,11 +114,12 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
         extra = _model_extra_kwargs(model_id)
         if extra:
             kwargs.update(extra)
-        # 流式调用：timeout 为 chunk 间等待时间，非总超时
+
         t_prefill = time.time()
         response = await litellm.acompletion(**kwargs)
         t_prefill_done = time.time()
         logger.info("TTFT_DEBUG: litellm.acompletion() returned in %.1fs (model=%s)", t_prefill_done - t_prefill, model_id)
+
         content = ""
         token_info = {
             "prompt_tokens": None,
@@ -105,77 +127,100 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
             "total_tokens": None,
             "cost": None,
         }
-        # 若流式返回空内容，标记为异常
         got_content = False
         got_first_chunk = False
         got_first_content = False
-        async for chunk in response:
-            if not got_first_chunk:
-                # 第一个 chunk：连接建立 + prefill 完成（思考型模型此时可能仍在 thinking）
-                logger.info("TTFT_DEBUG: first_chunk=%.1fs (model=%s)", time.time() - t_prefill, model_id)
-                got_first_chunk = True
-            got_content = True
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if delta:
-                # 捕获 thinking token（reasoning_content 字段，主流思考模型通用）
-                rc = getattr(delta, "reasoning_content", None)
-                if rc:
-                    entry["thinking"] = (entry["thinking"] or "") + rc
-                    entry["thinking_status"] = "thinking"
-                if delta.content:
-                    if not got_first_content:
-                        logger.info("TTFT_DEBUG: first_content=%.1fs (model=%s)", time.time() - t_prefill, model_id)
-                        got_first_content = True
-                        # 思考结束，进入输出阶段
-                        if entry["thinking_status"] == "thinking":
-                            entry["thinking_status"] = "done"
-                    content += delta.content
-                    entry["response"] = content  # ← 增量写入，前端轮询可见
-            usage = getattr(chunk, "usage", None)
-            if usage:
-                token_info = {
-                    "prompt_tokens": getattr(usage, "prompt_tokens", None),
-                    "completion_tokens": getattr(usage, "completion_tokens", None),
-                    "total_tokens": getattr(usage, "total_tokens", None),
-                    "cost": getattr(chunk, "_cost", None),
-                }
+
+        try:
+            async for chunk in response:
+                if not got_first_chunk:
+                    logger.info("TTFT_DEBUG: first_chunk=%.1fs (model=%s)", time.time() - t_prefill, model_id)
+                    got_first_chunk = True
+                got_content = True
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if delta:
+                    rc = getattr(delta, "reasoning_content", None)
+                    if rc:
+                        entry["thinking"] = (entry["thinking"] or "") + rc
+                        entry["thinking_status"] = "thinking"
+                        yield {"type": "thinking", "text": rc}
+
+                    if delta.content:
+                        if not got_first_content:
+                            logger.info("TTFT_DEBUG: first_content=%.1fs (model=%s)", time.time() - t_prefill, model_id)
+                            got_first_content = True
+                            if entry["thinking_status"] == "thinking":
+                                entry["thinking_status"] = "done"
+                        content += delta.content
+                        entry["response"] = content
+                        yield {"type": "delta", "text": delta.content}
+
+                usage = getattr(chunk, "usage", None)
+                if usage:
+                    token_info = {
+                        "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                        "completion_tokens": getattr(usage, "completion_tokens", None),
+                        "total_tokens": getattr(usage, "total_tokens", None),
+                        "cost": getattr(chunk, "_cost", None),
+                    }
+        finally:
+            if hasattr(response, "aclose") and callable(getattr(response, "aclose")):
+                try:
+                    await response.aclose()
+                except Exception:
+                    pass
+
         if not got_content:
-            raise LLMCallError("流式返回为空，模型可能未产生任何输出")
+            err_msg = "流式返回为空，模型可能未产生任何输出"
+            entry.update({"status": "error", "duration_ms": int((time.time() - t0) * 1000), "error": err_msg})
+            yield {"type": "error", "error": err_msg}
+            return
+
         entry.update({
             "status": "ok",
             "duration_ms": int((time.time() - t0) * 1000),
             "response": content,
             "token_info": token_info,
-            # 思考型模型若 thinking_status 仍为 thinking（无后续 content），也标记为 done
             "thinking_status": "done" if entry["thinking_status"] == "thinking" else entry["thinking_status"],
         })
-        return content, token_info
-    except LLMCallError as e:
-        entry.update({
-            "status": "error",
-            "duration_ms": int((time.time() - t0) * 1000),
-            "error": str(e),
-        })
-        raise
+        yield {"type": "done", "usage": token_info, "response": content}
+
     except asyncio.TimeoutError:
+        err_msg = f"流式超时：超过 {timeout} 秒未收到新数据，模型可能已停止输出"
         entry.update({
             "status": "error",
             "duration_ms": int((time.time() - t0) * 1000),
-            "error": f"流式超时：超过 {timeout} 秒未收到新数据，模型可能已停止输出",
+            "error": err_msg,
         })
-        raise LLMCallError(f"流式超时：超过 {timeout} 秒未收到新数据，模型可能已停止输出")
+        yield {"type": "error", "error": err_msg}
     except Exception as e:
+        err_msg = f"调用大模型失败: {e}"
         entry.update({
             "status": "error",
             "duration_ms": int((time.time() - t0) * 1000),
-            "error": f"调用大模型失败: {e}",
+            "error": err_msg,
         })
-        raise LLMCallError(f"调用大模型失败: {e}") from e
+        yield {"type": "error", "error": err_msg}
     finally:
         if _old_acct is not None:
             os.environ["CLOUDFLARE_ACCOUNT_ID"] = _old_acct
         elif _pid == "cloudflare":
             os.environ.pop("CLOUDFLARE_ACCOUNT_ID", None)
+
+
+async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = "", system_prompt: str | None = None) -> tuple[str, dict]:
+    """调用大模型，返回 (响应内容, token_info)。保持向后兼容，内部使用 stream_llm 生成器。"""
+    content = ""
+    token_info = {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None, "cost": None}
+    async for event in stream_llm(prompt=prompt, model_id=model_id, timeout=timeout, tag=tag, system_prompt=system_prompt):
+        if event["type"] == "delta":
+            content += event["text"]
+        elif event["type"] == "done":
+            if event.get("usage"):
+                token_info = event["usage"]
+        elif event["type"] == "error":
+            raise LLMCallError(event["error"])
+    return content, token_info
 
 
 async def test_llm(model_id: str) -> tuple[bool, str]:
