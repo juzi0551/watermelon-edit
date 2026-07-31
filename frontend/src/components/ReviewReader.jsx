@@ -10,7 +10,8 @@ import {
   ThunderboltOutlined, LoadingOutlined, CloseOutlined,
   MinusOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
   ScissorOutlined, BookOutlined, ExclamationCircleOutlined,
-  MenuFoldOutlined, EyeOutlined,
+  MenuFoldOutlined, EyeOutlined, MergeCellsOutlined, DashOutlined,
+  ArrowUpOutlined, ArrowDownOutlined,
 } from '@ant-design/icons'
 import { color, radius, spacing, fontSize } from '../design-tokens'
 import {
@@ -1001,7 +1002,20 @@ function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) 
   })
 }
 
-
+function getCaretOffsetFromPoint(x, y) {
+  try {
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(x, y)
+      if (range && range.startContainer) {
+        return { node: range.startContainer, offset: range.startOffset }
+      }
+    } else if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(x, y)
+      if (pos) return { node: pos.offsetNode, offset: pos.offset }
+    }
+  } catch { /* noop */ }
+  return null
+}
 
 const ParaRow = React.memo(function ParaRow({
   para,
@@ -1027,13 +1041,6 @@ const ParaRow = React.memo(function ParaRow({
   onEditingNoteChange,
   onSaveEdit,
   onCancelEdit,
-  onStartEdit,
-  onInsertPara,
-  onEnterMergeMode,
-  onToggleOriginal,
-  onDeletePara,
-  onTogglePageBreak,
-  onSetChapter,
   onPbTooltipIdx,
   onSelectError,
   showAllOriginals,
@@ -1041,6 +1048,8 @@ const ParaRow = React.memo(function ParaRow({
   mergeMode,
   isMergeChecked,
   onMergeToggle,
+  onStartEdit,
+  editingCaretPos,
 }) {
   const hasManualEdit = Boolean(para.revised_text && para.revised_text !== para.text)
   const showOriginal = (showAllOriginals || showOriginalThis) && hasManualEdit
@@ -1049,6 +1058,22 @@ const ParaRow = React.memo(function ParaRow({
 
   const [localText, setLocalText] = useState('')
   const [localNote, setLocalNote] = useState('')
+  const textareaRef = useRef(null)
+  const caretSetRef = useRef(false)
+
+  useEffect(() => {
+    if (!isEditing) caretSetRef.current = false
+  }, [isEditing])
+
+  useLayoutEffect(() => {
+    if (!isEditing || editingCaretPos == null || caretSetRef.current || !textareaRef.current || !localText) return
+    const native = textareaRef.current.resizableTextArea?.textArea ?? textareaRef.current
+    try {
+      native.setSelectionRange(editingCaretPos, editingCaretPos)
+      native.focus()
+      caretSetRef.current = true
+    } catch { /* noop */ }
+  }, [isEditing, editingCaretPos, localText])
 
   useEffect(() => {
     if (isEditing) {
@@ -1102,7 +1127,7 @@ const ParaRow = React.memo(function ParaRow({
                     fontWeight: 500,
                     cursor: 'pointer',
                     boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          transition: 'border-left 0.08s ease',
+                    transition: 'border-left 0.08s ease',
                   }}>
                   {pbInfo.label}
                 </span>
@@ -1161,90 +1186,6 @@ const ParaRow = React.memo(function ParaRow({
                 : '4px solid transparent',
         }}
       >
-        {isActive && !isEditing && !mergeMode && (() => {
-          const activePbType = pbType || 'none'
-          const activeIsCh = isCh
-          const hasHardBreak = activePbType === 'original' || activePbType === 'manual'
-          return (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: 4,
-                right: 10,
-                zIndex: 100,
-                background: color.bgCard,
-                backdropFilter: 'blur(6px)',
-                WebkitBackdropFilter: 'blur(6px)',
-                padding: '3px 8px',
-                borderRadius: 20,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.08)',
-                border: `1px solid ${color.borderBar}`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              <Tooltip title="编辑段落文本">
-                <Button type="text" size="small" icon={<EditOutlined />}
-                  onClick={(e) => { e.stopPropagation(); onStartEdit(para); }}
-                  style={{ fontSize: 12 }}>编辑</Button>
-              </Tooltip>
-
-              <Dropdown trigger={['click']} menu={{ items: [
-                { key: 'insert-above', label: '⬆️ 向上插入新段落', onClick: () => onInsertPara(para, 'above') },
-                { key: 'insert-below', label: '⬇️ 向下插入新段落', onClick: () => onInsertPara(para, 'below') },
-              ] }}>
-                <Button type="text" size="small" icon={<PlusOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>新建段落 ▾</Button>
-              </Dropdown>
-
-              <Tooltip title="多段落合并">
-                <Button type="text" size="small" icon={<ScissorOutlined style={{ transform: 'rotate(90deg)' }} />}
-                  onClick={(e) => { e.stopPropagation(); onEnterMergeMode(para); }}
-                  style={{ fontSize: 12 }}>合并段落</Button>
-              </Tooltip>
-
-              <Dropdown trigger={['click']} menu={{ items: [
-                { key: 'title-1', label: '📖 设为 1级 卷/部 标题', onClick: () => onSetChapter(para, 1) },
-                { key: 'title-2', label: '📖 设为 2级 章 标题', onClick: () => onSetChapter(para, 2) },
-                { key: 'title-3', label: '📖 设为 3级 节/回 标题', onClick: () => onSetChapter(para, 3) },
-                { key: 'title-4', label: '📖 设为 4级 小节 标题', onClick: () => onSetChapter(para, 4) },
-                { key: 'title-5', label: '📖 设为 5级 目 标题', onClick: () => onSetChapter(para, 5) },
-                { key: 'title-6', label: '📖 设为 6级 细目 标题', onClick: () => onSetChapter(para, 6) },
-                ...(activeIsCh ? [{ type: 'divider' }, { key: 'remove', label: '❌ 取消章节标题标记', danger: true, onClick: () => onSetChapter(para, 1, true) }] : []),
-              ] }}>
-                <Button type="text" size="small" icon={<BookOutlined />} onClick={(e) => e.stopPropagation()} style={{ fontSize: 12 }}>设为标题 ▾</Button>
-              </Dropdown>
-
-              <Tooltip title={showOriginalThis ? "隐藏原文" : "查看初始原文"}>
-                <Button type="text" size="small" icon={<EyeOutlined />}
-                  onClick={(e) => { e.stopPropagation(); onToggleOriginal(para.idx); }}
-                  style={{ fontSize: 12, color: showOriginalThis ? '#1890ff' : undefined }}>
-                  {showOriginalThis ? '藏原文' : '看原文'}
-                </Button>
-              </Tooltip>
-
-              {hasHardBreak ? (
-                <Popconfirm title="确定移除该硬分页？" description="移除后该段落导出时将不再另起新页。"
-                  onConfirm={() => onTogglePageBreak(para)} okText="确定移除" okButtonProps={{ danger: true }} cancelText="取消">
-                  <Tooltip title="移除段前硬分页">
-                    <Button type="text" size="small" danger icon={<ScissorOutlined />} style={{ fontSize: 12 }}>移除分页</Button>
-                  </Tooltip>
-                </Popconfirm>
-              ) : (
-                <Tooltip title="插入段前硬分页（使导出 Word 时从新一页开始）">
-                  <Button type="text" size="small" icon={<BookOutlined />}
-                    onClick={(e) => { e.stopPropagation(); onTogglePageBreak(para) }} style={{ fontSize: 12 }}>新增分页</Button>
-                </Tooltip>
-              )}
-
-              <Tooltip title="删除该段落">
-                <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                  onClick={(e) => { e.stopPropagation(); onDeletePara(para); }} style={{ fontSize: 12 }}>删除</Button>
-              </Tooltip>
-            </div>
-          )
-        })()}
         <span style={{
           color: para?.revised_text ? color.success : color.textTertiary,
           fontWeight: para?.revised_text ? 600 : 400,
@@ -1270,6 +1211,7 @@ const ParaRow = React.memo(function ParaRow({
           {isEditing ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
               <Input.TextArea
+                ref={textareaRef}
                 autoFocus
                 value={localText}
                 onChange={e => setLocalText(e.target.value)}
@@ -1345,7 +1287,14 @@ const ParaRow = React.memo(function ParaRow({
                   e.stopPropagation()
                   return
                 }
-                onStartEdit(para)
+                let caretPos = null
+                try {
+                  const cp = getCaretOffsetFromPoint(e.clientX, e.clientY)
+                  if (cp && cp.node.nodeType === Node.TEXT_NODE && cp.node.parentElement?.closest('[data-para]')) {
+                    caretPos = cp.offset
+                  }
+                } catch { /* noop */ }
+                onStartEdit(para, caretPos)
               }}
               style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}
             >
@@ -1445,9 +1394,7 @@ function ReviewReaderInner({
   const paraMap = useMemo(() => Object.fromEntries(paras.map(p => [p.uuid || p.idx, p])), [paras])
   const paraMapByIdx = useMemo(() => Object.fromEntries(paras.map(p => [p.idx, p])), [paras])
 
-  const handleScroll = useCallback(() => {
-    // 固化于段落右上角，无须任何滚屏定位计算
-  }, [])
+  const handleScroll = useCallback(() => { }, [])
 
   const chaptersByParaIdx = useMemo(() => {
     const map = new Map()
@@ -1538,7 +1485,10 @@ function ReviewReaderInner({
 
   const handleHover = useCallback((idx) => setHoverIdx(idx), [])
   const handleMouseLeave = useCallback(() => setHoverIdx(null), [])
-  const handleCancelEdit = useCallback(() => setEditingIdx(null), [])
+  const handleCancelEdit = useCallback(() => {
+    setEditingIdx(null)
+    setEditingCaretPos(null)
+  }, [])
   const handleToggleOriginal = useCallback((paraIdx) => {
     setShowOriginalMap(prev => ({ ...prev, [paraIdx]: !prev[paraIdx] }))
   }, [])
@@ -1555,14 +1505,40 @@ function ReviewReaderInner({
   const [fontSizeOffset, setFontSizeOffset] = useState(() => {
     try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
   })
+  const currentBodyFontSize = fontSize.body + fontSizeOffset
+  const tbFontSize = Math.round(12 * (currentBodyFontSize / fontSize.body))
   const [savingPara, setSavingPara] = useState(false)
   const [activeIdx, setActiveIdx] = useState(null)
+  const toolbarRef = useRef(null)
+  const [editingCaretPos, setEditingCaretPos] = useState(null)
   const [showOriginalMap, setShowOriginalMap] = useState({})
   const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
 
   const dismissToolbar = useCallback(() => {
     setActiveIdx(null)
   }, [])
+
+  const updateToolbarPos = useCallback(() => {
+    const el = toolbarRef.current
+    if (!el || activeIdx == null) return
+    const container = flowRef.current
+    if (!container) return
+    const activePara = sortedParas.find(p => p.idx === activeIdx)
+    if (!activePara) return
+    const key = activePara.uuid || activePara.idx
+    const paraEl = container.querySelector(`[data-para="${key}"]`)
+    if (!paraEl) return
+    const h = el.offsetHeight || 36
+    const paraStyle = getComputedStyle(paraEl)
+    const padTop = parseFloat(paraStyle.paddingTop) || 0
+    const borderTop = parseFloat(paraStyle.borderTopWidth) || 0
+    el.style.top = `${paraEl.offsetTop + borderTop + padTop - h - 0.5}px`
+    const textDiv = paraEl.querySelector('div:last-child')
+    if (textDiv) {
+      const indentPx = parseFloat(getComputedStyle(textDiv).textIndent) || 0
+      el.style.left = `${paraEl.offsetLeft + textDiv.offsetLeft + indentPx}px`
+    }
+  }, [activeIdx, sortedParas, tbFontSize])
 
   const selectedManualEditPara = useMemo(() => {
     if (!selectedManualEditIdx) return null
@@ -1610,6 +1586,10 @@ function ReviewReaderInner({
   useLayoutEffect(() => {
     updateManualEditPos()
   }, [selectedManualEditIdx, updateManualEditPos])
+
+  useLayoutEffect(() => {
+    updateToolbarPos()
+  }, [activeIdx, updateToolbarPos])
 
   const handleSaveManualEditNote = async (idx, text, note) => {
     const p = sortedParas.find(item => item.idx === idx)
@@ -1664,10 +1644,11 @@ function ReviewReaderInner({
     }
   }
 
-  const handleStartEdit = (para) => {
+  const handleStartEdit = (para, caretPos = null) => {
     setEditingIdx(para.idx)
     setEditingText(para.revised_text ?? para.text ?? '')
     setEditingNote('')
+    setEditingCaretPos(caretPos)
   }
 
   const handleSaveEdit = async (paraIdx, textVal = editingText, noteVal = editingNote) => {
@@ -1687,6 +1668,7 @@ function ReviewReaderInner({
       setEditingIdx(null)
       setEditingText('')
       setEditingNote('')
+      setEditingCaretPos(null)
       onReloadProject?.()
     } catch (e) {
       message.error(e.message || '更新失败')
@@ -1968,6 +1950,8 @@ function ReviewReaderInner({
   }
   const flowRef = useRef(null)
   const contentRef = useRef(null)
+  const isJumpingRef = useRef(false)
+  const jumpTimerRef = useRef(null)
   const resultsRef = useRef(results)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
@@ -2026,8 +2010,6 @@ function ReviewReaderInner({
   useEffect(() => {
     localStorage.setItem('reader_font_offset', String(fontSizeOffset))
   }, [fontSizeOffset])
-
-  const currentBodyFontSize = fontSize.body + fontSizeOffset
 
   // 自动选中第一条待处理错误（仅在尚未选中任何有效错误时触发，防止后台刷新结果导致卡片二次触发）
   useEffect(() => {
@@ -2431,13 +2413,6 @@ function ReviewReaderInner({
                       onEditingNoteChange={setEditingNote}
                       onSaveEdit={handleSaveEdit}
                       onCancelEdit={handleCancelEdit}
-                      onStartEdit={handleStartEdit}
-                      onInsertPara={handleInsertPara}
-                      onEnterMergeMode={handleEnterMergeMode}
-                      onToggleOriginal={handleToggleOriginal}
-                      onDeletePara={handleDeletePara}
-                      onTogglePageBreak={handleTogglePageBreak}
-                      onSetChapter={handleSetChapter}
                       onPbTooltipIdx={setPbTooltipIdx}
                       onSelectError={(id) => { setSelectedManualEditIdx(null); setSelectedId(id); }}
                       showAllOriginals={showAllOriginals}
@@ -2445,9 +2420,105 @@ function ReviewReaderInner({
                       mergeMode={mergeMode}
                       isMergeChecked={mergeMode ? (selectedMergeParas.has(para.uuid) || selectedMergeParas.has(para.idx)) : false}
                       onMergeToggle={handleToggleMergeSelect}
+                      onStartEdit={handleStartEdit}
+                      editingCaretPos={editingCaretPos}
                     />
                   )
                 })}
+
+                {activeIdx !== null && !mergeMode && editingIdx === null && (() => {
+                  const activePara = sortedParas.find(p => p.idx === activeIdx)
+                  if (!activePara) return null
+                  const showOrig = !!showOriginalMap[activePara.idx]
+                  const hasManualEdit = Boolean(activePara.revised_text && activePara.revised_text !== activePara.text)
+                  const ch = chaptersByParaIdx.get(activePara.uuid) || chaptersByParaIdx.get(activePara.idx)
+                  const activeIsCh = Boolean(ch)
+                  const pb = activePara.page_break_type || (activePara.has_page_break_before === 1 ? 'auto_chapter' : 'none')
+                  const hasHardBreak = pb === 'original' || pb === 'manual'
+                  return (
+                    <div
+                      ref={toolbarRef}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        zIndex: 100,
+                        background: 'color-mix(in srgb, var(--color-bgToolbar) 50%, transparent)',
+                        backdropFilter: 'blur(10px)',
+                        WebkitBackdropFilter: 'blur(10px)',
+                        padding: '3px 8px',
+                        borderRadius: 20,
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
+                        border: `1px solid ${color.borderBar}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <Tooltip title="编辑段落文本,支持双击进入" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
+                        <Button type="text" size="small" icon={<EditOutlined />}
+                          onClick={() => handleStartEdit(activePara)} style={{ fontSize: tbFontSize }}>编辑</Button>
+                      </Tooltip>
+
+                      <Dropdown trigger={['click']} menu={{
+                        items: [
+                          { key: 'insert-above', label: <span><ArrowUpOutlined /> 向上插入新段落</span>, onClick: () => handleInsertPara(activePara, 'above') },
+                          { key: 'insert-below', label: <span><ArrowDownOutlined /> 向下插入新段落</span>, onClick: () => handleInsertPara(activePara, 'below') },
+                        ]
+                      }}>
+                        <Button type="text" size="small" icon={<PlusOutlined />} style={{ fontSize: tbFontSize }}>新建 ▾</Button>
+                      </Dropdown>
+
+                      <Tooltip title="多段落合并" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
+                        <Button type="text" size="small" icon={<MergeCellsOutlined />}
+                          onClick={() => handleEnterMergeMode(activePara)} style={{ fontSize: tbFontSize }}>合并</Button>
+                      </Tooltip>
+
+                      <Dropdown trigger={['click']} menu={{
+                        items: [
+                          { key: 'title-1', label: <span><BookOutlined /> 设为 1级 卷/部 标题</span>, onClick: () => handleSetChapter(activePara, 1) },
+                          { key: 'title-2', label: <span><BookOutlined /> 设为 2级 章 标题</span>, onClick: () => handleSetChapter(activePara, 2) },
+                          { key: 'title-3', label: <span><BookOutlined /> 设为 3级 节/回 标题</span>, onClick: () => handleSetChapter(activePara, 3) },
+                          { key: 'title-4', label: <span><BookOutlined /> 设为 4级 小节 标题</span>, onClick: () => handleSetChapter(activePara, 4) },
+                          { key: 'title-5', label: <span><BookOutlined /> 设为 5级 目 标题</span>, onClick: () => handleSetChapter(activePara, 5) },
+                          { key: 'title-6', label: <span><BookOutlined /> 设为 6级 细目 标题</span>, onClick: () => handleSetChapter(activePara, 6) },
+                          ...(activeIsCh ? [{ type: 'divider' }, { key: 'remove', label: <span><CloseOutlined /> 取消章节标题标记</span>, danger: true, onClick: () => handleSetChapter(activePara, 1, true) }] : []),
+                        ]
+                      }}>
+                        <Button type="text" size="small" icon={<BookOutlined />} style={{ fontSize: tbFontSize }}>设标题 ▾</Button>
+                      </Dropdown>
+
+                      <Tooltip title={hasManualEdit ? (showOrig ? '隐藏原文' : '查看初始原文') : '该段落无修改'} mouseEnterDelay={0.5} mouseLeaveDelay={0}>
+                        <Button type="text" size="small" icon={<EyeOutlined />}
+                          onClick={() => handleToggleOriginal(activePara.idx)}
+                          disabled={!hasManualEdit}
+                          style={{ fontSize: tbFontSize, color: showOrig ? '#1890ff' : undefined }}>
+                          原文
+                        </Button>
+                      </Tooltip>
+
+                      {hasHardBreak ? (
+                        <Popconfirm title="确定移除该硬分页？" description="移除后该段落导出时将不再另起新页。"
+                          onConfirm={() => handleTogglePageBreak(activePara)} okText="确定移除" okButtonProps={{ danger: true }} cancelText="取消">
+                          <Tooltip title="移除段前硬分页" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
+                            <Button type="text" size="small" danger icon={<DashOutlined />} style={{ fontSize: tbFontSize }}>分页</Button>
+                          </Tooltip>
+                        </Popconfirm>
+                      ) : (
+                        <Tooltip title="插入段前硬分页（使导出 Word 时从新一页开始）" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
+                          <Button type="text" size="small" icon={<DashOutlined />}
+                            onClick={() => handleTogglePageBreak(activePara)} style={{ fontSize: tbFontSize }}>分页</Button>
+                        </Tooltip>
+                      )}
+
+                      <Tooltip title="删除该段落">
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                          onClick={() => handleDeletePara(activePara)} style={{ fontSize: tbFontSize }}>删除</Button>
+                      </Tooltip>
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>
