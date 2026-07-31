@@ -211,6 +211,9 @@ export function useReaderLogic({
 
   const handleParaClick = useCallback((e, paraIdx) => {
     e.stopPropagation()
+    // 互斥：唤起段落工具条时，自动关闭任意浮动详情卡片
+    setSelectedId(null)
+    setSelectedManualEditIdx(null)
     if (activeIdxRef.current === paraIdx) {
       dismissToolbar()
     } else {
@@ -219,6 +222,10 @@ export function useReaderLogic({
   }, [dismissToolbar])
 
   const handleStartEdit = useCallback((para, caretPos = null) => {
+    // 互斥：进入编辑态时，自动关闭段落工具条与各类浮动卡片
+    setActiveIdx(null)
+    setSelectedId(null)
+    setSelectedManualEditIdx(null)
     setEditingIdx(para.idx)
     setEditingText(para.revised_text ?? para.text ?? '')
     setEditingNote('')
@@ -226,11 +233,15 @@ export function useReaderLogic({
   }, [])
 
   const handleSelectError = useCallback((id) => {
+    // 互斥：唤起/切换错词卡片时，自动关闭段落工具条
+    setActiveIdx(null)
     setSelectedManualEditIdx(null)
     setSelectedId(prev => prev === id ? null : id)
   }, [])
 
   const handleSelectObsoleteError = useCallback((id, jumpFn) => {
+    // 互斥：唤起历史作废卡片时，自动关闭段落工具条
+    setActiveIdx(null)
     setSelectedManualEditIdx(null)
     setSelectedId(id)
     const err = flatErrors.find(e => e.id === id)
@@ -240,6 +251,8 @@ export function useReaderLogic({
   }, [flatErrors])
 
   const handleSelectManualEdit = useCallback((idx) => {
+    // 互斥：唤起手修履历卡片时，自动关闭段落工具条
+    setActiveIdx(null)
     setSelectedId(null)
     setSelectedManualEditIdx(prev => prev === idx ? null : idx)
   }, [])
