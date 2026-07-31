@@ -18,6 +18,7 @@ export const lightColors = {
 
   border: '#f0f0f0',
   borderBar: '#e8e8e8',
+  borderStrong: '#d9d9d9',
   borderSelected: '#ffe58f',
   borderRejected: '#d9d9d9',
 
@@ -32,6 +33,8 @@ export const lightColors = {
   diffRemovedText: '#cf1322',
   diffAddedBg: '#f6ffed',
   diffAddedText: '#389e0d',
+
+  shadowFloat: '0 6px 16px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.08)',
 }
 
 export const darkColors = {
@@ -48,6 +51,7 @@ export const darkColors = {
 
   border: '#303030',
   borderBar: '#424242',
+  borderStrong: '#565656',
   borderSelected: '#998114',
   borderRejected: '#434343',
 
@@ -62,6 +66,8 @@ export const darkColors = {
   diffRemovedText: '#ff7875',
   diffAddedBg: '#133b11',
   diffAddedText: '#95de64',
+
+  shadowFloat: '0 6px 16px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35)',
 }
 
 /**
