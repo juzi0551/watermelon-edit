@@ -61,7 +61,7 @@ export function useReaderLogic({
 
   // 3. 计算派生属性
   const currentBodyFontSize = fontSize.body + fontSizeOffset
-  const tbFontSize = Math.round(12 * (currentBodyFontSize / fontSize.body))
+  const tbFontSize = Math.min(Math.max(Math.round(12 * (currentBodyFontSize / fontSize.body)), 12), 18)
 
   const errors = results?.errors || []
   const paras = results?.paragraphs || []

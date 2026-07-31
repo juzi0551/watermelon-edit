@@ -111,7 +111,7 @@ export function ReaderContentArea({
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
-          padding: '12px 24px',
+          padding: '12px 24px 72px 24px',
           background: color.bgReader,
           borderRadius: radius.md,
           position: 'relative',

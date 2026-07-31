@@ -81,20 +81,16 @@ export function ReviewReaderInner({
     dismissToolbar: logic.dismissToolbar,
   })
 
-  // 自动选中第一条待处理错误
+  // 自动选中第一条待处理错误（在进入页面、刷新、或校对结果返回时触发）
   useEffect(() => {
-    if (results && results !== logic.resultsRef.current) {
-      logic.resultsRef.current = results
-      if (logic.pending.length > 0) {
-        const stillPending = logic.pending.some(e => e.id === logic.selectedIdRef.current)
-        if (!stillPending) {
-          logic.autoSelectRef.current = true
-          positionSavedRef.current = false
-          logic.setSelectedId(logic.pending[0].id)
-        }
-      }
+    if (!results || logic.pending.length === 0) return
+    const stillPending = logic.pending.some(e => e.id === logic.selectedIdRef.current)
+    if (!stillPending) {
+      logic.autoSelectRef.current = true
+      positionSavedRef.current = false
+      logic.setSelectedId(logic.pending[0].id)
     }
-  }, [results, logic.pending, logic.resultsRef, logic.selectedIdRef, logic.autoSelectRef, logic.setSelectedId, positionSavedRef])
+  }, [results, logic.pending, logic.selectedIdRef, logic.autoSelectRef, logic.setSelectedId, positionSavedRef])
 
   // 切换 selectedId 时自动精准滚动到目标段落
   useEffect(() => {
@@ -104,19 +100,22 @@ export function ReviewReaderInner({
 
     const container = logic.flowRef.current
     const key = err.paragraph_uuid || err.paragraph_index
-    const paraEl = container.querySelector(`[data-para="${key}"]`) || container.querySelector(`[data-para="${err.paragraph_index}"]`)
 
-    if (paraEl) {
-      const cRect = container.getBoundingClientRect()
-      const pRect = paraEl.getBoundingClientRect()
-      const isVisible = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 40
-      if (isVisible) {
-        updatePos()
-        return
+    const doJump = () => {
+      const paraEl = container.querySelector(`[data-para="${key}"]`) || container.querySelector(`[data-para="${err.paragraph_index}"]`)
+      if (paraEl) {
+        const cRect = container.getBoundingClientRect()
+        const pRect = paraEl.getBoundingClientRect()
+        const isVisible = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 40
+        if (isVisible) {
+          updatePos()
+          return
+        }
       }
+      jumpToParagraphExact(key)
     }
 
-    jumpToParagraphExact(key)
+    requestAnimationFrame(doJump)
   }, [logic.selectedId, logic.flatErrors, logic.flowRef, updatePos, jumpToParagraphExact])
 
   const hasResults = results && logic.paras.length > 0
@@ -131,7 +130,7 @@ export function ReviewReaderInner({
   }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', paddingBottom: 52 }}>
+    <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: '4px 16px 0', position: 'relative' }}>
           <ReaderContentArea
             contentRef={logic.contentRef}

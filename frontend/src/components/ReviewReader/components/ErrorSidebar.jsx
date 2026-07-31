@@ -112,7 +112,7 @@ export function ErrorSidebar({
         <style>{`
           .right-panel-tabs .ant-tabs-content-holder { overflow: hidden; }
           .right-panel-tabs .ant-tabs-content { height: 100%; }
-          .right-panel-tabs .ant-tabs-tabpane-active { height: 100%; overflow-y: auto; }
+          .right-panel-tabs .ant-tabs-tabpane-active { height: 100%; overflow-y: auto; padding-bottom: 72px; }
         `}</style>
         <Tabs
           activeKey={panelTab}

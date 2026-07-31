@@ -282,3 +282,10 @@ a:hover, .ant-btn-link:hover, .ant-typography a:hover {
 [data-theme='dark'] ::-webkit-scrollbar-thumb {
   background: var(--color-borderBar, #424242);
 }
+
+/* Ant Design Card Body 上下 padding 调整为 12px */
+.ant-card .ant-card-body,
+.ant-card-body {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}

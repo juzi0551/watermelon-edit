@@ -23,7 +23,6 @@ export function ShortcutHint() {
       <span style={{
         fontSize: 12, color: color.textTertiary, cursor: 'pointer',
         whiteSpace: 'nowrap', userSelect: 'none', marginLeft: 12,
-        alignSelf: 'flex-end', paddingBottom: 10,
       }}>
         快捷键
       </span>
@@ -159,16 +158,17 @@ export function ActionBar({
     bottom: 0,
     left: 0,
     right: 0,
+    height: 76,
+    boxSizing: 'border-box',
     zIndex: 400,
     background: color.bgPage,
     borderTop: `1px solid ${color.borderBar}`,
     boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
-    padding: '14px 32px',
+    padding: '0 32px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    flexWrap: 'wrap',
   }
 
   return (
@@ -202,6 +202,7 @@ export function ActionBar({
             </div>
 
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 13, color: color.textSecondary, fontWeight: 500, whiteSpace: 'nowrap' }}>正文字号</span>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 background: color.bgCard,
@@ -224,8 +225,8 @@ export function ActionBar({
                   type="text"
                   size="small"
                   icon={<PlusOutlined />}
-                  disabled={currentBodyFontSize >= 24}
-                  onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
+                  disabled={currentBodyFontSize >= 48}
+                  onClick={() => setFontSizeOffset(v => Math.min(v + 1, 31))}
                   style={{ width: 28, height: 28, fontSize: 14 }}
                 />
               </div>
@@ -452,6 +453,7 @@ export function ActionBar({
             </div>
 
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 13, color: color.textSecondary, fontWeight: 500, whiteSpace: 'nowrap' }}>正文字号</span>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 background: color.bgCard,
@@ -474,8 +476,8 @@ export function ActionBar({
                   type="text"
                   size="small"
                   icon={<PlusOutlined />}
-                  disabled={currentBodyFontSize >= 24}
-                  onClick={() => setFontSizeOffset(v => Math.min(v + 1, 8))}
+                  disabled={currentBodyFontSize >= 48}
+                  onClick={() => setFontSizeOffset(v => Math.min(v + 1, 31))}
                   style={{ width: 28, height: 28, fontSize: 14 }}
                 />
               </div>

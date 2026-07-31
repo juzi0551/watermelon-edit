@@ -15,8 +15,8 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
   const circledTag = getCircledNum(currentCount)
 
   const baseFs = currentBodyFontSize || 16
-  const scale = baseFs / 16
-  const cardWidth = Math.round(400 * scale)
+  const scale = Math.min(baseFs / 16, 1.25)
+  const cardWidth = Math.min(Math.round(400 * scale), 480)
 
   if (!para) return null
 

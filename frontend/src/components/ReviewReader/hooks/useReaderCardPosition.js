@@ -65,10 +65,10 @@ export function useReaderCardPosition({
       return
     }
 
-    const cardW = 380
-    const cardH = el.offsetHeight || 170
+    const cardW = el.offsetWidth || el.getBoundingClientRect().width || 380
+    const cardH = el.offsetHeight || el.getBoundingClientRect().height || 170
 
-    const bottomBarHeight = 72
+    const bottomBarHeight = 84
     const maxBottom = window.innerHeight - bottomBarHeight
     const minTop = Math.max(8, containerRect.top + 8)
 
@@ -82,9 +82,10 @@ export function useReaderCardPosition({
       }
     }
 
+    const maxRight = Math.min(window.innerWidth - 24, containerRect.right - 12)
     let left = rect.left
-    if (left + cardW > window.innerWidth - 24) {
-      left = Math.max(12, window.innerWidth - cardW - 24)
+    if (left + cardW > maxRight) {
+      left = Math.max(containerRect.left + 12, maxRight - cardW)
     }
 
     el.style.top = `${top}px`
@@ -123,10 +124,10 @@ export function useReaderCardPosition({
       return
     }
 
-    const cardW = 380
-    const cardH = el.offsetHeight || 220
+    const cardW = el.offsetWidth || el.getBoundingClientRect().width || 400
+    const cardH = el.offsetHeight || el.getBoundingClientRect().height || 220
     const minTop = containerRect.top + 8
-    const maxBottom = containerRect.bottom - 72
+    const maxBottom = window.innerHeight - 84
 
     let top = rect.bottom + 6
     if (top + cardH > maxBottom) {
@@ -138,9 +139,10 @@ export function useReaderCardPosition({
       }
     }
 
+    const maxRight = Math.min(window.innerWidth - 24, containerRect.right - 12)
     let left = rect.left
-    if (left + cardW > window.innerWidth - 24) {
-      left = Math.max(12, window.innerWidth - cardW - 24)
+    if (left + cardW > maxRight) {
+      left = Math.max(containerRect.left + 12, maxRight - cardW)
     }
 
     el.style.top = `${top}px`

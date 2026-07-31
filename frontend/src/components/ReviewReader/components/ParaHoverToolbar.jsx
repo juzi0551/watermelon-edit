@@ -36,13 +36,15 @@ export function ParaHoverToolbar({
         background: 'color-mix(in srgb, var(--color-bgToolbar) 50%, transparent)',
         backdropFilter: 'blur(10px)',
         WebkitBackdropFilter: 'blur(10px)',
-        padding: '3px 8px',
+        padding: '3px 10px',
         borderRadius: 20,
         boxShadow: '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
         border: `1px solid ${color.borderBar}`,
         display: 'flex',
         alignItems: 'center',
         gap: 4,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'auto',
       }}
     >
       <Tooltip title="编辑段落文本,支持双击进入" mouseEnterDelay={0.5} mouseLeaveDelay={0}>

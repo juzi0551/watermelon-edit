@@ -10,8 +10,8 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose, currentBodyF
   const [btnState, setBtnState] = useState(null)
 
   const baseFs = currentBodyFontSize || 16
-  const scale = baseFs / 16
-  const cardWidth = Math.round(380 * scale)
+  const scale = Math.min(baseFs / 16, 1.25)
+  const cardWidth = Math.min(Math.round(380 * scale), 460)
 
   return (
     <div

@@ -152,11 +152,15 @@ async def api_upload_to_project(project_id: str, file: UploadFile = File(...)):
 
     create_document(doc_id, project_id, file.filename, file_path, version)
 
-    rows, initial_chapters = parse_paragraphs(file_path)
+    rows, initial_chapters, has_first_line_indent = parse_paragraphs(file_path)
     insert_paragraphs(doc_id, rows)
 
     if initial_chapters:
         batch_insert_chapters(doc_id, initial_chapters, sort_base=0)
+
+    if has_first_line_indent:
+        from app.core.database import set_project_first_line_indent
+        set_project_first_line_indent(project_id, True)
 
     update_project_status(project_id, "parsed")
     update_project_document(project_id, doc_id)
@@ -167,6 +171,7 @@ async def api_upload_to_project(project_id: str, file: UploadFile = File(...)):
         "version": version,
         "paragraph_count": len(rows),
         "chapter_count": len(initial_chapters),
+        "first_line_indent_enabled": has_first_line_indent,
     }
 
 

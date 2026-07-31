@@ -24,7 +24,12 @@ export function useReaderScroll({
       if (u) el = container.querySelector(`[data-para="${u}"]`)
     }
     if (el) {
-      el.scrollIntoView({ behavior: 'auto', block: offset > 0 ? 'center' : 'start' })
+      // 仅控制阅读器内层容器 (container) 的 scrollTop，严禁调用全窗口冒泡滚动的 native scrollIntoView
+      const containerRect = container.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
+      const relativeTop = elRect.top - containerRect.top + container.scrollTop
+      const targetScrollTop = Math.max(0, relativeTop - (container.clientHeight / 2) + (elRect.height / 2))
+      container.scrollTop = targetScrollTop
     }
   }, [flowRef, paraMapByIdx])
 

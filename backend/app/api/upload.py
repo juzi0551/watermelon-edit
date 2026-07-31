@@ -20,7 +20,7 @@ async def upload_document(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(content)
 
-    rows = parse_paragraphs(file_path)
+    rows, _, _ = parse_paragraphs(file_path)
     insert_paragraphs(document_id, rows)
 
     return {
