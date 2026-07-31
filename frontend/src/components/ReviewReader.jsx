@@ -1638,9 +1638,9 @@ function ReviewReaderInner({
     setSelectedId(id)
     const err = flatErrors.find(e => e.id === id)
     if (err) {
-      scrollToParagraph(err.paragraph_uuid || err.paragraph_index)
+      jumpToParagraphExact(err.paragraph_uuid || err.paragraph_index)
     }
-  }, [flatErrors, scrollToParagraph])
+  }, [flatErrors, jumpToParagraphExact])
 
   const handleSelectManualEdit = useCallback((idx) => {
     setSelectedId(null)
@@ -1657,8 +1657,14 @@ function ReviewReaderInner({
     try {
       await updateParagraph(project.id, paraIdx, finalText, finalNote, pUuid)
       if (targetPara) {
-        targetPara.edit_note = finalNote
-        targetPara.revised_text = (targetPara.text === finalText) ? null : finalText
+        if (!targetPara.text && !targetPara.revised_text) {
+          targetPara.text = finalText
+          targetPara.revised_text = null
+          targetPara.edit_note = finalNote || null
+        } else {
+          targetPara.edit_note = finalNote
+          targetPara.revised_text = (targetPara.text === finalText) ? null : finalText
+        }
       }
       message.success('段落已更新')
       setEditingIdx(null)
@@ -1679,7 +1685,7 @@ function ReviewReaderInner({
       message.warning('项目已锁定，无法删除段落')
       return
     }
-    const isBlank = !para.text || para.text.trim() === ''
+    const isBlank = (!para.text || para.text.trim() === '') && (!para.revised_text || para.revised_text.trim() === '')
     if (isBlank) {
       deleteParagraph(project.id, para.idx, para.uuid).then(() => {
         message.success('已删除空段落')

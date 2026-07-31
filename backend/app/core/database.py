@@ -788,16 +788,40 @@ def update_paragraph_text(document_id: str, idx: int, new_text: str, edit_note: 
     """更新段落文本（写入 revised_text）及多轮编辑备注履历，重算字符数，并自动归档受影响废弃错字。"""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT text, edit_note FROM paragraphs WHERE document_id = ? AND idx = ?",
+            "SELECT text, revised_text, edit_note FROM paragraphs WHERE document_id = ? AND idx = ?",
             (document_id, idx),
         ).fetchone()
         orig_text = row["text"] if row else None
+        revised_text = row["revised_text"] if row else None
         existing_raw_note = row["edit_note"] if row else None
 
+        # 若原 text 为空（如新增空段落），且未保存过修订：第一笔编辑直接作为初始原文写入 text；仅在填写了备注时记录首条履历
+        if row and (not orig_text) and (not revised_text):
+            note_str = edit_note.strip() if (edit_note and isinstance(edit_note, str) and edit_note.strip()) else ""
+            if note_str:
+                new_note_item = {
+                    "id": generate_id(),
+                    "note": note_str,
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "revised_text": new_text,
+                }
+                note_val = json.dumps([new_note_item], ensure_ascii=False)
+            else:
+                note_val = None
+            conn.execute(
+                """UPDATE paragraphs 
+                   SET text = ?, revised_text = NULL, char_count = ?, edit_note = ?
+                   WHERE document_id = ? AND idx = ?""",
+                (new_text, len(new_text), note_val, document_id, idx),
+            )
         # 若 new_text 与初始原文相同，则视为恢复初始原文：将 revised_text 与 edit_note 均置为空 NULL
-        if orig_text is not None and new_text == orig_text:
-            revised_val = None
-            note_val = None
+        elif orig_text is not None and new_text == orig_text:
+            conn.execute(
+                """UPDATE paragraphs 
+                   SET revised_text = NULL, char_count = ?, edit_note = NULL
+                   WHERE document_id = ? AND idx = ?""",
+                (len(new_text), document_id, idx),
+            )
         else:
             revised_val = new_text
             notes_list = parse_notes_history(existing_raw_note)
@@ -811,12 +835,12 @@ def update_paragraph_text(document_id: str, idx: int, new_text: str, edit_note: 
             notes_list.append(new_note_item)
             note_val = json.dumps(notes_list, ensure_ascii=False) if notes_list else None
 
-        conn.execute(
-            """UPDATE paragraphs 
-               SET revised_text = ?, char_count = ?, edit_note = ?
-               WHERE document_id = ? AND idx = ?""",
-            (revised_val, len(new_text), note_val, document_id, idx),
-        )
+            conn.execute(
+                """UPDATE paragraphs 
+                   SET revised_text = ?, char_count = ?, edit_note = ?
+                   WHERE document_id = ? AND idx = ?""",
+                (revised_val, len(new_text), note_val, document_id, idx),
+            )
     mark_unmatched_errors_obsolete(document_id, idx, new_text)
 
 
