@@ -28,6 +28,7 @@ export const ParaRow = React.memo(function ParaRow({
   isActive,
   isChecked,
   selectedId,
+  flashingParaIdx,
   currentBodyFontSize,
   firstLineIndentEnabled,
   pbInfo,
@@ -85,6 +86,8 @@ export const ParaRow = React.memo(function ParaRow({
     }
   }, [isEditing, editingText, editingNote, para.revised_text, para.text])
 
+  const isFlashing = Boolean(flashingParaIdx != null && (flashingParaIdx === para.idx || (para.uuid && flashingParaIdx === para.uuid)))
+
   return (
     <React.Fragment>
       {pbInfo && (
@@ -117,7 +120,6 @@ export const ParaRow = React.memo(function ParaRow({
                 <span
                   onMouseEnter={() => onPbTooltipIdx(para.idx)}
                   onMouseLeave={() => onPbTooltipIdx(null)}
-                  onClick={() => onPbTooltipIdx(null)}
                   style={{
                     position: 'relative',
                     zIndex: 1,
@@ -169,24 +171,31 @@ export const ParaRow = React.memo(function ParaRow({
           position: 'relative',
           padding: '6px 10px',
           borderRadius: 6,
-          transition: 'all 0.15s ease',
+          transition: 'background 1s ease-out, box-shadow 1s ease-out, border-left 0.15s ease',
           contentVisibility: 'auto',
           containIntrinsicSize: '0 48px',
           cursor: mergeMode ? 'pointer' : 'default',
           background: isMergeChecked
             ? 'rgba(19, 194, 194, 0.14)'
-            : isActive
-              ? 'rgba(19, 194, 194, 0.09)'
-              : isCh
-                ? 'rgba(212, 163, 89, 0.04)'
-                : 'transparent',
+            : isFlashing
+              ? 'rgba(250, 173, 20, 0.28)'
+              : isActive
+                ? 'rgba(19, 194, 194, 0.09)'
+                : isCh
+                  ? 'rgba(212, 163, 89, 0.04)'
+                  : 'transparent',
+          boxShadow: isFlashing
+            ? '0 0 0 2px rgba(250, 173, 20, 0.5), 0 2px 10px rgba(250, 173, 20, 0.2)'
+            : undefined,
           borderLeft: isMergeChecked
             ? '4px solid #13c2c2'
-            : isActive
-              ? '4px solid #13c2c2'
-              : isCh
-                ? '4px solid #ffe58f'
-                : '4px solid transparent',
+            : isFlashing
+              ? '4px solid #faad14'
+              : isActive
+                ? '4px solid #13c2c2'
+                : isCh
+                  ? '4px solid #ffe58f'
+                  : '4px solid transparent',
         }}
       >
         <span style={{

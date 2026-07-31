@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useImperativeHandle } from 'react'
+import { useState, useCallback, useEffect, useRef, useImperativeHandle } from 'react'
 
 export function useReaderScroll({
   ref,
@@ -13,8 +13,18 @@ export function useReaderScroll({
   updateToolbarPos,
 }) {
   const positionSavedRef = useRef(false)
+  const [flashingParaIdx, setFlashingParaIdx] = useState(null)
+  const flashTimerRef = useRef(null)
 
-  const jumpToParagraphExact = useCallback((targetIdx, offset = 0) => {
+  const flashParagraph = useCallback((targetIdx) => {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+    setFlashingParaIdx(targetIdx)
+    flashTimerRef.current = setTimeout(() => {
+      setFlashingParaIdx(null)
+    }, 1500)
+  }, [])
+
+  const jumpToParagraphExact = useCallback((targetIdx, offset = 0, enableFlash = false) => {
     const container = flowRef.current
     if (!container || targetIdx == null) return
 
@@ -30,12 +40,16 @@ export function useReaderScroll({
       const relativeTop = elRect.top - containerRect.top + container.scrollTop
       const targetScrollTop = Math.max(0, relativeTop - (container.clientHeight / 2) + (elRect.height / 2))
       container.scrollTop = targetScrollTop
+
+      if (enableFlash) {
+        flashParagraph(targetIdx)
+      }
     }
-  }, [flowRef, paraMapByIdx])
+  }, [flowRef, paraMapByIdx, flashParagraph])
 
   useImperativeHandle(ref, () => ({
     scrollToParagraph: (idx) => {
-      jumpToParagraphExact(idx, 0)
+      jumpToParagraphExact(idx, 0, true)
     }
   }))
 
@@ -111,5 +125,6 @@ export function useReaderScroll({
   return {
     jumpToParagraphExact,
     positionSavedRef,
+    flashingParaIdx,
   }
 }

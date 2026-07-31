@@ -49,7 +49,7 @@ export function ReviewReaderInner({
     results,
   })
 
-  const { jumpToParagraphExact, positionSavedRef } = useReaderScroll({
+  const { jumpToParagraphExact, positionSavedRef, flashingParaIdx } = useReaderScroll({
     ref,
     flowRef: logic.flowRef,
     project,
@@ -112,7 +112,7 @@ export function ReviewReaderInner({
           return
         }
       }
-      jumpToParagraphExact(key)
+      jumpToParagraphExact(key, 0, false)
     }
 
     requestAnimationFrame(doJump)
@@ -141,6 +141,7 @@ export function ReviewReaderInner({
             editingIdx={logic.editingIdx}
             selectedParas={selectedParas}
             selectedId={logic.selectedId}
+            flashingParaIdx={flashingParaIdx}
             currentBodyFontSize={logic.currentBodyFontSize}
             project={project}
             pbTooltipIdx={logic.pbTooltipIdx}

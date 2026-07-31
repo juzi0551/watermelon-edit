@@ -156,38 +156,44 @@ export default function CharacterGraph({
             </div>
             <div style={{ display: 'flex', overflowX: 'auto', gap: 12, paddingBottom: 8 }}>
               {graphData.nodes.map((node) => (
-                <Tooltip key={node.id} title={`点击跳转至首次登场段落 (第 ${node.first_appear_idx} 段)`}>
-                  <Card
-                    size="small"
-                    hoverable
-                    onClick={() => handleJumpToPara(node.first_appear_idx)}
-                    style={{
-                      background: color.bgCard,
-                      borderColor: color.border,
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                      width: 220,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, color: color.textPrimary, fontSize: 14 }}>
-                        {node.name}
-                      </span>
-                      <Tag color={ROLE_COLORS[node.role] || 'default'} style={{ margin: 0, fontSize: 11 }}>
-                        {ROLE_LABELS[node.role] || '角色'}
-                      </Tag>
+                <Card
+                  key={node.id}
+                  size="small"
+                  hoverable
+                  onClick={() => handleJumpToPara(node.first_appear_idx)}
+                  style={{
+                    background: color.bgCard,
+                    borderColor: color.border,
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    width: 220,
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, color: color.textPrimary, fontSize: 14 }}>
+                      {node.name}
+                    </span>
+                    <Tag color={ROLE_COLORS[node.role] || 'default'} style={{ margin: 0, fontSize: 11 }}>
+                      {ROLE_LABELS[node.role] || '角色'}
+                    </Tag>
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <Tag color="purple" style={{ fontSize: 11, margin: 0 }}>
+                      首次登场：第 {node.first_appear_idx} 段 🎯
+                    </Tag>
+                  </div>
+                  {node.aliases && node.aliases.length > 0 && (
+                    <div style={{ fontSize: 11, color: color.textTertiary, marginBottom: 4 }}>
+                      别名：{node.aliases.join(' / ')}
                     </div>
-                    {node.aliases && node.aliases.length > 0 && (
-                      <div style={{ fontSize: 11, color: color.textTertiary, marginBottom: 4 }}>
-                        别名：{node.aliases.join(' / ')}
-                      </div>
-                    )}
+                  )}
+                  {node.description && (
                     <div style={{ fontSize: 12, color: color.textSecondary, lineHeight: 1.4 }}>
-                      {node.description || `首次出场：第 ${node.first_appear_idx} 段`}
+                      {node.description}
                     </div>
-                  </Card>
-                </Tooltip>
+                  )}
+                </Card>
               ))}
             </div>
           </div>
@@ -206,40 +212,39 @@ export default function CharacterGraph({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto', paddingRight: 4 }}>
                   {activeEdges.map((edge) => (
-                    <Tooltip key={edge.id} title={`点击在正文中精确定位至第 ${edge.paragraph_idx} 段`}>
-                      <Card
-                        size="small"
-                        hoverable
-                        onClick={() => handleJumpToPara(edge.paragraph_idx)}
-                        style={{
-                          background: color.bgCard,
-                          borderColor: color.borderBar,
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
-                            第 {edge.paragraph_idx} 段 🎯
-                          </Tag>
-                          <span style={{ fontWeight: 600, color: color.textPrimary }}>
-                            {edge.from_name}
-                          </span>
-                          <span style={{ color: color.textTertiary, fontSize: 12 }}>➔</span>
-                          <span style={{ fontWeight: 600, color: color.textPrimary }}>
-                            {edge.to_name}
-                          </span>
-                          <Tag color={RELATION_TAG_COLORS[edge.relation_type] || 'default'} style={{ margin: 0, marginLeft: 'auto' }}>
-                            {RELATION_TAG_LABELS[edge.relation_type] || edge.relation_type}
-                          </Tag>
+                    <Card
+                      key={edge.id}
+                      size="small"
+                      hoverable
+                      onClick={() => handleJumpToPara(edge.paragraph_idx)}
+                      style={{
+                        background: color.bgCard,
+                        borderColor: color.borderBar,
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
+                          第 {edge.paragraph_idx} 段 🎯
+                        </Tag>
+                        <span style={{ fontWeight: 600, color: color.textPrimary }}>
+                          {edge.from_name}
+                        </span>
+                        <span style={{ color: color.textTertiary, fontSize: 12 }}>➔</span>
+                        <span style={{ fontWeight: 600, color: color.textPrimary }}>
+                          {edge.to_name}
+                        </span>
+                        <Tag color={RELATION_TAG_COLORS[edge.relation_type] || 'default'} style={{ margin: 0, marginLeft: 'auto' }}>
+                          {RELATION_TAG_LABELS[edge.relation_type] || edge.relation_type}
+                        </Tag>
+                      </div>
+                      {edge.description && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: color.textSecondary, background: color.bgPage, padding: '4px 8px', borderRadius: 4 }}>
+                          {edge.description}
                         </div>
-                        {edge.description && (
-                          <div style={{ marginTop: 6, fontSize: 12, color: color.textSecondary, background: color.bgPage, padding: '4px 8px', borderRadius: 4 }}>
-                            {edge.description}
-                          </div>
-                        )}
-                      </Card>
-                    </Tooltip>
+                      )}
+                    </Card>
                   ))}
                 </div>
               )}
@@ -257,18 +262,18 @@ export default function CharacterGraph({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto', paddingRight: 4 }}>
                   {(graphData.plot_events || []).map((pe) => (
-                    <Tooltip key={pe.id} title={`点击在正文中精确定位至第 ${pe.paragraph_idx} 段`}>
-                      <Card
-                        size="small"
-                        hoverable
-                        onClick={() => handleJumpToPara(pe.paragraph_idx)}
-                        style={{
-                          background: color.bgCard,
-                          borderColor: color.borderBar,
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                        }}
-                      >
+                    <Card
+                      key={pe.id}
+                      size="small"
+                      hoverable
+                      onClick={() => handleJumpToPara(pe.paragraph_idx)}
+                      style={{
+                        background: color.bgCard,
+                        borderColor: color.borderBar,
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                      }}
+                    >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                           <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>
                             第 {pe.paragraph_idx} 段 🎯
@@ -283,7 +288,6 @@ export default function CharacterGraph({
                           </div>
                         )}
                       </Card>
-                    </Tooltip>
                   ))}
                 </div>
               )}

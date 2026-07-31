@@ -13,6 +13,7 @@ export function ReaderContentArea({
   editingIdx,
   selectedParas,
   selectedId,
+  flashingParaIdx,
   currentBodyFontSize,
   project,
   pbTooltipIdx,
@@ -141,6 +142,7 @@ export function ReaderContentArea({
                 isActive={isActive}
                 isChecked={isChecked}
                 selectedId={selectedId}
+                flashingParaIdx={flashingParaIdx}
                 currentBodyFontSize={currentBodyFontSize}
                 firstLineIndentEnabled={Boolean(project?.style_config?.first_line_indent_enabled)}
                 pbInfo={pbInfo}
