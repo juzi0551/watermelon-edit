@@ -509,20 +509,21 @@ export default function ChatPanel({
         />
       </div>
 
-      {/* 底部 Sender 输入框 */}
-      <Sender
-        value={inputValue}
-        onChange={(val) => setInputValue(val)}
-        onSubmit={(val) => {
-          handleSend(val)
-          setInputValue('')
-        }}
-        onCancel={handleStop}
-        loading={isRequesting}
-        styles={{ input: { fontSize: `${bodyFontSize}px` } }}
-        placeholder="问问 AI 助手，例如：“润色选中文字”..."
-        style={{ padding: '8px 12px' }}
-      />
+      {/* 底部 Sender 输入框（footer 容器与左侧 ActionBar 等高等齐） */}
+      <div className="chat-panel-footer">
+        <Sender
+          value={inputValue}
+          onChange={(val) => setInputValue(val)}
+          onSubmit={(val) => {
+            handleSend(val)
+            setInputValue('')
+          }}
+          onCancel={handleStop}
+          loading={isRequesting}
+          styles={{ input: { fontSize: `${bodyFontSize}px` } }}
+          placeholder="问问 AI 助手，例如：“润色选中文字”..."
+        />
+      </div>
     </div>
   )
 }

@@ -81,20 +81,6 @@ export function ReaderContentArea({
       <div
         style={{
           position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 12,
-          background: `linear-gradient(to bottom, ${color.bgPage} 0%, rgba(255, 255, 255, 0) 100%)`,
-          pointerEvents: 'none',
-          zIndex: 10,
-          borderRadius: `${radius.md}px ${radius.md}px 0 0`,
-          opacity: 1,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,

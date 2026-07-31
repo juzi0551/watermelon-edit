@@ -139,7 +139,7 @@ export function ReviewReaderInner({
 
   return (
     <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: '4px 16px 0', position: 'relative' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: '0 16px 0', position: 'relative' }}>
         <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
           <ReaderContentArea
             contentRef={logic.contentRef}

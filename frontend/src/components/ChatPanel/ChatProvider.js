@@ -79,7 +79,7 @@ export async function streamChatAdapter({
       }
     }
   } catch (err) {
-    if (err.name === 'AbortError' || err.name === 'AbortName') {
+    if (err.name === 'AbortError') {
       onUpdate?.({ content, thinking, interrupted: true })
     } else {
       onError?.(err)

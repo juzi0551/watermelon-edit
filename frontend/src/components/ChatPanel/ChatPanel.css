@@ -79,8 +79,14 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
 }
 
+/* footer 高度与左侧 ActionBar(76px) 严格对齐，Sender 垂直居中 */
 .chat-panel-footer {
-  padding: 12px 16px;
+  height: 76px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
   border-top: 1px solid var(--color-border-secondary, #f0f0f0);
   background: var(--color-bg-container, #ffffff);
 }
