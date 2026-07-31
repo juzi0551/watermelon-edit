@@ -1362,6 +1362,49 @@ function ReviewReaderInner({
   batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
   proofreadWindowSize = 30, onWindowSizeChange,
 }, ref) {
+  // 1. 全量 useState 声明
+  const [selectedId, setSelectedId] = useState(null)
+  const [panelTab, setPanelTab] = useState('pending')
+  const [customEdit, setCustomEdit] = useState('')
+  const [editingIdx, setEditingIdx] = useState(null)
+  const [editingText, setEditingText] = useState('')
+  const [editingNote, setEditingNote] = useState('')
+  const [selectedManualEditIdx, setSelectedManualEditIdx] = useState(null)
+  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
+    try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
+  })
+  const [savingPara, setSavingPara] = useState(false)
+  const [activeIdx, setActiveIdx] = useState(null)
+  const [editingCaretPos, setEditingCaretPos] = useState(null)
+  const [showOriginalMap, setShowOriginalMap] = useState({})
+  const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
+
+  // 2. 全量 useRef 声明
+  const flowRef = useRef(null)
+  const contentRef = useRef(null)
+  const floatCardElRef = useRef(null)
+  const manualCardElRef = useRef(null)
+  const toolbarRef = useRef(null)
+  const resultsRef = useRef(results)
+  resultsRef.current = results
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
+  const selectedManualEditIdxRef = useRef(selectedManualEditIdx)
+  selectedManualEditIdxRef.current = selectedManualEditIdx
+  const activeIdxRef = useRef(activeIdx)
+  activeIdxRef.current = activeIdx
+  const positionSavedRef = useRef(false)
+  const autoSelectRef = useRef(false)
+  const isAutoScrollingRef = useRef(false)
+  const statusSubmittingRef = useRef(false)
+  const spanCacheRef = useRef(new Map())
+  const updatePosRef = useRef(null)
+  const updateManualEditPosRef = useRef(null)
+
+  // 3. 计算派生属性
+  const currentBodyFontSize = fontSize.body + fontSizeOffset
+  const tbFontSize = Math.round(12 * (currentBodyFontSize / fontSize.body))
+
   const errors = results?.errors || []
   const paras = results?.paragraphs || []
   const sortedParas = useMemo(() => [...paras].sort((a, b) => a.idx - b.idx), [paras])
@@ -1468,28 +1511,7 @@ function ReviewReaderInner({
     setShowOriginalMap(prev => ({ ...prev, [paraIdx]: !prev[paraIdx] }))
   }, [])
 
-  const [selectedId, setSelectedId] = useState(null)
-  const [panelTab, setPanelTab] = useState('pending')
-  const [customEdit, setCustomEdit] = useState('')
-
-  const [editingIdx, setEditingIdx] = useState(null)
-  const [editingText, setEditingText] = useState('')
-  const [editingNote, setEditingNote] = useState('')
-  const [selectedManualEditIdx, setSelectedManualEditIdx] = useState(null)
-  const manualCardElRef = useRef(null)
-  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
-    try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
-  })
-  const currentBodyFontSize = fontSize.body + fontSizeOffset
-  const tbFontSize = Math.round(12 * (currentBodyFontSize / fontSize.body))
-  const [savingPara, setSavingPara] = useState(false)
-  const [activeIdx, setActiveIdx] = useState(null)
-  const activeIdxRef = useRef(activeIdx)
   useEffect(() => { activeIdxRef.current = activeIdx }, [activeIdx])
-  const toolbarRef = useRef(null)
-  const [editingCaretPos, setEditingCaretPos] = useState(null)
-  const [showOriginalMap, setShowOriginalMap] = useState({})
-  const [pbTooltipIdx, setPbTooltipIdx] = useState(null)
 
   const dismissToolbar = useCallback(() => {
     setActiveIdx(null)
@@ -1526,14 +1548,32 @@ function ReviewReaderInner({
     const container = flowRef.current
     const el = manualCardElRef.current
     if (!container || !el || !selectedManualEditIdx) return
-    const span = container.querySelector(`[data-para="${selectedManualEditIdx}"]`) || container.querySelector(`[data-manual-edit="true"]`)
+
+    const key = `manual_${selectedManualEditIdx}`
+    let span = spanCacheRef.current.get(key)
+    if (!span || !span.isConnected) {
+      span = container.querySelector(`[data-para="${selectedManualEditIdx}"]`) || container.querySelector(`[data-manual-edit="true"]`)
+      if (span) {
+        spanCacheRef.current.set(key, span)
+      }
+    }
+
     if (!span) {
       el.style.opacity = '0'
       el.style.transform = 'translateY(3px)'
       return
     }
+
     const rect = span.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
+
+    const inView = rect.bottom >= containerRect.top && rect.top <= containerRect.bottom
+    if (!inView) {
+      el.style.opacity = '0'
+      el.style.transform = 'translateY(3px)'
+      return
+    }
+
     const cardW = 380
     const cardH = el.offsetHeight || 220
     const minTop = containerRect.top + 8
@@ -1559,6 +1599,8 @@ function ReviewReaderInner({
     el.style.opacity = '1'
     el.style.transform = 'translateY(0)'
   }, [selectedManualEditIdx])
+
+  updateManualEditPosRef.current = updateManualEditPos
 
   useLayoutEffect(() => {
     updateManualEditPos()
@@ -1950,33 +1992,37 @@ function ReviewReaderInner({
       },
     })
   }
-  const flowRef = useRef(null)
-  const contentRef = useRef(null)
-  const resultsRef = useRef(results)
-  const selectedIdRef = useRef(selectedId)
-  selectedIdRef.current = selectedId
-  const selectedManualEditIdxRef = useRef(selectedManualEditIdx)
-  selectedManualEditIdxRef.current = selectedManualEditIdx
-  const floatCardElRef = useRef(null)
-  const positionSavedRef = useRef(false)
-  const autoSelectRef = useRef(false)
-  const isAutoScrollingRef = useRef(false)
-  const statusSubmittingRef = useRef(false)
+
+
+  useEffect(() => {
+    spanCacheRef.current.clear()
+  }, [paras, results])
 
   useEffect(() => {
     const el = flowRef.current
     if (!el || paras.length === 0) return
     const key = `reading_scrolltop_${project?.id}`
     let timer = null
+    let rafId = null
+
     const save = () => localStorage.setItem(key, el.scrollTop)
     const handler = () => {
       clearTimeout(timer)
       timer = setTimeout(save, 300)
+
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null
+          updatePosRef.current?.()
+          updateManualEditPosRef.current?.()
+        })
+      }
     }
     el.addEventListener('scroll', handler, { passive: true })
     return () => {
       el.removeEventListener('scroll', handler)
       clearTimeout(timer)
+      if (rafId) cancelAnimationFrame(rafId)
     }
   }, [paras.length, project?.id])
 
@@ -2039,17 +2085,26 @@ function ReviewReaderInner({
       return
     }
     const strId = String(selectedId)
-    let span = null
-    const paraKey = err.paragraph_uuid || err.paragraph_index
-    if (paraKey != null) {
-      const paraEl = container.querySelector(`[data-para="${paraKey}"]`)
-      if (paraEl) {
-        span = Array.from(paraEl.querySelectorAll('[data-error-id]')).find(s => s.dataset.errorId.split(',').includes(strId))
+    const cacheKey = `err_${strId}`
+    let span = spanCacheRef.current.get(cacheKey)
+
+    if (!span || !span.isConnected) {
+      span = null
+      const paraKey = err.paragraph_uuid || err.paragraph_index
+      if (paraKey != null) {
+        const paraEl = container.querySelector(`[data-para="${paraKey}"]`)
+        if (paraEl) {
+          span = Array.from(paraEl.querySelectorAll('[data-error-id]')).find(s => s.dataset.errorId.split(',').includes(strId))
+        }
+      }
+      if (!span) {
+        span = Array.from(container.querySelectorAll('[data-error-id]')).find(s => s.dataset.errorId.split(',').includes(strId))
+      }
+      if (span) {
+        spanCacheRef.current.set(cacheKey, span)
       }
     }
-    if (!span) {
-      span = Array.from(container.querySelectorAll('[data-error-id]')).find(s => s.dataset.errorId.split(',').includes(strId))
-    }
+
     if (!span) {
       el.style.opacity = '0'
       el.style.transform = 'translateY(3px)'
@@ -2058,6 +2113,14 @@ function ReviewReaderInner({
 
     const rect = span.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
+
+    const inView = rect.bottom >= containerRect.top && rect.top <= containerRect.bottom
+    if (!inView) {
+      el.style.opacity = '0'
+      el.style.transform = 'translateY(3px)'
+      return
+    }
+
     const cardW = 380
     const cardH = el.offsetHeight || 170
 
@@ -2084,18 +2147,12 @@ function ReviewReaderInner({
     el.style.left = `${left}px`
     el.style.opacity = '1'
     el.style.transform = 'translateY(0)'
-  }, [selectedId])
+  }, [selectedId, flatErrors])
 
-  useEffect(() => {
-    const el = floatCardElRef.current
-    if (el) {
-      el.style.opacity = '0'
-      el.style.transform = 'translateY(3px)'
-    }
-    const timer = setTimeout(() => {
-      updatePos()
-    }, 100)
-    return () => clearTimeout(timer)
+  updatePosRef.current = updatePos
+
+  useLayoutEffect(() => {
+    updatePos()
   }, [selectedId, results, updatePos])
 
   useEffect(() => {
