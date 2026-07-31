@@ -122,8 +122,6 @@ export function ActionBar({
   handleConfirmMergeBatch,
   selectedMergeParas,
   handleExitMergeMode,
-  currentBodyFontSize,
-  setFontSizeOffset,
   inProgress,
   proofreading,
   showOptions,
@@ -154,10 +152,8 @@ export function ActionBar({
   onStartBatchProofread,
 }) {
   const barStyle = {
-    position: 'fixed',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    position: 'relative',
+    width: '100%',
     height: 76,
     boxSizing: 'border-box',
     zIndex: 400,
@@ -199,37 +195,6 @@ export function ActionBar({
               >
                 取消
               </Button>
-            </div>
-
-            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, color: color.textSecondary, fontWeight: 500, whiteSpace: 'nowrap' }}>正文字号</span>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: color.bgCard,
-                borderRadius: radius.md,
-                border: `1px solid ${color.border}`,
-                padding: '4px 10px',
-              }}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<MinusOutlined />}
-                  disabled={currentBodyFontSize <= 14}
-                  onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
-                  style={{ width: 28, height: 28, fontSize: 14 }}
-                />
-                <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
-                  {currentBodyFontSize}
-                </span>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<PlusOutlined />}
-                  disabled={currentBodyFontSize >= 48}
-                  onClick={() => setFontSizeOffset(v => Math.min(v + 1, 31))}
-                  style={{ width: 28, height: 28, fontSize: 14 }}
-                />
-              </div>
             </div>
           </>
         ) : (
@@ -450,37 +415,6 @@ export function ActionBar({
                   <ShortcutHint />
                 </>
               )}
-            </div>
-
-            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, color: color.textSecondary, fontWeight: 500, whiteSpace: 'nowrap' }}>正文字号</span>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: color.bgCard,
-                borderRadius: radius.md,
-                border: `1px solid ${color.border}`,
-                padding: '4px 10px',
-              }}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<MinusOutlined />}
-                  disabled={currentBodyFontSize <= 14}
-                  onClick={() => setFontSizeOffset(v => Math.max(v - 1, -6))}
-                  style={{ width: 28, height: 28, fontSize: 14 }}
-                />
-                <span style={{ fontSize: 13, minWidth: 24, textAlign: 'center', color: color.textSecondary }}>
-                  {currentBodyFontSize}
-                </span>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<PlusOutlined />}
-                  disabled={currentBodyFontSize >= 48}
-                  onClick={() => setFontSizeOffset(v => Math.min(v + 1, 31))}
-                  style={{ width: 28, height: 28, fontSize: 14 }}
-                />
-              </div>
             </div>
           </>
         )}

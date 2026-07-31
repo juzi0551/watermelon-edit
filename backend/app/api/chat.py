@@ -156,6 +156,7 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
 
     async def event_generator():
         assistant_full_response = []
+        assistant_thinking_response = []
         try:
             stream_gen = stream_chat(
                 project_id=project_id,
@@ -173,14 +174,20 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                 if done:
                     try:
                         event = next_task.result()
-                        if event["type"] == "delta" and event.get("text"):
+                        if event["type"] == "thinking" and event.get("text"):
+                            assistant_thinking_response.append(event["text"])
+                        elif event["type"] == "delta" and event.get("text"):
                             assistant_full_response.append(event["text"])
                         elif event["type"] == "done":
                             full_content = "".join(assistant_full_response) or event.get("response", "")
+                            full_thinking = "".join(assistant_thinking_response) or event.get("thinking", "")
+                            msg_context = {"thinking": full_thinking} if full_thinking else None
+
                             saved_msg = insert_chat_message(
                                 session_id=session_id,
                                 role="assistant",
-                                content=full_content
+                                content=full_content,
+                                context=msg_context
                             )
                             event["session_id"] = session_id
                             event["message_id"] = saved_msg["id"]
@@ -203,9 +210,13 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
             if 'next_task' in locals() and not next_task.done():
                 next_task.cancel()
                 await asyncio.gather(next_task, return_exceptions=True)
-            if assistant_full_response:
+            if assistant_full_response or assistant_thinking_response:
                 partial_content = "".join(assistant_full_response)
-                insert_chat_message(session_id=session_id, role="assistant", content=partial_content, context={"interrupted": True})
+                partial_thinking = "".join(assistant_thinking_response)
+                msg_ctx = {"interrupted": True}
+                if partial_thinking:
+                    msg_ctx["thinking"] = partial_thinking
+                insert_chat_message(session_id=session_id, role="assistant", content=partial_content, context=msg_ctx)
             raise
         except Exception as e:
             logger.error(f"Chat stream 发生未捕获异常: {e}", exc_info=True)

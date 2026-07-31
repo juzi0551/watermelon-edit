@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Button, Select, Tooltip, Popconfirm, message as antMessage, Tag, Avatar } from 'antd'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { Button, Select, Tooltip, Popconfirm, message as antMessage, Tag, Avatar, Spin, Skeleton, Alert } from 'antd'
 import {
   CloseOutlined,
   PlusOutlined,
@@ -8,9 +8,13 @@ import {
   CheckCircleOutlined,
   HistoryOutlined,
   RobotOutlined,
-  UserOutlined,
+  RocketOutlined,
+  BulbOutlined,
+  SmileOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
-import { Bubble, Sender, ThoughtChain, Conversations } from '@ant-design/x'
+import { Bubble, Sender, ThoughtChain, Conversations, Prompts } from '@ant-design/x'
+import ReactMarkdown from 'react-markdown'
 import {
   listChatSessions,
   createChatSession,
@@ -28,24 +32,23 @@ export default function ChatPanel({
   activeSelection,
   onClearSelection,
   onApplyText,
+  bodyFontSize = 17,
 }) {
-  const [width, setWidth] = useState(380)
-  const [isDragging, setIsDragging] = useState(false)
-
-  // 模型列表状态 (与 Top Bar ActionBar 完全一致)
+  // 模型选择持久化记忆
   const [models, setModels] = useState([])
-  const [selectedModel, setSelectedModel] = useState(null)
+  const [selectedModel, setSelectedModel] = useState(() => {
+    return localStorage.getItem('chat_selected_model') || null
+  })
 
   // 会话列表状态
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState(null)
   const [conversationsOpen, setConversationsOpen] = useState(false)
 
-  // 消息滚动引用与 AbortController
-  const messagesEndRef = useRef(null)
+  // AbortController
   const abortControllerRef = useRef(null)
 
-  // 1. 加载模型列表 (100% 对齐 Top Bar ActionBar 逻辑)
+  // 1. 加载模型列表
   useEffect(() => {
     if (!projectId || !visible) return
 
@@ -53,7 +56,10 @@ export default function ChatPanel({
       .then((mList) => {
         if (Array.isArray(mList)) {
           setModels(mList)
-          if (mList.length > 0 && !selectedModel) {
+          const savedModel = localStorage.getItem('chat_selected_model')
+          if (savedModel && mList.some((m) => m.model_id === savedModel)) {
+            setSelectedModel(savedModel)
+          } else if (mList.length > 0) {
             setSelectedModel(mList[0].model_id)
           }
         }
@@ -63,7 +69,12 @@ export default function ChatPanel({
     loadSessions()
   }, [projectId, visible])
 
-  // 转换模型列表为与 Bar 完全一致的 Options (`${m.provider_name || m.provider} · ${m.name}`)
+  const handleModelChange = (val) => {
+    setSelectedModel(val)
+    localStorage.setItem('chat_selected_model', val)
+  }
+
+  // 转换模型列表 Options
   const modelOptions = useMemo(() => {
     return models.map((m) => ({
       value: m.model_id,
@@ -91,10 +102,13 @@ export default function ChatPanel({
   // 3. 流式对话处理
   const [messages, setMessages] = useState([])
   const [isRequesting, setIsRequesting] = useState(false)
+  const [inputValue, setInputValue] = useState('')
 
   const handleSend = async (userText) => {
-    if (!userText || !userText.trim() || isRequesting) return
+    const textToSend = userText || inputValue
+    if (!textToSend || !textToSend.trim() || isRequesting) return
 
+    setInputValue('')
     setIsRequesting(true)
     const contextPayload = activeSelection
       ? {
@@ -110,6 +124,7 @@ export default function ChatPanel({
       role: 'user',
       content: userText,
       context: contextPayload,
+      created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }
 
     const assistantMsgId = `temp_a_${Date.now()}`
@@ -119,9 +134,16 @@ export default function ChatPanel({
       content: '',
       thinking: '',
       isThinking: true,
+      created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }
 
     setMessages((prev) => [...prev, userMsg, assistantMsg])
+
+    // 发送成功后自动解挂旧选区
+    if (activeSelection) {
+      onClearSelection?.()
+    }
+
     abortControllerRef.current = new AbortController()
 
     try {
@@ -186,7 +208,7 @@ export default function ChatPanel({
     }
   }
 
-  // 4. 切换会话时，异步同步后端历史消息
+  // 4. 切换会话时异步同步历史消息
   useEffect(() => {
     if (!projectId || !activeSessionId || !visible) return
     loadMessages(activeSessionId)
@@ -199,40 +221,14 @@ export default function ChatPanel({
         id: m.id,
         role: m.role,
         content: m.content,
+        thinking: m.thinking || m.context?.thinking || '',
         context: m.context,
+        created_at: m.created_at ? m.created_at.slice(11, 16) : '',
       }))
       setMessages(formatted)
     } catch (err) {
       console.error('加载历史消息失败:', err)
     }
-  }
-
-  // 自动滚动到底部
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isRequesting])
-
-  // 5. 鼠标拖拽调宽 (320px ~ 720px)
-  const handleMouseDown = (e) => {
-    e.preventDefault()
-    setIsDragging(true)
-    const startX = e.clientX
-    const startWidth = width
-
-    const handleMouseMove = (moveEvent) => {
-      const deltaX = startX - moveEvent.clientX
-      const newWidth = Math.min(Math.max(startWidth + deltaX, 320), 720)
-      setWidth(newWidth)
-    }
-
-    const handleMouseUp = () => {
-      setIsDragging(false)
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
   }
 
   // 6. 新建与删除会话
@@ -278,15 +274,131 @@ export default function ChatPanel({
     }))
   }, [sessions])
 
+  // 空态用 @ant-design/x Prompts 快捷指令
+  const promptItems = [
+    {
+      key: 'p1',
+      icon: <RocketOutlined style={{ color: '#1677ff' }} />,
+      label: '🚀 润色选区',
+      description: '请提升选中文字的画面感与情绪张力',
+    },
+    {
+      key: 'p2',
+      icon: <BulbOutlined style={{ color: '#faad14' }} />,
+      label: '💡 评估节奏',
+      description: '请分析阅读节奏是否拖沓，给出修改意见',
+    },
+    {
+      key: 'p3',
+      icon: <SmileOutlined style={{ color: '#52c41a' }} />,
+      label: '🎭 对白优化',
+      description: '让对话更符合人物性格与戏剧张力',
+    },
+    {
+      key: 'p4',
+      icon: <ThunderboltOutlined style={{ color: '#722ed1' }} />,
+      label: '⚡ 强化高潮',
+      description: '加强高潮情节的冲突对比与情绪输出',
+    },
+  ]
+
+  // 转换为 @ant-design/x Bubble.List 所需 items 结构
+  const bubbleItems = useMemo(() => {
+    return messages.map((item) => {
+      const isUser = item.role === 'user'
+      const isInterrupted = item.context?.interrupted || item.interrupted
+
+      return {
+        key: item.id || item.key,
+        role: item.role,
+        placement: isUser ? 'end' : 'start',
+        avatar: isUser ? (
+          <Avatar style={{ backgroundColor: '#374151', color: '#ffffff' }}>我</Avatar>
+        ) : (
+          <Avatar style={{ backgroundColor: '#d4a359', color: '#ffffff' }} icon={<RobotOutlined />} />
+        ),
+        styles: {
+          content: {
+            backgroundColor: isUser ? '#f3f4f6' : '#fdfbf7',
+            border: isUser ? '1px solid #e5e7eb' : '1px solid #e8e5de',
+            color: '#1f2937',
+          },
+        },
+        content: (
+          <div>
+            {/* 思路/推理链：采用标准的 collapsible={{ defaultCollapsed: true }} 属性配置 */}
+            {item.thinking && (
+              <>
+                <ThoughtChain
+                  style={{ marginBottom: 8 }}
+                  collapsible={{ defaultCollapsed: true }}
+                  items={[
+                    {
+                      title: item.isThinking ? '思考中...' : '思考过程（点击展开）',
+                      status: item.isThinking ? 'executing' : 'success',
+                      content: item.thinking,
+                      collapsible: true,
+                      defaultCollapsed: true,
+                    },
+                  ]}
+                />
+                <div className="chat-thought-divider" />
+              </>
+            )}
+
+            {/* 针对思考中状态使用 antd 标准 Spin 与骨架加载 */}
+            {item.isThinking && !item.content ? (
+              <div style={{ padding: '4px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: '#1677ff', fontSize: 13 }}>
+                  <Spin size="small" />
+                  <span>正在深度思考并生成回答...</span>
+                </div>
+                <Skeleton active paragraph={{ rows: 2 }} title={false} />
+              </div>
+            ) : (
+              /* 官方 react-markdown 库解析 Markdown 内容 */
+              <div className="react-markdown-body" style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65 }}>
+                <ReactMarkdown>{item.content || ''}</ReactMarkdown>
+              </div>
+            )}
+
+            {/* 替换至正文按钮 */}
+            {!isUser && item.content && onApplyText && !isInterrupted && (
+              <Button
+                size="small"
+                type="dashed"
+                icon={<CheckCircleOutlined />}
+                className="chat-apply-btn"
+                onClick={() =>
+                  onApplyText(
+                    item.content,
+                    activeSelection?.paragraphIdx,
+                    activeSelection?.paragraphUuid
+                  )
+                }
+              >
+                替换至选区/当前段落
+              </Button>
+            )}
+
+            {/* 中断提示 */}
+            {isInterrupted && (
+              <div className="chat-interrupted-tag">⚠️ 生成已由用户中途停止</div>
+            )}
+
+            {/* 消息时间戳 */}
+            {item.created_at && <div className="chat-msg-time">{item.created_at}</div>}
+          </div>
+        ),
+      }
+    })
+  }, [messages, bodyFontSize, onApplyText, activeSelection])
+
   if (!visible) return null
 
   return (
-    <div className="chat-panel-sidebar" style={{ width: `${width}px` }}>
-      <div
-        className={`chat-panel-drag-handle ${isDragging ? 'dragging' : ''}`}
-        onMouseDown={handleMouseDown}
-      />
-
+    <div className="chat-panel-sidebar">
+      {/* 顶栏 */}
       <div className="chat-panel-header">
         <div className="chat-panel-header-left">
           <Tooltip title="历史会话列表">
@@ -297,9 +409,10 @@ export default function ChatPanel({
             />
           </Tooltip>
 
+          {/* 模型下拉选择框 */}
           <Select
             value={selectedModel}
-            onChange={setSelectedModel}
+            onChange={handleModelChange}
             style={{ width: 170 }}
             popupMatchSelectWidth={false}
             placeholder="选择 AI 模型"
@@ -326,6 +439,7 @@ export default function ChatPanel({
         </div>
       </div>
 
+      {/* @ant-design/x Conversations 历史会话抽屉 */}
       {conversationsOpen && (
         <div style={{ padding: '8px 12px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
           <Conversations
@@ -339,93 +453,76 @@ export default function ChatPanel({
         </div>
       )}
 
+      {/* 选区上下文提示 Banner：采用 antd 标准 Alert 组件 */}
       {activeSelection && (
-        <div className="chat-context-banner">
-          <span className="chat-context-text">
-            📍 选区：段落 #{activeSelection.paragraphIdx}{' '}
-            {activeSelection.selectedText ? `("${activeSelection.selectedText}")` : ''}
-          </span>
-          <Button
-            size="small"
-            type="text"
-            icon={<CloseOutlined />}
-            onClick={onClearSelection}
-          />
-        </div>
+        <Alert
+          type="info"
+          showIcon
+          closable
+          onClose={onClearSelection}
+          message={`📍 选区：段落 #${activeSelection.paragraphIdx} ${activeSelection.selectedText ? `("${activeSelection.selectedText}")` : ''}`}
+          style={{ margin: '8px 12px 0 12px', fontSize: 12 }}
+        />
       )}
 
+      {/* 消息列表区域：采用 @ant-design/x Bubble.List + autoScroll 自动滚动与视口保护 */}
       <div className="chat-messages-container">
-        {messages.map((item) => {
-          const isUser = item.role === 'user'
-          const isInterrupted = item.context?.interrupted || item.interrupted
-
-          return (
-            <Bubble
-              key={item.id || item.key}
-              placement={isUser ? 'right' : 'left'}
-              avatar={
-                isUser ? (
-                  <Avatar style={{ backgroundColor: '#87d068' }}>我</Avatar>
-                ) : (
-                  <Avatar style={{ backgroundColor: '#1677ff' }} icon={<RobotOutlined />} />
-                )
-              }
-              content={
-                <div>
-                  {item.thinking && (
-                    <ThoughtChain
-                      style={{ marginBottom: 8 }}
-                      items={[
-                        {
-                          title: '思考过程',
-                          status: item.isThinking ? 'executing' : 'success',
-                          content: item.thinking,
-                        },
-                      ]}
-                    />
-                  )}
-
-                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {item.content || (item.isThinking ? '正在思考中...' : '')}
-                  </div>
-
-                  {!isUser && item.content && onApplyText && !isInterrupted && (
-                    <Button
-                      size="small"
-                      type="dashed"
-                      icon={<CheckCircleOutlined />}
-                      className="chat-apply-btn"
-                      onClick={() =>
-                        onApplyText(
-                          item.content,
-                          activeSelection?.paragraphIdx,
-                          activeSelection?.paragraphUuid
-                        )
-                      }
-                    >
-                      替换至选区/当前段落
-                    </Button>
-                  )}
-
-                  {isInterrupted && (
-                    <div className="chat-interrupted-tag">⚠️ 生成已由用户中途停止</div>
-                  )}
-                </div>
-              }
+        {messages.length === 0 && (
+          <div style={{ padding: '24px 8px 12px 8px' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#4b5563', marginBottom: 12 }}>
+              💡 快捷提问指令
+            </div>
+            <Prompts
+              items={promptItems}
+              onItemClick={(item) => handleSend(item.description)}
             />
-          )
-        })}
-        <div ref={messagesEndRef} />
-      </div>
+          </div>
+        )}
 
-      <div className="chat-panel-footer">
-        <Sender
-          onSubmit={handleSend}
-          onCancel={handleStop}
-          loading={isRequesting}
-          placeholder="问问 AI 助手，例如：“润色选中文字”..."
+        <Bubble.List
+          autoScroll
+          roles={{
+            user: {
+              placement: 'end',
+              avatar: <Avatar style={{ backgroundColor: '#374151', color: '#ffffff' }}>我</Avatar>,
+              styles: {
+                content: {
+                  backgroundColor: '#f3f4f6',
+                  border: '1px solid #e5e7eb',
+                  color: '#1f2937',
+                },
+              },
+            },
+            assistant: {
+              placement: 'start',
+              avatar: <Avatar style={{ backgroundColor: '#d4a359', color: '#ffffff' }} icon={<RobotOutlined />} />,
+              styles: {
+                content: {
+                  backgroundColor: '#fdfbf7',
+                  border: '1px solid #e8e5de',
+                  color: '#1f2937',
+                },
+              },
+            },
+          }}
+          items={bubbleItems}
         />
       </div>
+
+      {/* 底部 Sender 输入框 */}
+      <Sender
+        value={inputValue}
+        onChange={(val) => setInputValue(val)}
+        onSubmit={(val) => {
+          handleSend(val)
+          setInputValue('')
+        }}
+        onCancel={handleStop}
+        loading={isRequesting}
+        styles={{ input: { fontSize: `${bodyFontSize}px` } }}
+        placeholder="问问 AI 助手，例如：“润色选中文字”..."
+        style={{ padding: '8px 12px' }}
+      />
     </div>
   )
 }

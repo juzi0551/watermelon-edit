@@ -2,14 +2,14 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Card, Button, Upload, Tag, Space, List, Typography, Spin, message,
-  Empty, Drawer, Tooltip, Popconfirm, Dropdown, Modal, Popover, Badge,
+  Empty, Drawer, Tooltip, Popconfirm, Dropdown, Modal, Popover, Badge, Splitter,
 } from 'antd'
 import {
   InboxOutlined, ArrowLeftOutlined, DownloadOutlined, UnorderedListOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, EyeOutlined, LockOutlined, UnlockOutlined, ClearOutlined,
   BookOutlined, TeamOutlined, ToolOutlined, ThunderboltOutlined,
   SafetyOutlined, FormatPainterOutlined, BarChartOutlined, TagsOutlined, ContainerOutlined,
-  MessageOutlined,
+  MessageOutlined, MinusOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
@@ -59,8 +59,23 @@ export default function ProjectDetail() {
   const [error, setError] = useState(null)
   const [runningBatch, setRunningBatch] = useState(null)
   const [selectedParas, setSelectedParas] = useState(new Set())
-  const [chatPanelOpen, setChatPanelOpen] = useState(false)
+  const [chatPanelOpen, setChatPanelOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('chat_panel_open')
+      return saved !== null ? JSON.parse(saved) : false
+    } catch {
+      return false
+    }
+  })
   const [chatSelection, setChatSelection] = useState(null)
+  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
+    try {
+      return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) || 0
+    } catch {
+      return 0
+    }
+  })
+  const bodyFontSize = 17 + fontSizeOffset
 
   const [llmMonitorOpen, setLlmMonitorOpen] = useState(false)
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false)
@@ -174,6 +189,10 @@ export default function ProjectDetail() {
   useEffect(() => {
     localStorage.setItem('reading_panel_open', JSON.stringify(panelOpen))
   }, [panelOpen])
+
+  useEffect(() => {
+    localStorage.setItem('chat_panel_open', JSON.stringify(chatPanelOpen))
+  }, [chatPanelOpen])
 
   // persist proofread config across refreshes
   useEffect(() => { localStorage.setItem('proofread_model', selectedModel) }, [selectedModel])
@@ -581,7 +600,47 @@ export default function ProjectDetail() {
           </Space>
         }
         extra={
-          <Space wrap>
+          <Space wrap align="center">
+            {/* 正中间放置「字号： [ - ] 17 [ + ]」组件 */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'var(--color-bgCard, #fafafa)',
+              borderRadius: 6,
+              border: '1px solid var(--color-border, #d9d9d9)',
+              padding: '2px 8px',
+              marginRight: 12,
+            }}>
+              <span style={{ fontSize: 13, color: color.textSecondary, fontWeight: 500, whiteSpace: 'nowrap' }}>字号：</span>
+              <Button
+                type="text"
+                size="small"
+                icon={<MinusOutlined />}
+                disabled={bodyFontSize <= 14}
+                onClick={() => {
+                  const nextOffset = Math.max(fontSizeOffset - 1, -3)
+                  setFontSizeOffset(nextOffset)
+                  try { localStorage.setItem('reader_font_offset', nextOffset.toString()) } catch {}
+                }}
+                style={{ width: 24, height: 24, fontSize: 12 }}
+              />
+              <span style={{ fontSize: 13, minWidth: 20, textAlign: 'center', fontWeight: 600, color: color.textPrimary }}>
+                {bodyFontSize}
+              </span>
+              <Button
+                type="text"
+                size="small"
+                icon={<PlusOutlined />}
+                disabled={bodyFontSize >= 48}
+                onClick={() => {
+                  const nextOffset = Math.min(fontSizeOffset + 1, 31)
+                  setFontSizeOffset(nextOffset)
+                  try { localStorage.setItem('reader_font_offset', nextOffset.toString()) } catch {}
+                }}
+                style={{ width: 24, height: 24, fontSize: 12 }}
+              />
+            </div>
             <Tooltip title={(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) ? '作品设定未填写！建议配置文风与专有名词，避免 LLM 校对时误判特色词汇' : '查看与修改作品设定与文风'}>
               <Badge dot={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()} offset={[-4, 4]}>
                 <Button
@@ -821,164 +880,188 @@ export default function ProjectDetail() {
           </Dragger>
         )}
         {total > 0 && (
-          <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 145px)', overflow: 'hidden' }}>
-            {/* chapter list sidebar */}
-            <div style={{
-              width: chaptersOpen ? 260 : 0,
-              overflow: 'hidden',
-              flexShrink: 0,
-              height: '100%',
-              display: chaptersOpen ? 'flex' : 'none',
-              flexDirection: 'column',
-              paddingRight: 12,
-              borderRight: '1px solid var(--color-border)',
-            }}>
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                paddingRight: 4,
-              }}>
-                <Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>章节目录</Title>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<MenuFoldOutlined />}
-                  onClick={() => setChaptersOpen(false)}
-                />
-              </div>
-              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', marginTop: 8 }}>
-                {chapters.length === 0 ? (
-                  <Text type="secondary">尚未校对出章节结构，先执行校对。</Text>
-                ) : (
-                  <List
-                    size="small"
-                    dataSource={chapters}
-                    renderItem={(ch) => (
-                      <List.Item
-                        style={{
-                          cursor: 'pointer',
-                          paddingLeft: ((ch.level || 1) - 1) * 14 + 6,
-                          background: selectedChapter === ch.id ? color.bgChapterSelected : 'transparent',
-                          paddingTop: 4,
-                          paddingBottom: 4,
-                          paddingRight: 8,
-                          borderRadius: 4,
-                        }}
-                        onClick={() => setSelectedChapter(ch.id)}
-                      >
-                        <Space style={{ width: '100%', justifyContent: 'space-between', minWidth: 0 }}>
-                          <Text ellipsis style={{
-                            fontSize: ch.level >= 3 ? 12 : 13,
-                            fontWeight: ch.level === 1 ? 600 : 400,
-                            color: ch.level >= 3 ? color.textTertiary : color.textPrimary,
-                            flex: 1,
-                          }}>
-                            {ch.level >= 3 ? `[L${ch.level}] ` : ''}{ch.title || `第 ${ch.title_paragraph_idx} 段`}
-                          </Text>
-                          {ch.detected_by === 'manual' ? (
-                            <Tag color="green" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>人工</Tag>
-                          ) : ch.detected_by === 'llm' ? (
-                            <Tag color="purple" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>LLM识别</Tag>
-                          ) : (
-                            <Tag color="blue" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>原文</Tag>
-                          )}
-                        </Space>
-                      </List.Item>
+          <Splitter
+            style={{ height: 'calc(100vh - 145px)' }}
+            onResize={(sizes) => {
+              if (sizes && sizes.length > 1 && chatPanelOpen) {
+                const rightWidth = Math.round(sizes[1])
+                if (rightWidth > 0) {
+                  localStorage.setItem('chat_panel_width', rightWidth.toString())
+                }
+              }
+            }}
+          >
+            <Splitter.Panel min="30%">
+              <div style={{ display: 'flex', gap: 0, height: '100%', overflow: 'hidden' }}>
+                {/* chapter list sidebar */}
+                <div style={{
+                  width: chaptersOpen ? 260 : 0,
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  height: '100%',
+                  display: chaptersOpen ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  paddingRight: 12,
+                  borderRight: '1px solid var(--color-border)',
+                }}>
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    paddingRight: 4,
+                  }}>
+                    <Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>章节目录</Title>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<MenuFoldOutlined />}
+                      onClick={() => setChaptersOpen(false)}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', marginTop: 8 }}>
+                    {chapters.length === 0 ? (
+                      <Text type="secondary">尚未校对出章节结构，先执行校对。</Text>
+                    ) : (
+                      <List
+                        size="small"
+                        dataSource={chapters}
+                        renderItem={(ch) => (
+                          <List.Item
+                            style={{
+                              cursor: 'pointer',
+                              paddingLeft: ((ch.level || 1) - 1) * 14 + 6,
+                              background: selectedChapter === ch.id ? color.bgChapterSelected : 'transparent',
+                              paddingTop: 4,
+                              paddingBottom: 4,
+                              paddingRight: 8,
+                              borderRadius: 4,
+                            }}
+                            onClick={() => setSelectedChapter(ch.id)}
+                          >
+                            <Space style={{ width: '100%', justifyContent: 'space-between', minWidth: 0 }}>
+                              <Text ellipsis style={{
+                                fontSize: ch.level >= 3 ? 12 : 13,
+                                fontWeight: ch.level === 1 ? 600 : 400,
+                                color: ch.level >= 3 ? color.textTertiary : color.textPrimary,
+                                flex: 1,
+                              }}>
+                                {ch.level >= 3 ? `[L${ch.level}] ` : ''}{ch.title || `第 ${ch.title_paragraph_idx} 段`}
+                              </Text>
+                              {ch.detected_by === 'manual' ? (
+                                <Tag color="green" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>人工</Tag>
+                              ) : ch.detected_by === 'llm' ? (
+                                <Tag color="purple" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>LLM识别</Tag>
+                              ) : (
+                                <Tag color="blue" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>原文</Tag>
+                              )}
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
                     )}
-                  />
+                  </div>
+                </div>
+
+                {/* toggle button (when collapsed) */}
+                {!chaptersOpen && (
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', paddingTop: 4,
+                    flexShrink: 0,
+                  }}>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<MenuUnfoldOutlined />}
+                      onClick={() => setChaptersOpen(true)}
+                      style={{ marginRight: 12 }}
+                    />
+                  </div>
+                )}
+
+                {/* gap when open */}
+                {chaptersOpen && <div style={{ width: 16, flexShrink: 0 }} />}
+
+                <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  {results && (
+                    <ReviewReader
+                      ref={readerRef}
+                      results={results}
+                      project={project}
+                      inProgress={inProgress}
+                      onSetStatus={handleSetStatus}
+                      onAcceptAll={handleAcceptAll}
+                      panelOpen={panelOpen}
+                      onTogglePanel={() => setPanelOpen(v => !v)}
+                      chapters={chapters}
+                      selectedChapter={selectedChapter}
+                      onStartProofread={handleProofread}
+                      selectedModel={selectedModel}
+                      onModelChange={setSelectedModel}
+                      models={models}
+                      selectedTypes={selectedTypes}
+                      onTypesChange={setSelectedTypes}
+                      percent={percent}
+                      proofreading={proofreading}
+                      total={total}
+                      upto={upto}
+                      bannerText={bannerText}
+                      projectError={project?.last_error}
+                      onRetry={handleProofread}
+                      onChapterChange={setSelectedChapter}
+                      selectedParas={selectedParas}
+                      onSelectionChange={setSelectedParas}
+                      onReloadProject={loadProject}
+                      onStartSelectionProofread={handleSelectionProofread}
+                      onStartBatchProofread={handleBatchProofread}
+                      batchInfo={batchInfo}
+                      batchPolling={batchPolling}
+                      onRetryWindow={handleRetryWindow}
+                      retryingWindow={retryingWindow}
+                      batchMaxConcurrent={batchMaxConcurrent}
+                      onBatchMaxConcurrentChange={handleBatchMaxConcurrentChange}
+                      proofreadWindowSize={proofreadWindowSize}
+                      onWindowSizeChange={handleWindowSizeChange}
+                      fontSizeOffset={fontSizeOffset}
+                    />
+                  )}
+                </div>
+
+                {/* right panel toggle button (when collapsed, symmetrical to left chapters toggle) */}
+                {!panelOpen && (
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', paddingTop: 4,
+                    flexShrink: 0, marginLeft: 12,
+                  }}>
+                    <Tooltip title="展开问题列表">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ContainerOutlined />}
+                        onClick={() => setPanelOpen(true)}
+                      />
+                    </Tooltip>
+                  </div>
                 )}
               </div>
-            </div>
+            </Splitter.Panel>
 
-            {/* toggle button (when collapsed) */}
-            {!chaptersOpen && (
-              <div style={{
-                display: 'flex', alignItems: 'flex-start', paddingTop: 4,
-                flexShrink: 0,
-              }}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<MenuUnfoldOutlined />}
-                  onClick={() => setChaptersOpen(true)}
-                  style={{ marginRight: 12 }}
+            {/* antd Splitter.Panel 托管的 AI 助手侧栏 */}
+            {chatPanelOpen && (
+              <Splitter.Panel
+                min={320}
+                max="50%"
+                defaultSize={parseInt(localStorage.getItem('chat_panel_width') || '380', 10) || 380}
+              >
+                <ChatPanel
+                  projectId={projectId}
+                  visible={true}
+                  onClose={() => setChatPanelOpen(false)}
+                  activeSelection={chatSelection}
+                  onClearSelection={() => setChatSelection(null)}
+                  onApplyText={handleApplyChatText}
+                  bodyFontSize={bodyFontSize}
                 />
-              </div>
+              </Splitter.Panel>
             )}
-
-            {/* gap when open */}
-            {chaptersOpen && <div style={{ width: 16, flexShrink: 0 }} />}
-
-            <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {results && (
-                <ReviewReader
-                  ref={readerRef}
-                  results={results}
-                  project={project}
-                  inProgress={inProgress}
-                  onSetStatus={handleSetStatus}
-                  onAcceptAll={handleAcceptAll}
-                  panelOpen={panelOpen}
-                  onTogglePanel={() => setPanelOpen(v => !v)}
-                  chapters={chapters}
-                  selectedChapter={selectedChapter}
-                  onStartProofread={handleProofread}
-                  selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
-                  models={models}
-                  selectedTypes={selectedTypes}
-                  onTypesChange={setSelectedTypes}
-                  percent={percent}
-                  proofreading={proofreading}
-                  total={total}
-                  upto={upto}
-                  bannerText={bannerText}
-                  projectError={project?.last_error}
-                  onRetry={handleProofread}
-                  onChapterChange={setSelectedChapter}
-                  selectedParas={selectedParas}
-                  onSelectionChange={setSelectedParas}
-                  onReloadProject={loadProject}
-                  onStartSelectionProofread={handleSelectionProofread}
-                  onStartBatchProofread={handleBatchProofread}
-                  batchInfo={batchInfo}
-                  batchPolling={batchPolling}
-                  onRetryWindow={handleRetryWindow}
-                  retryingWindow={retryingWindow}
-                  batchMaxConcurrent={batchMaxConcurrent}
-                  onBatchMaxConcurrentChange={handleBatchMaxConcurrentChange}
-                  proofreadWindowSize={proofreadWindowSize}
-                  onWindowSizeChange={handleWindowSizeChange}
-                />
-              )}
-            </div>
-
-            {/* right panel toggle button (when collapsed, symmetrical to left chapters toggle) */}
-            {!panelOpen && (
-              <div style={{
-                display: 'flex', alignItems: 'flex-start', paddingTop: 4,
-                flexShrink: 0, marginLeft: 12,
-              }}>
-                <Tooltip title="展开问题列表">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<ContainerOutlined />}
-                    onClick={() => setPanelOpen(true)}
-                  />
-                </Tooltip>
-              </div>
-            )}
-
-            {/* AI 对话侧边栏面板（挤压式自适应布局） */}
-            <ChatPanel
-              projectId={projectId}
-              visible={chatPanelOpen}
-              onClose={() => setChatPanelOpen(false)}
-              activeSelection={chatSelection}
-              onClearSelection={() => setChatSelection(null)}
-              onApplyText={handleApplyChatText}
-            />
-          </div>
+          </Splitter>
         )}
 
         <LLMMonitor

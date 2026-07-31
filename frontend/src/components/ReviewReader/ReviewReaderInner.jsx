@@ -27,6 +27,8 @@ export function ReviewReaderInner({
   onStartBatchProofread, batchInfo = null, batchPolling = false, onRetryWindow, retryingWindow = null,
   batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
   proofreadWindowSize = 30, onWindowSizeChange,
+  onBodyFontSizeChange,
+  fontSizeOffset,
 }, ref) {
   const logic = useReaderLogic({
     results,
@@ -37,7 +39,13 @@ export function ReviewReaderInner({
     chapters,
     models,
     selectedModel,
+    fontSizeOffset,
   })
+
+  // 同步正文字号变化至外层容器（供 AI 助手等关联组件联动）
+  useEffect(() => {
+    onBodyFontSizeChange?.(logic.currentBodyFontSize)
+  }, [logic.currentBodyFontSize, onBodyFontSizeChange])
 
   const { spanCacheRef, updatePos, updateManualEditPos } = useReaderCardPosition({
     flowRef: logic.flowRef,
@@ -132,6 +140,7 @@ export function ReviewReaderInner({
   return (
     <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: '4px 16px 0', position: 'relative' }}>
+        <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
           <ReaderContentArea
             contentRef={logic.contentRef}
             flowRef={logic.flowRef}
@@ -175,65 +184,64 @@ export function ReviewReaderInner({
             handleDeletePara={logic.handleDeletePara}
           />
 
-          <ErrorSidebar
-            showPanel={showPanel}
-            onTogglePanel={onTogglePanel}
-            panelTab={logic.panelTab}
-            setPanelTab={logic.setPanelTab}
+          <ActionBar
+            mergeMode={logic.mergeMode}
+            handleConfirmMergeBatch={logic.handleConfirmMergeBatch}
+            selectedMergeParas={logic.selectedMergeParas}
+            handleExitMergeMode={logic.handleExitMergeMode}
+            inProgress={inProgress}
+            proofreading={proofreading}
+            showOptions={logic.showOptions}
+            setShowOptions={logic.setShowOptions}
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
+            models={models}
+            selectedTypes={selectedTypes}
+            onTypesChange={onTypesChange}
+            batchMaxConcurrent={batchMaxConcurrent}
+            onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
+            proofreadWindowSize={proofreadWindowSize}
+            onWindowSizeChange={onWindowSizeChange}
+            batchInfo={batchInfo}
+            retryingWindow={retryingWindow}
+            onRetryWindow={onRetryWindow}
+            percent={percent}
+            bannerText={bannerText}
+            flatErrors={logic.flatErrors}
             pending={logic.pending}
-            accepted={logic.accepted}
-            rejected={logic.rejected}
-            obsolete={logic.obsolete}
+            selectedError={logic.selectedError}
+            selIsPending={logic.selIsPending}
+            customEdit={logic.customEdit}
+            setCustomEdit={logic.setCustomEdit}
+            statusSubmittingRef={logic.statusSubmittingRef}
+            setFlashSide={logic.setFlashSide}
+            flashSide={logic.flashSide}
+            handleStatus={logic.handleStatus}
             selectedId={logic.selectedId}
-            handleSelectError={logic.handleSelectError}
-            handleSelectObsoleteError={logic.handleSelectObsoleteError}
-            unmatchedIds={logic.unmatchedIds}
-            onSetStatus={onSetStatus}
-            jumpToParagraphExact={jumpToParagraphExact}
+            allDone={logic.allDone}
+            projectError={projectError}
+            onStartProofread={onStartProofread}
+            onStartBatchProofread={onStartBatchProofread}
           />
         </div>
 
-      <ActionBar
-        mergeMode={logic.mergeMode}
-        handleConfirmMergeBatch={logic.handleConfirmMergeBatch}
-        selectedMergeParas={logic.selectedMergeParas}
-        handleExitMergeMode={logic.handleExitMergeMode}
-        currentBodyFontSize={logic.currentBodyFontSize}
-        setFontSizeOffset={logic.setFontSizeOffset}
-        inProgress={inProgress}
-        proofreading={proofreading}
-        showOptions={logic.showOptions}
-        setShowOptions={logic.setShowOptions}
-        selectedModel={selectedModel}
-        onModelChange={onModelChange}
-        models={models}
-        selectedTypes={selectedTypes}
-        onTypesChange={onTypesChange}
-        batchMaxConcurrent={batchMaxConcurrent}
-        onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
-        proofreadWindowSize={proofreadWindowSize}
-        onWindowSizeChange={onWindowSizeChange}
-        batchInfo={batchInfo}
-        retryingWindow={retryingWindow}
-        onRetryWindow={onRetryWindow}
-        percent={percent}
-        bannerText={bannerText}
-        flatErrors={logic.flatErrors}
-        pending={logic.pending}
-        selectedError={logic.selectedError}
-        selIsPending={logic.selIsPending}
-        customEdit={logic.customEdit}
-        setCustomEdit={logic.setCustomEdit}
-        statusSubmittingRef={logic.statusSubmittingRef}
-        setFlashSide={logic.setFlashSide}
-        flashSide={logic.flashSide}
-        handleStatus={logic.handleStatus}
-        selectedId={logic.selectedId}
-        allDone={logic.allDone}
-        projectError={projectError}
-        onStartProofread={onStartProofread}
-        onStartBatchProofread={onStartBatchProofread}
-      />
+        <ErrorSidebar
+          showPanel={showPanel}
+          onTogglePanel={onTogglePanel}
+          panelTab={logic.panelTab}
+          setPanelTab={logic.setPanelTab}
+          pending={logic.pending}
+          accepted={logic.accepted}
+          rejected={logic.rejected}
+          obsolete={logic.obsolete}
+          selectedId={logic.selectedId}
+          handleSelectError={logic.handleSelectError}
+          handleSelectObsoleteError={logic.handleSelectObsoleteError}
+          unmatchedIds={logic.unmatchedIds}
+          onSetStatus={onSetStatus}
+          jumpToParagraphExact={jumpToParagraphExact}
+        />
+      </div>
 
       <FloatCardLayer
         selectedError={logic.selectedError}

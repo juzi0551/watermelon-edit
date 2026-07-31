@@ -18,6 +18,7 @@ export function useReaderLogic({
   chapters = [],
   models = [],
   selectedModel,
+  fontSizeOffset: propFontSizeOffset,
 }) {
   // 1. 全量 useState 声明
   const [selectedId, setSelectedId] = useState(null)
@@ -27,7 +28,7 @@ export function useReaderLogic({
   const [editingText, setEditingText] = useState('')
   const [editingNote, setEditingNote] = useState('')
   const [selectedManualEditIdx, setSelectedManualEditIdx] = useState(null)
-  const [fontSizeOffset, setFontSizeOffset] = useState(() => {
+  const [localFontSizeOffset, setLocalFontSizeOffset] = useState(() => {
     try { return parseInt(localStorage.getItem('reader_font_offset') || '0', 10) } catch { return 0 }
   })
   const [savingPara, setSavingPara] = useState(false)
@@ -60,7 +61,8 @@ export function useReaderLogic({
   const statusSubmittingRef = useRef(false)
 
   // 3. 计算派生属性
-  const currentBodyFontSize = fontSize.body + fontSizeOffset
+  const effectiveFontSizeOffset = propFontSizeOffset !== undefined ? propFontSizeOffset : localFontSizeOffset
+  const currentBodyFontSize = fontSize.body + effectiveFontSizeOffset
   const tbFontSize = Math.min(Math.max(Math.round(12 * (currentBodyFontSize / fontSize.body)), 12), 18)
 
   const errors = results?.errors || []
@@ -176,8 +178,10 @@ export function useReaderLogic({
   }, [activeIdx, updateToolbarPos])
 
   useEffect(() => {
-    localStorage.setItem('reader_font_offset', String(fontSizeOffset))
-  }, [fontSizeOffset])
+    if (propFontSizeOffset !== undefined) {
+      localStorage.setItem('reader_font_offset', String(propFontSizeOffset))
+    }
+  }, [propFontSizeOffset])
 
   const selectedManualEditPara = useMemo(() => {
     if (!selectedManualEditIdx) return null
@@ -534,7 +538,7 @@ export function useReaderLogic({
     editingText, setEditingText,
     editingNote, setEditingNote,
     selectedManualEditIdx, setSelectedManualEditIdx,
-    fontSizeOffset, setFontSizeOffset,
+    fontSizeOffset: effectiveFontSizeOffset,
     savingPara, setSavingPara,
     activeIdx, setActiveIdx,
     editingCaretPos, setEditingCaretPos,
