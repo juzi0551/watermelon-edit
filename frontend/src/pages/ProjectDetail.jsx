@@ -793,7 +793,7 @@ export default function ProjectDetail() {
           </Dragger>
         )}
         {total > 0 && (
-          <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 190px)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 145px)', overflow: 'hidden' }}>
             {/* chapter list sidebar */}
             <div style={{
               width: chaptersOpen ? 260 : 0,
@@ -880,7 +880,7 @@ export default function ProjectDetail() {
             {/* gap when open */}
             {chaptersOpen && <div style={{ width: 16, flexShrink: 0 }} />}
 
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               {results && (
                 <ReviewReader
                   ref={readerRef}
