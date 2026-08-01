@@ -177,6 +177,32 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
 }
 
 
+def sanitize_history_messages(raw_history: list[dict], max_count: int = 20) -> list[dict]:
+    """对历史消息进行安全的截断，确保 tool_calls 与对应 role: tool 消息同组原子化进出，杜绝 400 错配。"""
+    if not raw_history:
+        return []
+
+    sliced = list(raw_history[-max_count:])
+    if not sliced:
+        return []
+
+    # 1. 避免头部出现孤立的 role: tool（原配 assistant 消息被裁掉）
+    while sliced and sliced[0].get("role") == "tool":
+        sliced.pop(0)
+
+    # 2. 避免尾部出现带有 tool_calls 但缺乏对应 tool 响应消息的孤立 assistant
+    while sliced:
+        last = sliced[-1]
+        if last.get("role") == "assistant":
+            ctx = last.get("context") or {}
+            if ctx.get("tool_calls") or last.get("tool_calls"):
+                sliced.pop()
+                continue
+        break
+
+    return sliced
+
+
 async def stream_chat(
     project_id: str,
     model_id: str,
@@ -191,9 +217,10 @@ async def stream_chat(
     messages = []
     messages.append({"role": "system", "content": system_prompt})
 
-    # 追加历史消息 (严格兼容 tool_calls 与 role=tool 协议)
+    # 追加历史消息 (严格兼容 tool_calls 与 role=tool 协议，原子化同组进出)
     if history_messages:
-        for msg in history_messages[-20:]:
+        safe_history = sanitize_history_messages(history_messages, max_count=20)
+        for msg in safe_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             ctx = msg.get("context") or {}

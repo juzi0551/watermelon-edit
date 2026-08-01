@@ -216,7 +216,7 @@ export default function ProjectDetail() {
         )
       }, 100)
     }
-  }, [])
+  }, [results])
 
   const loadLlmCalls = useCallback(async () => {
     setLlmMonitorLoading(true)
