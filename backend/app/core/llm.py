@@ -38,6 +38,7 @@ async def stream_llm(
     tag: str = "",
     system_prompt: str | None = None,
     messages: list[dict] | None = None,
+    tools: list[dict] | None = None,
 ) -> AsyncIterator[dict]:
     """逐 chunk yield {"type": "thinking"|"delta"|"done"|"error", "text": str, ...}。
 
@@ -108,6 +109,8 @@ async def stream_llm(
             stream=True,
             drop_params=True,  # 自动丢弃不支持的参数
         )
+        if tools:
+            kwargs["tools"] = tools
         api_base = _api_base(model_id)
         if api_base:
             kwargs["api_base"] = api_base
@@ -144,6 +147,17 @@ async def stream_llm(
                         entry["thinking"] = (entry["thinking"] or "") + rc
                         entry["thinking_status"] = "thinking"
                         yield {"type": "thinking", "text": rc}
+
+                    tool_calls = getattr(delta, "tool_calls", None)
+                    if tool_calls:
+                        for tc in tool_calls:
+                            fn = getattr(tc, "function", None)
+                            yield {
+                                "type": "tool_call",
+                                "id": getattr(tc, "id", None),
+                                "function_name": getattr(fn, "name", None) if fn else None,
+                                "arguments": getattr(fn, "arguments", None) if fn else None,
+                            }
 
                     if delta.content:
                         if not got_first_content:

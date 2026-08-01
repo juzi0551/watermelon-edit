@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Button, Select, Tooltip, Popconfirm, message as antMessage, Tag, Avatar, Spin, Skeleton, Alert } from 'antd'
 import {
   CloseOutlined,
@@ -23,7 +23,34 @@ import {
   getModels,
 } from '../../services/api'
 import { streamChatAdapter } from './ChatProvider'
+import { ReplacementCard } from './ReplacementCard'
 import './ChatPanel.css'
+
+const parseReplacementCard = (rawContent, selectionCtx) => {
+  if (!rawContent) return { cleanContent: rawContent || '', replacementCard: null }
+  const match = rawContent.match(/⟦REPLACEMENT⟧\s*([\s\S]*?)\s*⟦\/REPLACEMENT⟧/)
+  if (!match) return { cleanContent: rawContent, replacementCard: null }
+
+  const cleanContent = rawContent.replace(/⟦REPLACEMENT⟧[\s\S]*?⟦\/REPLACEMENT⟧/, '').trim()
+  try {
+    const cardObj = JSON.parse(match[1])
+    const isCrossPara = Boolean(
+      selectionCtx?.paragraphEndIdx &&
+      selectionCtx.paragraphEndIdx !== selectionCtx.paragraphIdx
+    )
+    return {
+      cleanContent,
+      replacementCard: {
+        ...cardObj,
+        isCrossPara,
+        paragraphIdx: selectionCtx?.paragraphIdx,
+        paragraphUuid: selectionCtx?.paragraphUuid,
+      },
+    }
+  } catch (e) {
+    return { cleanContent, replacementCard: null }
+  }
+}
 
 export default function ChatPanel({
   projectId,
@@ -33,6 +60,7 @@ export default function ChatPanel({
   onClearSelection,
   onApplyText,
   bodyFontSize = 17,
+  onScrollToParagraph,
 }) {
   // 模型选择持久化记忆
   const [models, setModels] = useState([])
@@ -104,18 +132,22 @@ export default function ChatPanel({
   const [isRequesting, setIsRequesting] = useState(false)
   const [inputValue, setInputValue] = useState('')
 
-  const handleSend = async (userText) => {
-    const textToSend = userText || inputValue
-    if (!textToSend || !textToSend.trim() || isRequesting) return
+  const handleSend = useCallback(async (userTextOverride, selectionOverride) => {
+    const userText = userTextOverride || inputValue
+    if (!userText || !userText.trim() || isRequesting) return
 
     setInputValue('')
     setIsRequesting(true)
-    const contextPayload = activeSelection
+    const activeSel = selectionOverride || activeSelection
+    const contextPayload = activeSel
       ? {
-          selected_text: activeSelection.selectedText,
-          paragraph_idx: activeSelection.paragraphIdx,
-          paragraph_uuid: activeSelection.paragraphUuid,
-          paragraph_end_idx: activeSelection.paragraphEndIdx,
+          selected_text: activeSel.selectedText,
+          formatted_excerpt: activeSel.formattedExcerpt || activeSel.selectedText,
+          is_excerpt: activeSel.isExcerpt ?? false,
+          full_text: activeSel.fullText || null,
+          paragraph_idx: activeSel.paragraphIdx,
+          paragraph_uuid: activeSel.paragraphUuid,
+          paragraph_end_idx: activeSel.paragraphEndIdx,
         }
       : null
 
@@ -136,6 +168,7 @@ export default function ChatPanel({
       thinking: '',
       isThinking: true,
       thinkingSeconds: 1,
+      context: contextPayload,
       created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }
 
@@ -156,39 +189,61 @@ export default function ChatPanel({
         message: userText,
         context: contextPayload,
         signal: abortControllerRef.current.signal,
-        onUpdate: ({ content, thinking, isThinking, interrupted }) => {
+        onUpdate: ({ content, thinking, isThinking, interrupted, toolCallData }) => {
           const elapsed = Math.max(1, Math.round((Date.now() - thinkingStartTime) / 1000))
+          const { cleanContent, replacementCard: tagCard } = parseReplacementCard(content, contextPayload)
+          const activeCard = toolCallData || tagCard
+          const isCrossPara = Boolean(contextPayload?.paragraph_end_idx && contextPayload.paragraph_end_idx !== contextPayload.paragraph_idx)
+
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? {
-                    ...m,
-                    content,
-                    thinking,
-                    isThinking,
-                    thinkingSeconds: elapsed,
-                    interrupted,
-                    context: interrupted ? { ...(m.context || {}), interrupted: true } : m.context,
-                  }
-                : m
-            )
+            prev.map((m) => {
+              if (m.id !== assistantMsgId) return m
+              const resolvedIdx = activeCard?.paragraph_idx ?? activeCard?.paragraphIdx ?? m.context?.paragraph_idx ?? contextPayload?.paragraph_idx ?? undefined
+              return {
+                ...m,
+                content: cleanContent,
+                thinking,
+                isThinking,
+                thinkingSeconds: elapsed,
+                interrupted,
+                replacementCard: activeCard ? {
+                  ...activeCard,
+                  isCrossPara,
+                  paragraph_idx: resolvedIdx,
+                  paragraphIdx: resolvedIdx,
+                  paragraphUuid: contextPayload?.paragraph_uuid,
+                } : m.replacementCard,
+                context: interrupted ? { ...(m.context || {}), interrupted: true } : m.context,
+              }
+            })
           )
         },
-        onSuccess: ({ content, thinking, messageId }) => {
+        onSuccess: ({ content, thinking, messageId, replacementCard: resCard }) => {
           const elapsed = Math.max(1, Math.round((Date.now() - thinkingStartTime) / 1000))
+          const { cleanContent, replacementCard: tagCard } = parseReplacementCard(content, contextPayload)
+          const activeCard = resCard || tagCard
+          const isCrossPara = Boolean(contextPayload?.paragraph_end_idx && contextPayload.paragraph_end_idx !== contextPayload.paragraph_idx)
+
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? {
-                    ...m,
-                    id: messageId || m.id,
-                    content,
-                    thinking,
-                    isThinking: false,
-                    thinkingSeconds: elapsed,
-                  }
-                : m
-            )
+            prev.map((m) => {
+              if (m.id !== assistantMsgId) return m
+              const resolvedIdx = activeCard?.paragraph_idx ?? activeCard?.paragraphIdx ?? m.context?.paragraph_idx ?? contextPayload?.paragraph_idx ?? undefined
+              return {
+                ...m,
+                id: messageId || m.id,
+                content: cleanContent,
+                thinking,
+                isThinking: false,
+                thinkingSeconds: elapsed,
+                replacementCard: activeCard ? {
+                  ...activeCard,
+                  isCrossPara,
+                  paragraph_idx: resolvedIdx,
+                  paragraphIdx: resolvedIdx,
+                  paragraphUuid: contextPayload?.paragraph_uuid,
+                } : m.replacementCard,
+              }
+            })
           )
           loadSessions()
         },
@@ -208,11 +263,25 @@ export default function ChatPanel({
         },
       })
     } catch (err) {
-      console.error(err)
+      if (err.name !== 'AbortError') {
+        antMessage.error(`请求失败: ${err.message}`)
+      }
     } finally {
       setIsRequesting(false)
     }
-  }
+  }, [inputValue, isRequesting, activeSelection, projectId, activeSessionId, selectedModel, onClearSelection, loadSessions])
+
+  // 监听选区工具条触发的自动发送事件
+  useEffect(() => {
+    const handleTriggerSend = (e) => {
+      const { prompt, selection } = e.detail || {}
+      if (prompt) {
+        handleSend(prompt, selection)
+      }
+    }
+    window.addEventListener('trigger_chat_send', handleTriggerSend)
+    return () => window.removeEventListener('trigger_chat_send', handleTriggerSend)
+  }, [handleSend])
 
   // 4. 切换会话时异步同步历史消息
   useEffect(() => {
@@ -223,14 +292,17 @@ export default function ChatPanel({
   const loadMessages = async (sessionId) => {
     try {
       const historyMsgs = await listChatMessages(projectId, sessionId)
-      const formatted = (historyMsgs || []).map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        thinking: m.thinking || m.context?.thinking || '',
-        context: m.context,
-        created_at: m.created_at ? m.created_at.slice(11, 16) : '',
-      }))
+      const formatted = (historyMsgs || [])
+        .filter((m) => m.role !== 'tool') // 隐藏内部协议 role: tool 消息，UI 只展示对话与卡片
+        .map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          thinking: m.thinking || m.context?.thinking || '',
+          context: m.context,
+          replacementCard: m.context?.replacement_card || null,
+          created_at: m.created_at ? m.created_at.slice(11, 16) : '',
+        }))
       setMessages(formatted)
     } catch (err) {
       console.error('加载历史消息失败:', err)
@@ -314,8 +386,26 @@ export default function ChatPanel({
       const isUser = item.role === 'user'
       const isInterrupted = item.context?.interrupted || item.interrupted
       const prevItem = index > 0 ? messages[index - 1] : null
+      const nextItem = index < messages.length - 1 ? messages[index + 1] : null
       const isSameRoleAsPrev = prevItem && prevItem.role === item.role
       const isFirstInGroup = !isSameRoleAsPrev
+      const userParaIdx = isUser
+        ? (item.context?.paragraph_idx ?? item.context?.paragraphIdx ?? nextItem?.context?.paragraph_idx ?? nextItem?.context?.paragraphIdx ?? nextItem?.replacementCard?.paragraph_idx ?? nextItem?.replacementCard?.paragraphIdx)
+        : null
+      const userSelectedText = isUser
+        ? (item.context?.selected_text ?? item.context?.selectedText ?? nextItem?.context?.selected_text ?? nextItem?.replacementCard?.original)
+        : null
+
+      const isExplicitExcerpt = item.context?.is_excerpt ?? item.context?.isExcerpt
+      const userIsExcerpt = isUser
+        ? (isExplicitExcerpt !== undefined && isExplicitExcerpt !== null
+            ? Boolean(isExplicitExcerpt)
+            : Boolean(item.context?.formatted_context && item.context.formatted_context.includes('选中正文局部节选')))
+        : false
+      const rawExcerpt = item.context?.formatted_excerpt ?? item.context?.formattedExcerpt ?? userSelectedText
+      const userFormattedText = isUser && rawExcerpt
+        ? (userIsExcerpt && !rawExcerpt.startsWith('…') ? `…${rawExcerpt}…` : rawExcerpt)
+        : null
 
       return {
         key: item.id || item.key,
@@ -340,8 +430,69 @@ export default function ChatPanel({
             color: isUser ? '#ffffff' : '#1f2937',
           },
         },
+        footer: !isUser && item.replacementCard ? (
+          <ReplacementCard
+            cardData={item.replacementCard}
+            paragraphIdx={item.replacementCard.paragraph_idx ?? item.replacementCard.paragraphIdx ?? activeSelection?.paragraphIdx}
+            paragraphUuid={item.replacementCard.paragraphUuid ?? item.replacementCard.paragraph_uuid ?? activeSelection?.paragraphUuid}
+            isCrossPara={item.replacementCard.isCrossPara}
+            onApplyText={onApplyText}
+            bodyFontSize={bodyFontSize}
+            projectId={projectId}
+            messageId={item.id}
+            onScrollToParagraph={onScrollToParagraph}
+          />
+        ) : undefined,
         content: (
           <div>
+            {/* 用户引用段落与原文展示区：格式：段落#xx 节选 | …段落文字… */}
+            {isUser && userParaIdx && (
+              <Tooltip title={`点击跳转至第 ${userParaIdx} 段并高亮`}>
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onScrollToParagraph?.(userParaIdx)
+                  }}
+                  style={{
+                    marginBottom: 8,
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    background: 'rgba(255, 255, 255, 0.22)',
+                    border: '1px solid rgba(255, 255, 255, 0.45)',
+                    color: '#ffffff',
+                    fontSize: `${Math.max(12, bodyFontSize - 3)}px`,
+                    lineHeight: 1.5,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    maxHeight: 48,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, flexShrink: 0, opacity: 0.95 }}>
+                    段落#{userParaIdx}{userIsExcerpt ? ' 节选' : ''}
+                  </span>
+                  {userFormattedText && (
+                    <>
+                      <span style={{ opacity: 0.75, flexShrink: 0 }}>|</span>
+                      <span
+                        style={{
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          opacity: 0.9,
+                        }}
+                      >
+                        {userFormattedText}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </Tooltip>
+            )}
             {/* 思路/推理链：采用标准的 collapsible={{ defaultCollapsed: true }} 属性配置 */}
             {item.thinking && (
               <>
@@ -384,8 +535,6 @@ export default function ChatPanel({
                 <ReactMarkdown>{item.content || ''}</ReactMarkdown>
               </div>
             )}
-
-
 
             {/* 中断提示 */}
             {isInterrupted && (
@@ -456,18 +605,6 @@ export default function ChatPanel({
         </div>
       )}
 
-      {/* 选区上下文提示 Banner：采用 antd 标准 Alert 组件 */}
-      {activeSelection && (
-        <Alert
-          type="info"
-          showIcon
-          closable
-          onClose={onClearSelection}
-          message={`📍 选区：段落 #${activeSelection.paragraphIdx} ${activeSelection.selectedText ? `("${activeSelection.selectedText}")` : ''}`}
-          style={{ margin: '8px 12px 0 12px', fontSize: 12 }}
-        />
-      )}
-
       {/* 消息列表区域：采用 @ant-design/x Bubble.List + autoScroll 自动滚动与视口保护 */}
       <div className="chat-messages-container">
         {messages.length === 0 && (
@@ -512,8 +649,52 @@ export default function ChatPanel({
         />
       </div>
 
-      {/* 底部 Sender 输入框 */}
-      <div className="chat-panel-footer" style={{ border: 'none', borderTop: 'none', background: 'transparent', boxShadow: 'none' }}>
+      {/* 底部 Sender 输入框区域 */}
+      <div className="chat-panel-footer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '8px 16px 12px 16px', border: 'none', borderTop: 'none', background: 'transparent', boxShadow: 'none' }}>
+        {/* 选区/段落文字显示区：垂直位于对话框正上方，浅灰色背景 + 深灰色文字 */}
+        {activeSelection && (
+          <div
+            style={{
+              marginBottom: 8,
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: '#f1f5f9',
+              border: '1px solid #e2e8f0',
+              color: '#334155',
+              fontSize: `${Math.max(12, bodyFontSize - 2)}px`,
+              lineHeight: 1.5,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                maxHeight: 72,
+                overflowY: 'auto',
+                wordBreak: 'break-word',
+              }}
+            >
+              <span style={{ fontWeight: 600, color: '#1e293b', marginRight: 6 }}>
+                段落 #{activeSelection.paragraphIdx}{activeSelection.isExcerpt ? ' 节选' : ''}
+              </span>
+              <span style={{ color: '#94a3b8', marginRight: 6 }}>|</span>
+              <span>
+                {activeSelection.formattedExcerpt || activeSelection.selectedText || ''}
+              </span>
+            </div>
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined style={{ fontSize: 11, color: '#64748b' }} />}
+              onClick={onClearSelection}
+              style={{ width: 22, height: 22, minWidth: 22, padding: 0, marginTop: 1 }}
+            />
+          </div>
+        )}
+
         <Sender
           value={inputValue}
           onChange={(val) => setInputValue(val)}

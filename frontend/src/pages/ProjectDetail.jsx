@@ -100,19 +100,123 @@ export default function ProjectDetail() {
     }
   )
 
-  const handleApplyChatText = async (revisedText, paragraphIdx, paragraphUuid) => {
+  const handleApplyChatText = async (revisedText, paragraphIdx, paragraphUuid, noteText = '', originalText = null) => {
     if (paragraphIdx === undefined || paragraphIdx === null) {
       message.warning('请先在左侧编辑区选中或指定目标段落')
       return
     }
+
+    const allParas = results?.paragraphs || []
+    const targetPara = allParas.find(
+      (p) => String(p.uuid) === String(paragraphUuid) || String(p.idx) === String(paragraphIdx)
+    )
+
+    const currentParaText = targetPara ? (targetPara.revised_text || targetPara.text || '') : ''
+    let textToApply = revisedText
+
+    // 局部切片精准替换：当 originalText 仅为段落中的局部节选且在当前段落中能精确匹配时，只替换选中的这部分文字
+    if (originalText && currentParaText && currentParaText.includes(originalText) && originalText !== currentParaText) {
+      textToApply = currentParaText.replace(originalText, revisedText)
+    }
+
+    let existingNotes = []
+    if (targetPara?.edit_note) {
+      try {
+        const parsed = JSON.parse(targetPara.edit_note)
+        existingNotes = Array.isArray(parsed) ? parsed : [{ id: '1', note: targetPara.edit_note, created_at: '以往修改' }]
+      } catch {
+        existingNotes = [{ id: '1', note: targetPara.edit_note, created_at: '以往修改' }]
+      }
+    }
+
+    const cleanNoteStr = noteText
+      ? (noteText.startsWith('【AI润色】') ? noteText : `【AI润色】${noteText}`)
+      : '【AI润色】采纳润色建议'
+
+    const newNoteItem = {
+      id: Date.now().toString(),
+      note: cleanNoteStr,
+      created_at: new Date().toLocaleString('zh-CN', { hour12: false }),
+    }
+
+    const updatedNotesArray = [...existingNotes, newNoteItem]
+    const updatedNotesJson = JSON.stringify(updatedNotesArray)
+
+    // 1. 不可变更新 (Immutable State Update) 穿透 ParaRow 的 React.memo 缓存，0 延迟刷新
+    setResults((prev) => {
+      if (!prev || !prev.paragraphs) return prev
+      const newParas = prev.paragraphs.map((p) =>
+        String(p.uuid) === String(paragraphUuid) || String(p.idx) === String(paragraphIdx)
+          ? { ...p, revised_text: textToApply, edit_note: updatedNotesJson }
+          : p
+      )
+      return { ...prev, paragraphs: newParas }
+    })
+
+    message.success(`已应用 AI 润色结果至第 ${paragraphIdx} 段`)
+
+    // 触发正文滚动与闪烁高亮动画
+    if (readerRef.current && readerRef.current.scrollToParagraph && paragraphIdx) {
+      readerRef.current.scrollToParagraph(paragraphIdx)
+    }
+
     try {
-      await updateParagraph(projectId, paragraphIdx, revisedText, 'AI助手采纳润色', paragraphUuid)
-      message.success(`已应用 AI 润色结果至第 ${paragraphIdx} 段`)
+      // 2. 数据库权威更新
+      await updateParagraph(projectId, paragraphIdx, textToApply, updatedNotesJson, paragraphUuid)
+      // 3. 后台静默权威同步
       loadProject()
     } catch (e) {
       message.error(`应用文本失败: ${e.message || '未知错误'}`)
+      loadProject()
     }
   }
+
+  const handleAskAssistant = useCallback((context) => {
+    if (!context) return
+    setChatPanelOpen(true)
+    try {
+      localStorage.setItem('chat_panel_open', JSON.stringify(true))
+    } catch (e) {}
+
+    const targetPara = (results?.paragraphs || []).find(
+      (p) => String(p.uuid) === String(context.paragraphUuid) || String(p.idx) === String(context.paragraphIdx)
+    )
+    const fullText = context.fullText || (targetPara?.revised_text || targetPara?.text || targetPara?.raw_text || '').trim()
+    const text = (context.selectedText || '').trim()
+    const isExcerpt = context.isExcerpt ?? Boolean(fullText && text && text !== fullText)
+
+    let formattedExcerpt = context.formattedExcerpt || text
+    if (!context.formattedExcerpt && isExcerpt && fullText) {
+      const idxInFull = fullText.indexOf(text)
+      const hasLeading = idxInFull > 0
+      const hasTrailing = idxInFull >= 0 && (idxInFull + text.length < fullText.length)
+      formattedExcerpt = `${hasLeading ? '…' : ''}${text}${hasTrailing ? '…' : ''}`
+    }
+
+    const selObj = {
+      selectedText: context.selectedText,
+      formattedExcerpt,
+      isExcerpt,
+      fullText,
+      paragraphIdx: context.paragraphIdx,
+      paragraphEndIdx: context.paragraphEndIdx,
+      paragraphUuid: context.paragraphUuid,
+    }
+    setChatSelection(selObj)
+
+    if (context.prompt) {
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('trigger_chat_send', {
+            detail: {
+              prompt: context.prompt,
+              selection: selObj,
+            },
+          })
+        )
+      }, 100)
+    }
+  }, [])
 
   const loadLlmCalls = useCallback(async () => {
     setLlmMonitorLoading(true)
@@ -1026,6 +1130,7 @@ export default function ProjectDetail() {
                       proofreadWindowSize={proofreadWindowSize}
                       onWindowSizeChange={handleWindowSizeChange}
                       fontSizeOffset={fontSizeOffset}
+                      onAskAssistant={handleAskAssistant}
                     />
                   )}
                 </div>
@@ -1064,6 +1169,7 @@ export default function ProjectDetail() {
                   onClearSelection={() => setChatSelection(null)}
                   onApplyText={handleApplyChatText}
                   bodyFontSize={bodyFontSize}
+                  onScrollToParagraph={(idx) => readerRef.current?.scrollToParagraph?.(idx)}
                 />
               </Splitter.Panel>
             )}

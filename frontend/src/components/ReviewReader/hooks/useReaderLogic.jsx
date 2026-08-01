@@ -213,8 +213,21 @@ export function useReaderLogic({
     }
   }, [project?.id, sortedParas, onReloadProject])
 
+  const handleSelectionChange = useCallback((isSelected) => {
+    if (isSelected) {
+      // 互斥：划选文本时，自动取消段落选中与段落悬浮工具条
+      setActiveIdx(null)
+    }
+  }, [])
+
   const handleParaClick = useCallback((e, paraIdx) => {
     e.stopPropagation()
+    // 互斥：若当前包含鼠标划选文本，则不选中段落、不唤起段落工具条
+    const selText = window.getSelection()?.toString().trim()
+    if (selText && selText.length > 0) {
+      setActiveIdx(null)
+      return
+    }
     // 互斥：唤起段落工具条时，自动关闭任意浮动详情卡片
     setSelectedId(null)
     setSelectedManualEditIdx(null)
@@ -589,6 +602,7 @@ export function useReaderLogic({
     handleDeleteNoteItem,
     handleRevertManualEdit,
     handleParaClick,
+    handleSelectionChange,
     handleStartEdit,
     handleSelectError,
     handleSelectObsoleteError,

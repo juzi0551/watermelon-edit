@@ -9,6 +9,7 @@ import { ReaderContentArea } from './components/ReaderContentArea'
 import { ErrorSidebar } from './components/ErrorSidebar'
 import { ActionBar } from './components/ActionBar'
 import { FloatCardLayer } from './components/FloatCardLayer'
+import { SelectionToolbar } from './components/SelectionToolbar'
 
 export function ReviewReaderInner({
   results, project, inProgress, onSetStatus, onAcceptAll,
@@ -29,6 +30,7 @@ export function ReviewReaderInner({
   proofreadWindowSize = 30, onWindowSizeChange,
   onBodyFontSizeChange,
   fontSizeOffset,
+  onAskAssistant,
 }, ref) {
   const logic = useReaderLogic({
     results,
@@ -182,6 +184,14 @@ export function ReviewReaderInner({
             handleSetChapter={logic.handleSetChapter}
             handleToggleOriginal={logic.handleToggleOriginal}
             handleDeletePara={logic.handleDeletePara}
+            handleAskAssistant={onAskAssistant}
+          />
+
+          <SelectionToolbar
+            containerRef={logic.contentRef}
+            paras={logic.sortedParas}
+            onAskAssistant={onAskAssistant}
+            onSelectionChange={logic.handleSelectionChange}
           />
 
           <ActionBar

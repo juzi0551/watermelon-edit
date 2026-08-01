@@ -2,7 +2,7 @@ import React from 'react'
 import { Button, Tooltip, Dropdown, Popconfirm } from 'antd'
 import {
   EditOutlined, PlusOutlined, MergeCellsOutlined, BookOutlined, EyeOutlined, DashOutlined, DeleteOutlined,
-  ArrowUpOutlined, ArrowDownOutlined, CloseOutlined,
+  ArrowUpOutlined, ArrowDownOutlined, CloseOutlined, MessageOutlined,
 } from '@ant-design/icons'
 import { color } from '../../../design-tokens'
 
@@ -21,6 +21,7 @@ export function ParaHoverToolbar({
   handleToggleOriginal,
   handleTogglePageBreak,
   handleDeletePara,
+  handleAskAssistant,
 }) {
   if (!activePara) return null
 
@@ -50,6 +51,22 @@ export function ParaHoverToolbar({
       <Tooltip title="编辑段落文本,支持双击进入" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
         <Button type="text" size="small" icon={<EditOutlined />}
           onClick={() => handleStartEdit(activePara)} style={{ fontSize: tbFontSize }}>编辑</Button>
+      </Tooltip>
+
+      <Tooltip title="将整段文字带入 AI 助手侧栏" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
+        <Button
+          type="text"
+          size="small"
+          icon={<MessageOutlined style={{ color: '#2563eb' }} />}
+          onClick={() => handleAskAssistant?.({
+            selectedText: activePara.revised_text || activePara.text || activePara.raw_text,
+            paragraphIdx: activePara.idx,
+            paragraphUuid: activePara.uuid || activePara.idx,
+          })}
+          style={{ fontSize: tbFontSize }}
+        >
+          问助手
+        </Button>
       </Tooltip>
 
       <Dropdown trigger={['click']} menu={{

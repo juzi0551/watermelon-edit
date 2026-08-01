@@ -171,7 +171,7 @@ export const ParaRow = React.memo(function ParaRow({
           position: 'relative',
           padding: '6px 10px',
           borderRadius: 6,
-          transition: 'background 1s ease-out, box-shadow 1s ease-out, border-left 0.15s ease',
+          transition: 'background 0.3s ease-out, box-shadow 0.3s ease-out, border-left 0.15s ease',
           contentVisibility: 'auto',
           containIntrinsicSize: '0 48px',
           cursor: mergeMode ? 'pointer' : 'default',
@@ -306,6 +306,9 @@ export const ParaRow = React.memo(function ParaRow({
                     caretPos = cp.offset
                   }
                 } catch { /* noop */ }
+                try {
+                  window.getSelection()?.removeAllRanges()
+                } catch (e) {}
                 onStartEdit(para, caretPos)
               }}
               style={{ cursor: 'pointer', color: color.textPrimary, display: 'block', width: '100%' }}

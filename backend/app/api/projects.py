@@ -196,12 +196,14 @@ async def api_update_paragraph(project_id: str, idx: str, body: ParagraphUpdateB
     """人工修改段落文本与修改备注（支持 idx 或 uuid）。"""
     doc = get_current_document(project_id)
     if not doc:
-        return {"error": "项目无文档"}
+        raise HTTPException(status_code=404, detail="项目无文档")
     para = _resolve_para(doc["id"], idx, body.paragraph_uuid)
     if not para:
-        return {"error": "段落不存在"}
-    update_paragraph_text(doc["id"], para["idx"], body.text, edit_note=body.edit_note)
-    return {"status": "ok", "idx": para["idx"], "uuid": para.get("uuid"), "text": body.text, "edit_note": body.edit_note}
+        raise HTTPException(status_code=404, detail="段落不存在")
+
+    text_to_save = body.text if body.text is not None else (para.get("revised_text") or para.get("text") or "")
+    update_paragraph_text(doc["id"], para["idx"], text_to_save, edit_note=body.edit_note)
+    return {"status": "ok", "idx": para["idx"], "uuid": para.get("uuid"), "text": text_to_save, "edit_note": body.edit_note}
 
 
 @router.put("/projects/{project_id}/paragraphs/{idx}/notes")

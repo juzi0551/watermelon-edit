@@ -45,6 +45,7 @@ export function ReaderContentArea({
   handleSetChapter,
   handleToggleOriginal,
   handleDeletePara,
+  handleAskAssistant,
 }) {
   return (
     <div
@@ -183,6 +184,7 @@ export function ReaderContentArea({
                 handleToggleOriginal={handleToggleOriginal}
                 handleTogglePageBreak={handleTogglePageBreak}
                 handleDeletePara={handleDeletePara}
+                handleAskAssistant={handleAskAssistant}
               />
             )
           })()}

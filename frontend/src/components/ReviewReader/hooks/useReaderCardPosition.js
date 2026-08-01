@@ -101,8 +101,33 @@ export function useReaderCardPosition({
 
     const key = `manual_${selectedManualEditIdx}`
     let span = spanCacheRef.current.get(key)
+
     if (!span || !span.isConnected) {
-      span = container.querySelector(`[data-para="${selectedManualEditIdx}"]`) || container.querySelector(`[data-manual-edit="true"]`)
+      span = null
+      const paras = results?.paragraphs || []
+      const targetPara = paras.find(
+        (p) => p.idx === selectedManualEditIdx || String(p.uuid) === String(selectedManualEditIdx)
+      )
+
+      if (targetPara) {
+        if (targetPara.uuid) {
+          span =
+            container.querySelector(`[data-para="${targetPara.uuid}"] [data-manual-edit="true"]`) ||
+            container.querySelector(`[data-para="${targetPara.uuid}"]`)
+        }
+        if (!span && targetPara.idx != null) {
+          span =
+            container.querySelector(`[data-para="${targetPara.idx}"] [data-manual-edit="true"]`) ||
+            container.querySelector(`[data-para="${targetPara.idx}"]`)
+        }
+      }
+
+      if (!span) {
+        span =
+          container.querySelector(`[data-para="${selectedManualEditIdx}"]`) ||
+          container.querySelector(`[data-manual-edit="true"]`)
+      }
+
       if (span) {
         spanCacheRef.current.set(key, span)
       }
@@ -117,7 +142,7 @@ export function useReaderCardPosition({
     const rect = span.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
 
-    const inView = rect.bottom >= containerRect.top && rect.top <= containerRect.bottom
+    const inView = rect.bottom >= containerRect.top - 50 && rect.top <= containerRect.bottom + 50
     if (!inView) {
       el.style.opacity = '0'
       el.style.transform = 'translateY(3px)'
@@ -149,7 +174,7 @@ export function useReaderCardPosition({
     el.style.left = `${left}px`
     el.style.opacity = '1'
     el.style.transform = 'translateY(0)'
-  }, [flowRef, manualCardElRef, selectedManualEditIdx])
+  }, [flowRef, manualCardElRef, selectedManualEditIdx, results])
 
   useLayoutEffect(() => {
     updatePos()

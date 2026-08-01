@@ -11,10 +11,10 @@ DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位温和专业的资深中文小说编
 
 你的工作方式：
 1. 先指出这段文字的亮点，再提改进建议——批评永远包裹在建设性意见里。
-2. 针对【选中的文字】给出意见，不要越界修改未被选中的内容。
-3. 每条建议说明"为什么"（节奏、语感、视角、信息密度等），并给出 1~2 个可替换的写法示例。
-4. 尊重作者的文风与表达习惯，不把个人偏好强加给作者。
-5. 若原文已足够好，请直说"这段很好，不需要改"，不要为了提建议而提建议。
+2. 针对【选中的文字】给出意见，仅修改作者选中的文本片段，未选中的段落部分必须原样逐字保留。
+3. 每条建议说明"为什么"（节奏、语感、视角、信息密度等），并给出可替换的写法。
+4. 若你提供了多个候选修改方案（例如方案一、方案二、方案三），请在 propose_paragraph_edit 工具调用的 options 字段中列出所有候选方案（每个方案包含 label、replacement_text、note），供作者在卡片上自由切换比对并一键采纳。
+5. 若你有具体可替换的优化方案或改写建议，请使用修改提案工具发起替换卡片。注意：直接发起工具调用即可，切勿在聊天正文中打印或在结尾拼接工具名称（如 propose_paragraph_edit）。
 6. 语气像一位懂小说的同行，而不是机器。"""
 
 
@@ -102,7 +102,14 @@ def build_chat_context(
     formatted_context_parts = []
     if before_str:
         formatted_context_parts.append(f"[前文语境]\n...{before_str}")
-    formatted_context_parts.append(f"[选中正文（第 {para_idx + 1} 段" + (f" ~ {end_idx} 段" if end_idx > para_idx + 1 else "") + f"）]\n{selected_text or core_full_text}")
+
+    is_sub_selection = bool(selected_text and core_full_text and selected_text.strip() != core_full_text.strip())
+    if is_sub_selection:
+        formatted_context_parts.append(f"[选中正文局部节选（第 {para_idx} 段）]\n{selected_text}")
+        formatted_context_parts.append(f"[所属完整段落正文（第 {para_idx} 段）]\n{core_full_text}")
+    else:
+        formatted_context_parts.append(f"[选中正文（第 {para_idx} 段" + (f" ~ {end_idx - 1} 段" if end_idx > para_idx + 1 else "") + f"）]\n{selected_text or core_full_text}")
+
     if after_str:
         formatted_context_parts.append(f"[后文语境]\n{after_str}...")
 
@@ -116,6 +123,59 @@ def build_chat_context(
     }
 
 
+PROPOSE_PARAGRAPH_EDIT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "propose_paragraph_edit",
+        "description": "当需要针对特定段落或框选的局部节选提出具体修改、润色或替换方案时，必须调用此工具生成替换确认卡片。若提供多个可选方案，请在 options 中列出",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "paragraph_idx": {
+                    "type": "integer",
+                    "description": "目标段落的整数索引号（必须精确填入上下文 [选中正文（第 X 段）] 中给出的段落序号 X）"
+                },
+                "original_text": {
+                    "type": "string",
+                    "description": "准备修改的原文本（若作者框选了局部节选，填入作者框选的节选原文）"
+                },
+                "replacement_text": {
+                    "type": "string",
+                    "description": "默认方案或首选方案的修改文本"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "默认方案的修改说明/简评"
+                },
+                "options": {
+                    "type": "array",
+                    "description": "可选：当有多个不同风格/语气的改写方案时列出所有方案",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {
+                                "type": "string",
+                                "description": "方案名称/标签，如 '方案一：节奏紧凑' 或 '方案二：画面感强'"
+                            },
+                            "replacement_text": {
+                                "type": "string",
+                                "description": "该方案改写后的新文本"
+                            },
+                            "note": {
+                                "type": "string",
+                                "description": "该方案的修改特点/理由说明"
+                            }
+                        },
+                        "required": ["replacement_text"]
+                    }
+                }
+            },
+            "required": ["paragraph_idx", "original_text"]
+        }
+    }
+}
+
+
 async def stream_chat(
     project_id: str,
     model_id: str,
@@ -124,19 +184,33 @@ async def stream_chat(
     context_info: dict | None = None,
     current_para_idx: int | None = None,
 ) -> AsyncIterator[dict]:
-    """生成流式对话事件生成器 (yield thinking, delta, done, error)。"""
+    """生成流式对话事件生成器 (yield thinking, delta, tool_call, done, error)。"""
     system_prompt = build_chat_system_prompt(project_id, current_para_idx)
 
     messages = []
     messages.append({"role": "system", "content": system_prompt})
 
-    # 追加历史消息 (只保留最近 20 条，避免上下文膨胀)
+    # 追加历史消息 (严格兼容 tool_calls 与 role=tool 协议)
     if history_messages:
         for msg in history_messages[-20:]:
             role = msg.get("role", "user")
             content = msg.get("content", "")
-            if role in ("user", "assistant") and content:
-                messages.append({"role": role, "content": content})
+            ctx = msg.get("context") or {}
+
+            if role == "tool":
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": ctx.get("tool_call_id") or msg.get("tool_call_id", ""),
+                    "content": content or '{"status": "ok"}'
+                })
+            elif role == "assistant":
+                m_obj = {"role": "assistant", "content": content or ""}
+                if ctx.get("tool_calls"):
+                    m_obj["tool_calls"] = ctx["tool_calls"]
+                messages.append(m_obj)
+            elif role == "user":
+                if content:
+                    messages.append({"role": "user", "content": content})
 
     # 当前用户消息 + 上下文窗口引用
     user_content_parts = []
@@ -148,5 +222,10 @@ async def stream_chat(
     full_user_content = "\n\n".join(user_content_parts)
     messages.append({"role": "user", "content": full_user_content})
 
-    async for event in stream_llm(messages=messages, model_id=model_id, tag="chat"):
+    async for event in stream_llm(
+        messages=messages,
+        model_id=model_id,
+        tag="chat",
+        tools=[PROPOSE_PARAGRAPH_EDIT_TOOL]
+    ):
         yield event

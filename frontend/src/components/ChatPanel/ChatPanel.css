@@ -8,7 +8,6 @@
   flex-direction: column;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.04);
   z-index: 100;
-  user-select: none;
 }
 
 .chat-panel-header {
@@ -54,7 +53,7 @@
   max-width: 85%;
 }
 
-/* 消息列表背景设为纯白 #ffffff */
+/* 消息列表背景设为纯白 #ffffff，全量允许文本框选与复制 */
 .chat-messages-container {
   flex: 1;
   overflow-y: auto;
@@ -63,6 +62,18 @@
   flex-direction: column;
   gap: 16px;
   background: #ffffff;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.chat-messages-container .ant-bubble-content,
+.chat-messages-container .react-markdown-body,
+.chat-messages-container p,
+.chat-messages-container code,
+.chat-messages-container span,
+.chat-messages-container div {
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 /* 调整 ant-bubble 容器宽度：最大 100% 充分利用空间，最小 48px，干掉 ant-bubble-start 右侧默认 padding */
@@ -89,10 +100,18 @@
   min-width: 48px;
 }
 
-/* 清理 ReactMarkdown 内部 <p> 标签浏览器默认 21px 巨大边距撑开 */
+/* 清理 ReactMarkdown 内部 <p> 标签浏览器默认边距撑开 */
 .chat-messages-container .react-markdown-body p {
   margin-top: 0 !important;
   margin-bottom: 6px !important;
+}
+.chat-messages-container .react-markdown-body p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* 强制消除 ant-bubble-footer 默认 16px 巨大间距，精确保持 2px 贴合 */
+.chat-messages-container .ant-bubble-footer {
+  margin-top: 2px !important;
 }
 
 .chat-messages-container .react-markdown-body p:last-child {

@@ -17,6 +17,7 @@ export async function streamChatAdapter({
 }) {
   let content = ''
   let thinking = ''
+  let toolCallArgs = ''
 
   try {
     const response = await fetch(getChatStreamUrl(projectId), {
@@ -61,6 +62,24 @@ export async function streamChatAdapter({
             } else if (event.type === 'delta' && event.text) {
               content += event.text
               onUpdate?.({ content, thinking, isThinking: false })
+            } else if (event.type === 'tool_call') {
+              if (event.arguments) {
+                toolCallArgs += event.arguments
+                try {
+                  const cardData = JSON.parse(toolCallArgs)
+                  onUpdate?.({
+                    content,
+                    thinking,
+                    isThinking: false,
+                    toolCallData: {
+                      original: cardData.original_text || cardData.original,
+                      replacement: cardData.replacement_text || cardData.replacement,
+                      note: cardData.note,
+                      paragraph_idx: cardData.paragraph_idx,
+                    },
+                  })
+                } catch (e) {}
+              }
             } else if (event.type === 'done') {
               content = content || event.response || ''
               onSuccess?.({
@@ -68,6 +87,7 @@ export async function streamChatAdapter({
                 thinking,
                 messageId: event.message_id,
                 sessionId: event.session_id,
+                replacementCard: event.replacement_card,
               })
             } else if (event.type === 'error') {
               onError?.(new Error(event.error || '大模型生成出错'))

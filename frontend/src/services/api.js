@@ -317,6 +317,11 @@ export async function listChatMessages(projectId, sessionId) {
   return data
 }
 
+export async function updateCardStatus(projectId, messageId, status) {
+  const { data } = await api.patch(`/projects/${projectId}/chat/messages/${messageId}/card_status`, { status })
+  return data
+}
+
 export function getChatStreamUrl(projectId) {
   return `${API_BASE}/projects/${projectId}/chat/stream`
 }

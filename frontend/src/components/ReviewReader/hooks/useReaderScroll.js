@@ -21,7 +21,7 @@ export function useReaderScroll({
     setFlashingParaIdx(targetIdx)
     flashTimerRef.current = setTimeout(() => {
       setFlashingParaIdx(null)
-    }, 1500)
+    }, 500)
   }, [])
 
   const jumpToParagraphExact = useCallback((targetIdx, offset = 0, enableFlash = false) => {

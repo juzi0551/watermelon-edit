@@ -91,6 +91,20 @@ async def api_list_chat_messages(project_id: str, session_id: str):
     return list_chat_messages(session_id)
 
 
+class UpdateCardStatusReq(BaseModel):
+    status: str  # "accepted" | "rejected"
+
+
+@router.patch("/projects/{project_id}/chat/messages/{message_id}/card_status")
+async def api_update_card_status(project_id: str, message_id: str, req: UpdateCardStatusReq):
+    """更新替换卡片的交互状态（已采纳 / 已拒绝），实现持久化与 F5 刷新保存。"""
+    from app.core.database import update_chat_message_card_status
+    res = update_chat_message_card_status(message_id, req.status)
+    if not res:
+        raise HTTPException(status_code=404, detail="消息不存在")
+    return res
+
+
 @router.post("/projects/{project_id}/chat/stream")
 async def api_chat_stream(project_id: str, req: ChatStreamReq):
     """POST /projects/{project_id}/chat/stream SSE 流式对话接口（支持持久化与多轮上下文）。"""
@@ -140,6 +154,13 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                 para_end_idx=req.context.paragraph_end_idx,
                 context_chars=context_chars,
             )
+            if isinstance(context_info, dict):
+                if getattr(req.context, "is_excerpt", None) is not None:
+                    context_info["is_excerpt"] = req.context.is_excerpt
+                if getattr(req.context, "formatted_excerpt", None):
+                    context_info["formatted_excerpt"] = req.context.formatted_excerpt
+                if getattr(req.context, "paragraph_uuid", None):
+                    context_info["paragraph_uuid"] = req.context.paragraph_uuid
         except Exception as e:
             logger.warning(f"构建对话上下文失败: {e}")
 
@@ -157,6 +178,8 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
     async def event_generator():
         assistant_full_response = []
         assistant_thinking_response = []
+        tool_call_accumulators = {}
+
         try:
             stream_gen = stream_chat(
                 project_id=project_id,
@@ -178,19 +201,74 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                             assistant_thinking_response.append(event["text"])
                         elif event["type"] == "delta" and event.get("text"):
                             assistant_full_response.append(event["text"])
+                        elif event["type"] == "tool_call":
+                            tc_id = event.get("id") or "call_default"
+                            if tc_id not in tool_call_accumulators:
+                                tool_call_accumulators[tc_id] = {
+                                    "id": tc_id,
+                                    "name": event.get("function_name") or "propose_paragraph_edit",
+                                    "args": ""
+                                }
+                            if event.get("arguments"):
+                                tool_call_accumulators[tc_id]["args"] += event["arguments"]
                         elif event["type"] == "done":
                             full_content = "".join(assistant_full_response) or event.get("response", "")
                             full_thinking = "".join(assistant_thinking_response) or event.get("thinking", "")
-                            msg_context = {"thinking": full_thinking} if full_thinking else None
+
+                            formatted_tool_calls = []
+                            replacement_card = None
+                            for tc_id, tc_info in tool_call_accumulators.items():
+                                formatted_tool_calls.append({
+                                    "id": tc_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_info["name"],
+                                        "arguments": tc_info["args"]
+                                    }
+                                })
+                                try:
+                                    parsed_args = json.loads(tc_info["args"])
+                                    p_idx = parsed_args.get("paragraph_idx") or parsed_args.get("paragraphIdx")
+                                    if current_para_idx is not None:
+                                        p_idx = current_para_idx
+                                    replacement_card = {
+                                        "original": parsed_args.get("original_text") or parsed_args.get("original") or "",
+                                        "replacement": parsed_args.get("replacement_text") or parsed_args.get("replacement") or "",
+                                        "note": parsed_args.get("note") or "",
+                                        "options": parsed_args.get("options") or [],
+                                        "paragraph_idx": p_idx,
+                                    }
+                                except Exception:
+                                    pass
+
+                            msg_context = {}
+                            if full_thinking:
+                                msg_context["thinking"] = full_thinking
+                            if formatted_tool_calls:
+                                msg_context["tool_calls"] = formatted_tool_calls
+                            if replacement_card:
+                                msg_context["replacement_card"] = replacement_card
 
                             saved_msg = insert_chat_message(
                                 session_id=session_id,
                                 role="assistant",
                                 content=full_content,
-                                context=msg_context
+                                context=msg_context if msg_context else None
                             )
+
+                            # 如果产生了 tool_calls，自动补齐对应的 role: "tool" 消息记录维持多轮合法性
+                            for tc_id, tc_info in tool_call_accumulators.items():
+                                insert_chat_message(
+                                    session_id=session_id,
+                                    role="tool",
+                                    content=json.dumps({"status": "pending_user_action"}, ensure_ascii=False),
+                                    context={"tool_call_id": tc_id}
+                                )
+
                             event["session_id"] = session_id
                             event["message_id"] = saved_msg["id"]
+                            if replacement_card:
+                                event["replacement_card"] = replacement_card
 
                             if session.get("title") == "新对话":
                                 new_title = req.message[:20].strip()

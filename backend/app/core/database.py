@@ -824,11 +824,14 @@ def parse_notes_history(raw_note_str: str | None) -> list[dict]:
                 return res
     except Exception:
         pass
-    return [{"id": "legacy_1", "note": raw_note_str, "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")}]
+    return [{"id": "legacy_1", "note": raw_note_str, "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}]
 
 
 def update_paragraph_text(document_id: str, idx: int, new_text: str, edit_note: str | None = None):
     """更新段落文本（写入 revised_text）及多轮编辑备注履历，重算字符数，并自动归档受影响废弃错字。"""
+    if new_text is None:
+        new_text = ""
+
     with get_conn() as conn:
         row = conn.execute(
             "SELECT text, revised_text, edit_note FROM paragraphs WHERE document_id = ? AND idx = ?",
@@ -842,13 +845,16 @@ def update_paragraph_text(document_id: str, idx: int, new_text: str, edit_note: 
         if row and (not orig_text) and (not revised_text):
             note_str = edit_note.strip() if (edit_note and isinstance(edit_note, str) and edit_note.strip()) else ""
             if note_str:
-                new_note_item = {
-                    "id": generate_id(),
-                    "note": note_str,
-                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "revised_text": new_text,
-                }
-                note_val = json.dumps([new_note_item], ensure_ascii=False)
+                if note_str.startswith("["):
+                    note_val = note_str
+                else:
+                    new_note_item = {
+                        "id": generate_id(),
+                        "note": note_str,
+                        "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "revised_text": new_text,
+                    }
+                    note_val = json.dumps([new_note_item], ensure_ascii=False)
             else:
                 note_val = None
             conn.execute(
@@ -867,16 +873,21 @@ def update_paragraph_text(document_id: str, idx: int, new_text: str, edit_note: 
             )
         else:
             revised_val = new_text
-            notes_list = parse_notes_history(existing_raw_note)
             note_str = edit_note.strip() if (edit_note and isinstance(edit_note, str) and edit_note.strip()) else ""
-            new_note_item = {
-                "id": generate_id(),
-                "note": note_str,
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "revised_text": new_text,
-            }
-            notes_list.append(new_note_item)
-            note_val = json.dumps(notes_list, ensure_ascii=False) if notes_list else None
+            if note_str.startswith("["):
+                note_val = note_str
+            elif note_str:
+                notes_list = parse_notes_history(existing_raw_note)
+                new_note_item = {
+                    "id": generate_id(),
+                    "note": note_str,
+                    "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "revised_text": new_text,
+                }
+                notes_list.append(new_note_item)
+                note_val = json.dumps(notes_list, ensure_ascii=False)
+            else:
+                note_val = existing_raw_note
 
             conn.execute(
                 """UPDATE paragraphs 
@@ -1826,21 +1837,26 @@ def delete_errors_by_indices(document_id: str, indices: list[int], source: str =
 def mark_unmatched_errors_obsolete(document_id: str, paragraph_index: int, new_text: str, paragraph_uuid: str | None = None):
     """当段落文本发生人工修改或采纳修改后，检查该段落中原错字在 new_text 中已不存在的待处理错误，
        自动将其软标记为 is_obsolete = 1（历史作废）。"""
-    with get_conn() as conn:
-        if paragraph_uuid:
-            rows = conn.execute(
-                "SELECT id, original_text FROM errors WHERE document_id = ? AND paragraph_uuid = ? AND user_status = 'pending' AND (is_obsolete IS NULL OR is_obsolete = 0)",
-                (document_id, paragraph_uuid),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT id, original_text FROM errors WHERE document_id = ? AND paragraph_index = ? AND user_status = 'pending' AND (is_obsolete IS NULL OR is_obsolete = 0)",
-                (document_id, paragraph_index),
-            ).fetchall()
-        for r in rows:
-            orig = r["original_text"]
-            if orig and orig not in new_text:
-                conn.execute("UPDATE errors SET is_obsolete = 1 WHERE id = ?", (r["id"],))
+    if new_text is None or not isinstance(new_text, str):
+        return
+    try:
+        with get_conn() as conn:
+            if paragraph_uuid:
+                rows = conn.execute(
+                    "SELECT id, original_text FROM errors WHERE document_id = ? AND paragraph_uuid = ? AND user_status = 'pending' AND (is_obsolete IS NULL OR is_obsolete = 0)",
+                    (document_id, paragraph_uuid),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, original_text FROM errors WHERE document_id = ? AND paragraph_index = ? AND user_status = 'pending' AND (is_obsolete IS NULL OR is_obsolete = 0)",
+                    (document_id, paragraph_index),
+                ).fetchall()
+            for r in rows:
+                orig = r["original_text"]
+                if orig and orig not in new_text:
+                    conn.execute("UPDATE errors SET is_obsolete = 1 WHERE id = ?", (r["id"],))
+    except Exception as e:
+        logger.error(f"mark_unmatched_errors_obsolete 异化容错处理跳过: {e}")
 
 
 def delete_all_errors(document_id: str):
@@ -2631,6 +2647,26 @@ def list_chat_messages(session_id: str) -> list[dict]:
                     pass
             result.append(d)
         return result
+
+
+def update_chat_message_card_status(message_id: str, status: str) -> dict | None:
+    """更新消息 context 中 replacement_card 的交互状态 ('accepted' | 'rejected')"""
+    with get_conn() as conn:
+        row = conn.execute("SELECT context FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        if not row:
+            return None
+        ctx_raw = row["context"]
+        try:
+            ctx = json.loads(ctx_raw) if ctx_raw else {}
+        except Exception:
+            ctx = {}
+        if "replacement_card" in ctx and isinstance(ctx["replacement_card"], dict):
+            ctx["replacement_card"]["status"] = status
+        else:
+            ctx["replacement_card"] = {"status": status}
+        ctx_str = json.dumps(ctx, ensure_ascii=False)
+        conn.execute("UPDATE chat_messages SET context = ? WHERE id = ?", (ctx_str, message_id))
+        return {"status": "ok", "message_id": message_id, "card_status": status}
 
 
 # 启动时初始化表 + 设置缓存
