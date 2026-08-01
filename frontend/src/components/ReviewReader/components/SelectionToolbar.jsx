@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Button, Space, Tooltip } from 'antd'
 import { RocketOutlined, BulbOutlined, MessageOutlined } from '@ant-design/icons'
 
-export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelectionChange }) {
+export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelectionChange, tbFontSize = 14 }) {
   const [visible, setVisible] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const [selectionData, setSelectionData] = useState(null)
@@ -80,10 +80,17 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
     const endIdx = Math.max(startPara.idx, endPara.idx)
     const paraUuid = startPara.idx <= endPara.idx ? startPara.uuid : endPara.uuid
 
+    // 禁用跨段落框选：若选区跨越多个段落，不弹出划词工具条
+    if (startIdx !== endIdx) {
+      setVisible(false)
+      setSelectionData(null)
+      return
+    }
+
     // 智能切片判断与前后省略号格式化
     const targetPara = (paras || []).find((p) => p.idx === startIdx || String(p.uuid) === String(paraUuid))
     const fullText = (targetPara?.revised_text || targetPara?.text || '').trim()
-    const isExcerpt = Boolean(startIdx === endIdx && fullText && text !== fullText)
+    const isExcerpt = Boolean(fullText && text !== fullText)
 
     let formattedExcerpt = text
     if (isExcerpt && fullText) {
@@ -99,42 +106,41 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
     if (!containerRef?.current) return
 
     const containerRect = containerRef.current.getBoundingClientRect()
+    const relativeTop = rect.top - containerRect.top + containerRef.current.scrollTop - 44
+    const relativeLeft = rect.left - containerRect.left + (rect.width / 2)
 
-    // 浮条放置在选区正上方
-    const top = rect.top - containerRect.top - 46
-    const left = rect.left - containerRect.left + rect.width / 2
+    setPosition({
+      top: Math.max(10, relativeTop),
+      left: Math.max(100, Math.min(containerRect.width - 100, relativeLeft)),
+    })
 
-    setPosition({ top: Math.max(8, top), left })
     setSelectionData({
       selectedText: text,
-      formattedExcerpt,
       isExcerpt,
-      fullText,
+      formattedExcerpt,
       paragraphIdx: startIdx,
-      paragraphEndIdx: startIdx !== endIdx ? endIdx : undefined,
+      paragraphEndIdx: endIdx > startIdx ? endIdx : undefined,
       paragraphUuid: paraUuid,
+      fullText,
     })
+
     setVisible(true)
-  }, [containerRef, parseParaElement])
+  }, [containerRef, paras, parseParaElement])
 
   useEffect(() => {
     const handleMouseUp = () => {
       setTimeout(updateSelectionState, 20)
     }
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        setVisible(false)
-        setSelectionData(null)
-      }
+    const handleKeyUp = () => {
+      setTimeout(updateSelectionState, 20)
     }
 
     document.addEventListener('mouseup', handleMouseUp)
-    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('keyup', handleKeyUp)
 
     return () => {
       document.removeEventListener('mouseup', handleMouseUp)
-      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('keyup', handleKeyUp)
     }
   }, [updateSelectionState])
 
@@ -179,6 +185,9 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
     setSelectionData(null)
   }
 
+  const btnHeight = Math.max(28, tbFontSize + 14)
+  const iconFontSize = tbFontSize + 2
+
   return (
     <div
       ref={toolbarRef}
@@ -191,8 +200,8 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
         background: 'rgba(255, 255, 255, 0.92)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
-        padding: '4px 8px',
-        borderRadius: 20,
+        padding: '4px 10px',
+        borderRadius: 24,
         border: '1px solid rgba(217, 217, 217, 0.8)',
         boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
         display: 'flex',
@@ -202,14 +211,14 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
       }}
       onMouseDown={(e) => e.preventDefault()}
     >
-      <Space size={2}>
+      <Space size={4}>
         <Tooltip title="针对选中文字发起 AI 润色建议">
           <Button
             type="text"
             size="small"
-            icon={<RocketOutlined style={{ color: '#7c3aed' }} />}
+            icon={<RocketOutlined style={{ color: '#7c3aed', fontSize: iconFontSize }} />}
             onClick={() => handleAction('polish')}
-            style={{ fontSize: 12, fontWeight: 500 }}
+            style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
           >
             润色
           </Button>
@@ -219,9 +228,9 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
           <Button
             type="text"
             size="small"
-            icon={<BulbOutlined style={{ color: '#d97706' }} />}
+            icon={<BulbOutlined style={{ color: '#d97706', fontSize: iconFontSize }} />}
             onClick={() => handleAction('advice')}
-            style={{ fontSize: 12, fontWeight: 500 }}
+            style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
           >
             提意见
           </Button>
@@ -231,9 +240,9 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
           <Button
             type="text"
             size="small"
-            icon={<MessageOutlined style={{ color: '#2563eb' }} />}
+            icon={<MessageOutlined style={{ color: '#2563eb', fontSize: iconFontSize }} />}
             onClick={() => handleAction('ask')}
-            style={{ fontSize: 12, fontWeight: 500 }}
+            style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
           >
             问 AI
           </Button>

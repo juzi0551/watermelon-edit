@@ -63,7 +63,7 @@ export function useReaderLogic({
   // 3. 计算派生属性
   const effectiveFontSizeOffset = propFontSizeOffset !== undefined ? propFontSizeOffset : localFontSizeOffset
   const currentBodyFontSize = fontSize.body + effectiveFontSizeOffset
-  const tbFontSize = Math.min(Math.max(Math.round(12 * (currentBodyFontSize / fontSize.body)), 12), 18)
+  const tbFontSize = Math.min(Math.max(Math.round(currentBodyFontSize * 0.85), 14), 22)
 
   const errors = results?.errors || []
   const paras = results?.paragraphs || []

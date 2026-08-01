@@ -192,6 +192,7 @@ export function ReviewReaderInner({
             paras={logic.sortedParas}
             onAskAssistant={onAskAssistant}
             onSelectionChange={logic.handleSelectionChange}
+            tbFontSize={logic.tbFontSize}
           />
 
           <ActionBar
