@@ -178,7 +178,6 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
     async def event_generator():
         assistant_full_response = []
         assistant_thinking_response = []
-        tool_call_accumulators = {}
 
         try:
             stream_gen = stream_chat(
@@ -188,6 +187,7 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                 history_messages=history_msgs[:-1],
                 context_info=context_info,
                 current_para_idx=current_para_idx,
+                session_id=session_id,
             ).__aiter__()
 
             next_task = asyncio.create_task(stream_gen.__anext__())
@@ -201,33 +201,17 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                             assistant_thinking_response.append(event["text"])
                         elif event["type"] == "delta" and event.get("text"):
                             assistant_full_response.append(event["text"])
-                        elif event["type"] == "tool_call":
-                            tc_id = event.get("id") or "call_default"
-                            if tc_id not in tool_call_accumulators:
-                                tool_call_accumulators[tc_id] = {
-                                    "id": tc_id,
-                                    "name": event.get("function_name") or "propose_paragraph_edit",
-                                    "args": ""
-                                }
-                            if event.get("arguments"):
-                                tool_call_accumulators[tc_id]["args"] += event["arguments"]
                         elif event["type"] == "done":
                             full_content = "".join(assistant_full_response) or event.get("response", "")
                             full_thinking = "".join(assistant_thinking_response) or event.get("thinking", "")
 
-                            formatted_tool_calls = []
+                            formatted_tool_calls = event.get("tool_calls") or []
                             replacement_card = None
-                            for tc_id, tc_info in tool_call_accumulators.items():
-                                formatted_tool_calls.append({
-                                    "id": tc_id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc_info["name"],
-                                        "arguments": tc_info["args"]
-                                    }
-                                })
+                            for tc in formatted_tool_calls:
+                                fn = tc.get("function") or {}
+                                args_str = fn.get("arguments") or ""
                                 try:
-                                    parsed_args = json.loads(tc_info["args"])
+                                    parsed_args = json.loads(args_str)
                                     p_idx = parsed_args.get("paragraph_idx") or parsed_args.get("paragraphIdx")
                                     if current_para_idx is not None:
                                         p_idx = current_para_idx
@@ -257,7 +241,8 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                             )
 
                             # 如果产生了 tool_calls，自动补齐对应的 role: "tool" 消息记录维持多轮合法性
-                            for tc_id, tc_info in tool_call_accumulators.items():
+                            for tc in formatted_tool_calls:
+                                tc_id = tc.get("id") or "call_default"
                                 insert_chat_message(
                                     session_id=session_id,
                                     role="tool",

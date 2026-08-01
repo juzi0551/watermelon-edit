@@ -1,7 +1,9 @@
 import json
+import time
+import uuid
 import logging
 from typing import AsyncIterator
-from app.core.database import get_setting, get_paragraphs_in_range
+from app.core.database import get_setting, get_paragraphs_in_range, insert_llm_log
 from app.core.context import build_project_context_parts
 from app.core.llm import stream_llm
 
@@ -41,81 +43,80 @@ def build_chat_context(
     para_idx: int,
     selected_text: str,
     para_end_idx: int | None = None,
-    context_chars: int = 100
+    context_chars: int = 200
 ) -> dict:
-    """按选中段落/跨段与选中文本，获取上下文扩展窗口（前后各 context_chars 字）。
-    使用双轨文本 (revised_text or text) 保证与阅读器界面一致。
+    """以划选的具体文字片段为绝对中心点，向左/向右连续拼接 200 个字符（约 100 个汉字）。
+    精准包含同段内划选文字之前与之后的文本，并向外顺延跨段。
     """
     if para_end_idx is None or para_end_idx < para_idx:
         end_idx = para_idx + 1
     else:
         end_idx = para_end_idx + 1
 
-    # 获取包含前后扩充范围的段落列表
-    fetch_start = max(0, para_idx - 10)
-    fetch_end = end_idx + 10
-    all_paras = get_paragraphs_in_range(document_id, fetch_start, fetch_end)
+    # 获取目标核心段落文本 (单段或跨段)
+    core_paras = get_paragraphs_in_range(document_id, para_idx, end_idx)
+    core_paras_sorted = sorted(core_paras, key=lambda x: x["idx"])
+    core_full_text = "\n".join(
+        (p.get("revised_text") or p.get("text") or "").strip() for p in core_paras_sorted
+    ).strip()
 
-    para_map = {p["idx"]: (p.get("revised_text") or p.get("text") or "") for p in all_paras}
+    target_text = (selected_text or core_full_text).strip()
 
-    # 目标核心文本 (单段或跨段)
-    core_text_parts = []
-    for idx in range(para_idx, end_idx):
-        if idx in para_map:
-            core_text_parts.append(para_map[idx])
-    core_full_text = "\n".join(core_text_parts)
+    # 1. 计算划选片段在所属段落中的相对位置，提取同段内的前后文字
+    same_para_before = ""
+    same_para_after = ""
 
-    # 向上寻找 context_chars 个字符的前文
-    before_chars = []
-    before_len = 0
-    curr_idx = para_idx - 1
-    while curr_idx >= fetch_start and before_len < context_chars:
-        text = para_map.get(curr_idx, "")
-        if text:
-            needed = context_chars - before_len
-            if len(text) <= needed:
-                before_chars.insert(0, text)
-                before_len += len(text)
-            else:
-                before_chars.insert(0, text[-needed:])
-                before_len += needed
-        curr_idx -= 1
+    if selected_text and core_full_text and target_text != core_full_text:
+        sub_idx = core_full_text.find(target_text)
+        if sub_idx != -1:
+            same_para_before = core_full_text[:sub_idx]
+            same_para_after = core_full_text[sub_idx + len(target_text):]
 
-    # 向下寻找 context_chars 个字符的后文
-    after_chars = []
-    after_len = 0
-    curr_idx = end_idx
-    while curr_idx < fetch_end and after_len < context_chars:
-        text = para_map.get(curr_idx, "")
-        if text:
-            needed = context_chars - after_len
-            if len(text) <= needed:
-                after_chars.append(text)
-                after_len += len(text)
-            else:
-                after_chars.append(text[:needed])
-                after_len += needed
-        curr_idx += 1
+    # 2. 拼接划选点之前的全量前文 (前段文字 + 同段内划选点之前的文字)
+    before_paras = get_paragraphs_in_range(document_id, 0, para_idx)
+    before_paras_sorted = sorted([p for p in before_paras if p["idx"] < para_idx], key=lambda x: x["idx"])
+    preceding_text = "\n".join(
+        (p.get("revised_text") or p.get("text") or "").strip() for p in before_paras_sorted
+    ).strip()
 
-    before_str = "".join(before_chars)
-    after_str = "".join(after_chars)
+    if preceding_text and same_para_before:
+        full_before = preceding_text + "\n" + same_para_before
+    else:
+        full_before = preceding_text or same_para_before
+
+    has_leading_dots = len(full_before) > context_chars
+    before_str = full_before[-context_chars:] if has_leading_dots else full_before
+
+    # 3. 拼接划选点之后的全量后文 (同段内划选点之后的文字 + 后段文字)
+    after_paras = get_paragraphs_in_range(document_id, end_idx, end_idx + 50)
+    after_paras_sorted = sorted([p for p in after_paras if p["idx"] >= end_idx], key=lambda x: x["idx"])
+    following_text = "\n".join(
+        (p.get("revised_text") or p.get("text") or "").strip() for p in after_paras_sorted
+    ).strip()
+
+    if same_para_after and following_text:
+        full_after = same_para_after + "\n" + following_text
+    else:
+        full_after = same_para_after or following_text
+
+    has_trailing_dots = len(full_after) > context_chars
+    after_str = full_after[:context_chars] if has_trailing_dots else full_after
 
     formatted_context_parts = []
     if before_str:
-        formatted_context_parts.append(f"[前文语境]\n...{before_str}")
+        formatted_context_parts.append(f"[前文语境]\n{('...' if has_leading_dots else '')}{before_str}")
 
-    is_sub_selection = bool(selected_text and core_full_text and selected_text.strip() != core_full_text.strip())
+    is_sub_selection = bool(selected_text and core_full_text and target_text != core_full_text)
     if is_sub_selection:
-        formatted_context_parts.append(f"[选中正文局部节选（第 {para_idx} 段）]\n{selected_text}")
-        formatted_context_parts.append(f"[所属完整段落正文（第 {para_idx} 段）]\n{core_full_text}")
+        formatted_context_parts.append(f"[选中正文局部节选（第 {para_idx} 段）]\n{target_text}")
     else:
-        formatted_context_parts.append(f"[选中正文（第 {para_idx} 段" + (f" ~ {end_idx - 1} 段" if end_idx > para_idx + 1 else "") + f"）]\n{selected_text or core_full_text}")
+        formatted_context_parts.append(f"[选中正文（第 {para_idx} 段" + (f" ~ {end_idx - 1} 段" if end_idx > para_idx + 1 else "") + f"）]\n{target_text}")
 
     if after_str:
-        formatted_context_parts.append(f"[后文语境]\n{after_str}...")
+        formatted_context_parts.append(f"[后文语境]\n{after_str}{('...' if has_trailing_dots else '')}")
 
     return {
-        "selected_text": selected_text or core_full_text,
+        "selected_text": target_text,
         "para_idx": para_idx,
         "para_end_idx": para_end_idx,
         "before_window": before_str,
@@ -210,6 +211,7 @@ async def stream_chat(
     history_messages: list[dict] | None = None,
     context_info: dict | None = None,
     current_para_idx: int | None = None,
+    session_id: str | None = None,
 ) -> AsyncIterator[dict]:
     """生成流式对话事件生成器 (yield thinking, delta, tool_call, done, error)。"""
     system_prompt = build_chat_system_prompt(project_id, current_para_idx)
@@ -250,10 +252,41 @@ async def stream_chat(
     full_user_content = "\n\n".join(user_content_parts)
     messages.append({"role": "user", "content": full_user_content})
 
+    t0 = time.time()
+
     async for event in stream_llm(
         messages=messages,
         model_id=model_id,
         tag="chat",
-        tools=[PROPOSE_PARAGRAPH_EDIT_TOOL]
+        tools=[PROPOSE_PARAGRAPH_EDIT_TOOL],
+        project_id=project_id,
+        session_id=session_id,
     ):
+        if event.get("type") in ("done", "error"):
+            try:
+                usage = event.get("usage") or {}
+                tc_list = event.get("tool_calls")
+                duration_ms = int((time.time() - t0) * 1000)
+                insert_llm_log(
+                    id=f"log_{uuid.uuid4().hex[:12]}",
+                    project_id=project_id,
+                    session_id=session_id,
+                    model=model_id,
+                    mode="chat",
+                    prompt=full_user_content,
+                    system_prompt=system_prompt,
+                    status="ok" if event.get("type") == "done" else "error",
+                    duration_ms=duration_ms,
+                    error_message=event.get("error"),
+                    response_raw=event.get("response"),
+                    thinking=event.get("thinking"),
+                    messages=json.dumps(messages, ensure_ascii=False) if messages else None,
+                    tool_calls=json.dumps(tc_list, ensure_ascii=False) if tc_list else None,
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=usage.get("completion_tokens"),
+                    total_tokens=usage.get("total_tokens"),
+                    cost=usage.get("cost"),
+                )
+            except Exception as log_err:
+                logger.error("Failed to insert chat llm log: %s", log_err, exc_info=True)
         yield event

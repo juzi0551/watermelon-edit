@@ -52,7 +52,7 @@ export async function getLLMLogs(projectId, limit = 50, offset = 0) {
   const params = { limit, offset }
   if (projectId) params.project_id = projectId
   const { data } = await api.get('/debug/llm-logs', { params })
-  return data.logs
+  return { logs: data.logs || [], total: data.total || 0 }
 }
 
 // ==================== Debug (大模型调用日志) ====================
@@ -60,6 +60,11 @@ export async function getLLMLogs(projectId, limit = 50, offset = 0) {
 export async function getLLMLog() {
   const { data } = await api.get('/debug/llm-calls')
   return data.calls
+}
+
+export async function clearLLMLogs(projectId) {
+  const { data } = await api.delete('/debug/llm-logs', { params: { project_id: projectId } })
+  return data
 }
 
 // ==================== Settings (System Prompts) ====================

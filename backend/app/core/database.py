@@ -214,6 +214,11 @@ def _migrate_schema(conn):
         "completion_tokens INTEGER",
         "total_tokens INTEGER",
         "cost REAL",
+        "session_id TEXT",
+        "thinking TEXT",
+        "messages TEXT",
+        "tool_calls TEXT",
+        "tool_results TEXT",
     ):
         try:
             conn.execute(f"ALTER TABLE llm_logs ADD COLUMN {col}")
@@ -2013,17 +2018,31 @@ def get_all_settings() -> dict:
 
 
 def insert_llm_log(
-    id: str, project_id: str, doc_id: str,
-    model: str, mode: str,
-    range_start: int, range_end: int,
-    prompt: str, system_prompt: str, selected_types: str,
-    status: str, duration_ms: int, error_message: str | None,
-    response_raw: str | None,
-    errors_found: int, chapters_found: int,
+    id: str,
+    project_id: str | None = None,
+    doc_id: str | None = None,
+    model: str = "",
+    mode: str = "",
+    range_start: int = 0,
+    range_end: int = 0,
+    prompt: str = "",
+    system_prompt: str = "",
+    selected_types: str = "",
+    status: str = "ok",
+    duration_ms: int = 0,
+    error_message: str | None = None,
+    response_raw: str | None = None,
+    errors_found: int = 0,
+    chapters_found: int = 0,
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     total_tokens: int | None = None,
     cost: float | None = None,
+    session_id: str | None = None,
+    thinking: str | None = None,
+    messages: str | None = None,
+    tool_calls: str | None = None,
+    tool_results: str | None = None,
 ):
     """写入一条 LLM 调用日志到持久表。"""
     with get_conn() as conn:
@@ -2033,14 +2052,25 @@ def insert_llm_log(
                 range_start, range_end, prompt, system_prompt,
                 selected_types, status, duration_ms, error_message,
                 response_raw, errors_found, chapters_found,
-                prompt_tokens, completion_tokens, total_tokens, cost)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                prompt_tokens, completion_tokens, total_tokens, cost,
+                session_id, thinking, messages, tool_calls, tool_results)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (id, project_id, doc_id, model, mode,
              range_start, range_end, prompt, system_prompt,
              selected_types, status, duration_ms, error_message,
              response_raw, errors_found, chapters_found,
-             prompt_tokens, completion_tokens, total_tokens, cost),
+             prompt_tokens, completion_tokens, total_tokens, cost,
+             session_id, thinking, messages, tool_calls, tool_results),
         )
+
+
+def clear_llm_logs(project_id: str | None = None):
+    """清空持久化 LLM 调用日志。"""
+    with get_conn() as conn:
+        if project_id:
+            conn.execute("DELETE FROM llm_logs WHERE project_id = ?", (project_id,))
+        else:
+            conn.execute("DELETE FROM llm_logs")
 
 
 def list_llm_logs(project_id: str | None, limit: int = 50, offset: int = 0) -> list[dict]:
@@ -2057,6 +2087,16 @@ def list_llm_logs(project_id: str | None, limit: int = 50, offset: int = 0) -> l
                 (limit, offset),
             ).fetchall()
         return [dict(r) for r in rows]
+
+
+def count_llm_logs(project_id: str | None = None) -> int:
+    """获取 LLM 调用日志总条数。"""
+    with get_conn() as conn:
+        if project_id:
+            row = conn.execute("SELECT COUNT(*) as cnt FROM llm_logs WHERE project_id=?", (project_id,)).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) as cnt FROM llm_logs").fetchone()
+        return row["cnt"] if row else 0
 
 
 # ==================== Batch（批量并行校对） ====================

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from app.core.llm import LLM_CALL_LOG
-from app.core.database import list_llm_logs
+from app.core.database import list_llm_logs, count_llm_logs, clear_llm_logs
 
 router = APIRouter()
 
@@ -19,4 +19,12 @@ async def llm_logs(
 ):
     """分页查询持久化的 LLM 调用日志。"""
     rows = list_llm_logs(project_id, limit=limit, offset=offset)
-    return {"logs": rows}
+    total = count_llm_logs(project_id)
+    return {"logs": rows, "total": total}
+
+
+@router.delete("/debug/llm-logs")
+async def delete_llm_logs(project_id: str | None = Query(None)):
+    """清空持久化的 LLM 调用日志。"""
+    clear_llm_logs(project_id)
+    return {"status": "ok", "message": "日志已清空"}

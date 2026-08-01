@@ -39,8 +39,10 @@ async def stream_llm(
     system_prompt: str | None = None,
     messages: list[dict] | None = None,
     tools: list[dict] | None = None,
+    project_id: str | None = None,
+    session_id: str | None = None,
 ) -> AsyncIterator[dict]:
-    """逐 chunk yield {"type": "thinking"|"delta"|"done"|"error", "text": str, ...}。
+    """逐 chunk yield {"type": "thinking"|"delta"|"tool_call"|"done"|"error", ...}。
 
     支持传入 messages 多轮列表，或传入 prompt (+ system_prompt) 自动构造单轮请求。
     全量更新 LLM_CALL_LOG 供调试面板监控。
@@ -48,7 +50,7 @@ async def stream_llm(
     api_key = get_api_key(model_id)
     if not api_key:
         err_msg = f"未配置 {model_id} 的 API Key，请到「设置」页面添加"
-        yield {"type": "error", "error": err_msg}
+        yield {"type": "error", "error": err_msg, "thinking": ""}
         return
 
     _pid = _provider_of(model_id)
@@ -86,20 +88,26 @@ async def stream_llm(
 
     entry = {
         "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+        "project_id": project_id,
+        "session_id": session_id,
         "model": model_id,
         "tag": tag,
         "prompt_len": len(user_prompt_str or "") if user_prompt_str else sum(len(m.get("content", "")) for m in req_messages),
         "prompt": user_prompt_str or "",
         "system_prompt": logged_sp,
+        "messages": req_messages,
         "status": "running",
         "duration_ms": 0,
         "response": None,
         "thinking": "",
         "thinking_status": "idle",  # idle | thinking | done
+        "tool_calls": None,
         "error": None,
     }
     _record_llm_call(entry)
     t0 = time.time()
+    accumulated_tool_calls = {}
+
     try:
         kwargs = dict(
             model=_litellm_model(model_id),
@@ -151,7 +159,24 @@ async def stream_llm(
                     tool_calls = getattr(delta, "tool_calls", None)
                     if tool_calls:
                         for tc in tool_calls:
+                            tc_idx = getattr(tc, "index", 0) or 0
+                            if tc_idx not in accumulated_tool_calls:
+                                accumulated_tool_calls[tc_idx] = {
+                                    "id": getattr(tc, "id", None) or f"call_{tc_idx}",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                }
+                            if getattr(tc, "id", None):
+                                accumulated_tool_calls[tc_idx]["id"] = getattr(tc, "id", None)
                             fn = getattr(tc, "function", None)
+                            if fn:
+                                fn_name = getattr(fn, "name", None)
+                                if fn_name:
+                                    if not accumulated_tool_calls[tc_idx]["function"]["name"]:
+                                        accumulated_tool_calls[tc_idx]["function"]["name"] = fn_name
+                                if getattr(fn, "arguments", None):
+                                    accumulated_tool_calls[tc_idx]["function"]["arguments"] += getattr(fn, "arguments", "")
+
                             yield {
                                 "type": "tool_call",
                                 "id": getattr(tc, "id", None),
@@ -187,17 +212,25 @@ async def stream_llm(
         if not got_content:
             err_msg = "流式返回为空，模型可能未产生任何输出"
             entry.update({"status": "error", "duration_ms": int((time.time() - t0) * 1000), "error": err_msg})
-            yield {"type": "error", "error": err_msg}
+            yield {"type": "error", "error": err_msg, "thinking": entry["thinking"]}
             return
 
+        parsed_tool_calls_list = list(accumulated_tool_calls.values()) if accumulated_tool_calls else None
         entry.update({
             "status": "ok",
             "duration_ms": int((time.time() - t0) * 1000),
             "response": content,
             "token_info": token_info,
+            "tool_calls": parsed_tool_calls_list,
             "thinking_status": "done" if entry["thinking_status"] == "thinking" else entry["thinking_status"],
         })
-        yield {"type": "done", "usage": token_info, "response": content}
+        yield {
+            "type": "done",
+            "usage": token_info,
+            "response": content,
+            "thinking": entry["thinking"],
+            "tool_calls": parsed_tool_calls_list,
+        }
 
     except asyncio.TimeoutError:
         err_msg = f"流式超时：超过 {timeout} 秒未收到新数据，模型可能已停止输出"
@@ -206,7 +239,7 @@ async def stream_llm(
             "duration_ms": int((time.time() - t0) * 1000),
             "error": err_msg,
         })
-        yield {"type": "error", "error": err_msg}
+        yield {"type": "error", "error": err_msg, "thinking": entry["thinking"]}
     except Exception as e:
         err_msg = f"调用大模型失败: {e}"
         entry.update({
@@ -214,7 +247,7 @@ async def stream_llm(
             "duration_ms": int((time.time() - t0) * 1000),
             "error": err_msg,
         })
-        yield {"type": "error", "error": err_msg}
+        yield {"type": "error", "error": err_msg, "thinking": entry["thinking"]}
     finally:
         if _old_acct is not None:
             os.environ["CLOUDFLARE_ACCOUNT_ID"] = _old_acct
