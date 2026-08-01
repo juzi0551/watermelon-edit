@@ -1,5 +1,7 @@
 :root {
   color-scheme: light;
+  /* 左右面板底部操作栏统一高度（ActionBar / ChatPanel footer 共用） */
+  --bar-height: 76px;
 }
 
 [data-theme='dark'] {

@@ -1,8 +1,9 @@
 .chat-panel-sidebar {
   position: relative;
   height: 100%;
-  background: var(--color-bg-container, #ffffff);
-  border-left: 1px solid var(--color-border-secondary, #f0f0f0);
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid var(--color-border-secondary, #e5e7eb);
   display: flex;
   flex-direction: column;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.04);
@@ -17,7 +18,7 @@
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--color-border-secondary, #f0f0f0);
-  background: var(--color-bg-layout, #fafafa);
+  background: #ffffff;
   gap: 8px;
 }
 
@@ -53,7 +54,7 @@
   max-width: 85%;
 }
 
-/* #10: 消息列表背景设为轻微底色 #f8fafc */
+/* 消息列表背景设为纯白 #ffffff */
 .chat-messages-container {
   flex: 1;
   overflow-y: auto;
@@ -61,34 +62,99 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background: #f8fafc;
+  background: #ffffff;
 }
 
-/* 调整 ant-bubble-body 及 ant-bubble 容器宽度 */
-.chat-messages-container .ant-bubble {
-  max-width: 92%;
+/* 调整 ant-bubble 容器宽度：最大 100% 充分利用空间，最小 48px，干掉 ant-bubble-start 右侧默认 padding */
+.chat-messages-container .ant-bubble,
+.chat-messages-container .ant-bubble-start {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 48px;
+  padding-inline-end: 0 !important;
+  padding-right: 0 !important;
 }
 
 .chat-messages-container .ant-bubble-body {
-  width: 100%;
-  max-width: 92%;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 48px;
 }
 
 .chat-messages-container .ant-bubble-content {
   border-radius: 10px !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 48px;
 }
 
-/* footer 高度与左侧 ActionBar(76px) 严格对齐，Sender 垂直居中 */
+/* 清理 ReactMarkdown 内部 <p> 标签浏览器默认 21px 巨大边距撑开 */
+.chat-messages-container .react-markdown-body p {
+  margin-top: 0 !important;
+  margin-bottom: 6px !important;
+}
+
+.chat-messages-container .react-markdown-body p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* footer 彻底去掉 border 和背景色，Sender 强制垂直居中 */
 .chat-panel-footer {
-  height: 76px;
+  height: auto !important;
+  min-height: var(--bar-height);
   box-sizing: border-box;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 8px 16px;
-  border-top: 1px solid var(--color-border-secondary, #f0f0f0);
-  background: var(--color-bg-container, #ffffff);
+  padding: 12px 16px;
+  border: none !important;
+  border-top: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* 确保 Sender 组件本身是精美的毛玻璃（Glassmorphism）淡灰圆角输入框 */
+.chat-panel-footer .ant-sender,
+.chat-panel-sidebar .ant-sender {
+  align-items: center !important;
+  width: 100%;
+  background: rgba(243, 244, 246, 0.75) !important;
+  background-color: rgba(243, 244, 246, 0.75) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid rgba(209, 213, 219, 0.85) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.chat-panel-footer .ant-sender:hover,
+.chat-panel-sidebar .ant-sender:hover,
+.chat-panel-footer .ant-sender-focused,
+.chat-panel-sidebar .ant-sender-focused {
+  background: rgba(243, 244, 246, 0.88) !important;
+  border-color: rgba(156, 163, 175, 0.95) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+.chat-panel-footer .ant-sender-content,
+.chat-panel-sidebar .ant-sender-content {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.chat-panel-footer .ant-sender-actions,
+.chat-panel-sidebar .ant-sender-actions,
+.chat-panel-footer .ant-sender-actions-list,
+.chat-panel-sidebar .ant-sender-actions-list,
+.chat-panel-footer .ant-sender-btn-send,
+.chat-panel-sidebar .ant-sender-btn-send {
+  align-self: center !important;
+  margin-bottom: 0 !important;
+  margin-top: 0 !important;
+  display: flex !important;
+  align-items: center !important;
 }
 
 .chat-interrupted-tag {
@@ -117,6 +183,24 @@
 .chat-thought-divider {
   border-bottom: 1px dashed #e5e7eb;
   margin: 10px 0;
+}
+
+/* 仅隐藏 ThoughtChain 项序号 ① / 节点图标，保留标题文本 */
+.chat-messages-container .ant-thought-chain-item-icon,
+.chat-messages-container .ant-thought-chain-item-avatar,
+.chat-messages-container .ant-thought-chain-item-indicator,
+.chat-messages-container .ant-thought-chain-node-icon {
+  display: none !important;
+}
+
+/* 统一 ThoughtChain 文本与右侧折叠箭头样式为柔和灰色 #6b7280 */
+.chat-messages-container .ant-thought-chain,
+.chat-messages-container .ant-thought-chain-item-title,
+.chat-messages-container .ant-thought-chain-item-header,
+.chat-messages-container .ant-thought-chain-collapsible-button,
+.chat-messages-container .ant-thought-chain-icon {
+  color: #6b7280 !important;
+  font-size: 12px !important;
 }
 
 /* #13: 时间戳样式 */

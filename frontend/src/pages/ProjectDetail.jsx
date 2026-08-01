@@ -543,104 +543,108 @@ export default function ProjectDetail() {
     <div>
       <Card
         title={
-          <Space wrap>
-            <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
-            <span style={{ fontWeight: 600, fontSize: 18 }}>{project?.name || '加载中...'}</span>
-            <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目/段落防误删）' : '锁定项目（开启项目/段落防误删）'}>
+          <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12 }}>
+            <Space wrap style={{ flexShrink: 0 }}>
+              <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
+              <span style={{ fontWeight: 600, fontSize: 18 }}>{project?.name || '加载中...'}</span>
+              <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目/段落防误删）' : '锁定项目（开启项目/段落防误删）'}>
+                <Button
+                  type={project?.is_locked === 1 ? 'primary' : 'default'}
+                  danger={project?.is_locked === 1}
+                  size="small"
+                  shape="round"
+                  icon={project?.is_locked === 1 ? <LockOutlined /> : <UnlockOutlined />}
+                  onClick={async () => {
+                    if (!project) return
+                    const nextState = project.is_locked !== 1
+                    try {
+                      await toggleProjectLock(project.id, nextState)
+                      message.success(nextState ? '项目已锁定（已防误删）' : '项目已解锁')
+                      loadProject()
+                    } catch (e) {
+                      message.error(e.message || '操作失败')
+                    }
+                  }}
+                >
+                  {project?.is_locked === 1 ? '已锁定 🔒' : '未锁定'}
+                </Button>
+              </Tooltip>
+              {total > 0 && (
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  {upto}/{total} 段
+                </Text>
+              )}
               <Button
-                type={project?.is_locked === 1 ? 'primary' : 'default'}
-                danger={project?.is_locked === 1}
-                size="small"
+                icon={<EyeOutlined />}
+                onClick={() => setLlmMonitorOpen(true)}
                 shape="round"
-                icon={project?.is_locked === 1 ? <LockOutlined /> : <UnlockOutlined />}
-                onClick={async () => {
-                  if (!project) return
-                  const nextState = project.is_locked !== 1
-                  try {
-                    await toggleProjectLock(project.id, nextState)
-                    message.success(nextState ? '项目已锁定（已防误删）' : '项目已解锁')
-                    loadProject()
-                  } catch (e) {
-                    message.error(e.message || '操作失败')
-                  }
-                }}
+                size="small"
               >
-                {project?.is_locked === 1 ? '已锁定 🔒' : '未锁定'}
+                LLM 实时
               </Button>
-            </Tooltip>
-            {total > 0 && (
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                {upto}/{total} 段
-              </Text>
-            )}
-            <Button
-              icon={<EyeOutlined />}
-              onClick={() => setLlmMonitorOpen(true)}
-              shape="round"
-              size="small"
-            >
-              LLM 实时
-            </Button>
-            <Button
-              type="primary"
-              shape="round"
-              size="small"
-              icon={<DownloadOutlined />}
-              disabled={inProgress}
-              loading={exporting}
-              onClick={handleExport}
-            >
-              导出校稿版
-            </Button>
-            {project?.last_error && (
-              <Tag color="warning" style={{ fontSize: 12, marginLeft: 8 }}>
-                ⚠ {project.last_error}
-              </Tag>
-            )}
-          </Space>
+              <Button
+                type="primary"
+                shape="round"
+                size="small"
+                icon={<DownloadOutlined />}
+                disabled={inProgress}
+                loading={exporting}
+                onClick={handleExport}
+              >
+                导出校稿版
+              </Button>
+              {project?.last_error && (
+                <Tag color="warning" style={{ fontSize: 12, marginLeft: 8 }}>
+                  ⚠ {project.last_error}
+                </Tag>
+              )}
+            </Space>
+
+            {/* Flex 弹性填充正中间放置「字号： [ - ] 17 [ + ]」组件 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 140 }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                background: 'var(--color-bgCard, #fafafa)',
+                borderRadius: 6,
+                border: '1px solid var(--color-border, #d9d9d9)',
+                padding: '2px 8px',
+              }}>
+                <span style={{ fontSize: 13, color: color.textSecondary, fontWeight: 500, whiteSpace: 'nowrap' }}>字号：</span>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MinusOutlined />}
+                  disabled={bodyFontSize <= 14}
+                  onClick={() => {
+                    const nextOffset = Math.max(fontSizeOffset - 1, -3)
+                    setFontSizeOffset(nextOffset)
+                    try { localStorage.setItem('reader_font_offset', nextOffset.toString()) } catch {}
+                  }}
+                  style={{ width: 24, height: 24, fontSize: 12 }}
+                />
+                <span style={{ fontSize: 13, minWidth: 20, textAlign: 'center', fontWeight: 600, color: color.textPrimary }}>
+                  {bodyFontSize}
+                </span>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<PlusOutlined />}
+                  disabled={bodyFontSize >= 48}
+                  onClick={() => {
+                    const nextOffset = Math.min(fontSizeOffset + 1, 31)
+                    setFontSizeOffset(nextOffset)
+                    try { localStorage.setItem('reader_font_offset', nextOffset.toString()) } catch {}
+                  }}
+                  style={{ width: 24, height: 24, fontSize: 12 }}
+                />
+              </div>
+            </div>
+          </div>
         }
         extra={
           <Space wrap align="center">
-            {/* 正中间放置「字号： [ - ] 17 [ + ]」组件 */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              background: 'var(--color-bgCard, #fafafa)',
-              borderRadius: 6,
-              border: '1px solid var(--color-border, #d9d9d9)',
-              padding: '2px 8px',
-              marginRight: 12,
-            }}>
-              <span style={{ fontSize: 13, color: color.textSecondary, fontWeight: 500, whiteSpace: 'nowrap' }}>字号：</span>
-              <Button
-                type="text"
-                size="small"
-                icon={<MinusOutlined />}
-                disabled={bodyFontSize <= 14}
-                onClick={() => {
-                  const nextOffset = Math.max(fontSizeOffset - 1, -3)
-                  setFontSizeOffset(nextOffset)
-                  try { localStorage.setItem('reader_font_offset', nextOffset.toString()) } catch {}
-                }}
-                style={{ width: 24, height: 24, fontSize: 12 }}
-              />
-              <span style={{ fontSize: 13, minWidth: 20, textAlign: 'center', fontWeight: 600, color: color.textPrimary }}>
-                {bodyFontSize}
-              </span>
-              <Button
-                type="text"
-                size="small"
-                icon={<PlusOutlined />}
-                disabled={bodyFontSize >= 48}
-                onClick={() => {
-                  const nextOffset = Math.min(fontSizeOffset + 1, 31)
-                  setFontSizeOffset(nextOffset)
-                  try { localStorage.setItem('reader_font_offset', nextOffset.toString()) } catch {}
-                }}
-                style={{ width: 24, height: 24, fontSize: 12 }}
-              />
-            </div>
             <Tooltip title={(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) ? '作品设定未填写！建议配置文风与专有名词，避免 LLM 校对时误判特色词汇' : '查看与修改作品设定与文风'}>
               <Badge dot={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()} offset={[-4, 4]}>
                 <Button
@@ -884,9 +888,11 @@ export default function ProjectDetail() {
             style={{ height: 'calc(100vh - 145px)' }}
             onResize={(sizes) => {
               if (sizes && sizes.length > 1 && chatPanelOpen) {
-                const rightWidth = Math.round(sizes[1])
-                if (rightWidth > 0) {
-                  localStorage.setItem('chat_panel_width', rightWidth.toString())
+                const total = sizes[0] + sizes[1]
+                if (total > 0) {
+                  const pct = Math.min(Math.max(Math.round((sizes[1] / total) * 100), 20), 50)
+                  localStorage.setItem('chat_panel_ratio', `${pct}%`)
+                  localStorage.setItem('chat_panel_width', Math.round(sizes[1]).toString())
                 }
               }
             }}
@@ -1048,7 +1054,7 @@ export default function ProjectDetail() {
               <Splitter.Panel
                 min={320}
                 max="50%"
-                defaultSize={parseInt(localStorage.getItem('chat_panel_width') || '380', 10) || 380}
+                defaultSize={localStorage.getItem('chat_panel_ratio') || '35%'}
               >
                 <ChatPanel
                   projectId={projectId}

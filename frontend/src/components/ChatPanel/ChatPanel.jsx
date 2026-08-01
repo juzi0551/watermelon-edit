@@ -128,12 +128,14 @@ export default function ChatPanel({
     }
 
     const assistantMsgId = `temp_a_${Date.now()}`
+    const thinkingStartTime = Date.now()
     const assistantMsg = {
       id: assistantMsgId,
       role: 'assistant',
       content: '',
       thinking: '',
       isThinking: true,
+      thinkingSeconds: 1,
       created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }
 
@@ -155,6 +157,7 @@ export default function ChatPanel({
         context: contextPayload,
         signal: abortControllerRef.current.signal,
         onUpdate: ({ content, thinking, isThinking, interrupted }) => {
+          const elapsed = Math.max(1, Math.round((Date.now() - thinkingStartTime) / 1000))
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMsgId
@@ -163,6 +166,7 @@ export default function ChatPanel({
                     content,
                     thinking,
                     isThinking,
+                    thinkingSeconds: elapsed,
                     interrupted,
                     context: interrupted ? { ...(m.context || {}), interrupted: true } : m.context,
                   }
@@ -171,6 +175,7 @@ export default function ChatPanel({
           )
         },
         onSuccess: ({ content, thinking, messageId }) => {
+          const elapsed = Math.max(1, Math.round((Date.now() - thinkingStartTime) / 1000))
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMsgId
@@ -180,6 +185,7 @@ export default function ChatPanel({
                     content,
                     thinking,
                     isThinking: false,
+                    thinkingSeconds: elapsed,
                   }
                 : m
             )
@@ -304,24 +310,34 @@ export default function ChatPanel({
 
   // 转换为 @ant-design/x Bubble.List 所需 items 结构
   const bubbleItems = useMemo(() => {
-    return messages.map((item) => {
+    return messages.map((item, index) => {
       const isUser = item.role === 'user'
       const isInterrupted = item.context?.interrupted || item.interrupted
+      const prevItem = index > 0 ? messages[index - 1] : null
+      const isSameRoleAsPrev = prevItem && prevItem.role === item.role
+      const isFirstInGroup = !isSameRoleAsPrev
 
       return {
         key: item.id || item.key,
         role: item.role,
-        placement: isUser ? 'end' : 'start',
-        avatar: isUser ? (
-          <Avatar style={{ backgroundColor: '#374151', color: '#ffffff' }}>我</Avatar>
+        placement: 'start',
+        style: {
+          marginTop: isFirstInGroup ? (index === 0 ? 0 : 8) : 2,
+        },
+        avatar: isFirstInGroup ? (
+          isUser ? (
+            <Avatar size={57} style={{ backgroundColor: '#374151', color: '#ffffff', fontWeight: 600, fontSize: 18 }}>我</Avatar>
+          ) : (
+            <Avatar size={57} style={{ backgroundColor: '#d4a359', color: '#ffffff', fontSize: 24 }} icon={<RobotOutlined />} />
+          )
         ) : (
-          <Avatar style={{ backgroundColor: '#d4a359', color: '#ffffff' }} icon={<RobotOutlined />} />
+          <div style={{ width: 57, height: 57, flexShrink: 0 }} />
         ),
         styles: {
           content: {
-            backgroundColor: isUser ? '#f3f4f6' : '#fdfbf7',
-            border: isUser ? '1px solid #e5e7eb' : '1px solid #e8e5de',
-            color: '#1f2937',
+            backgroundColor: isUser ? '#d4a359' : '#fdfbf7',
+            border: isUser ? '1px solid #c89547' : '1px solid #e8e5de',
+            color: isUser ? '#ffffff' : '#1f2937',
           },
         },
         content: (
@@ -334,8 +350,15 @@ export default function ChatPanel({
                   collapsible={{ defaultCollapsed: true }}
                   items={[
                     {
-                      title: item.isThinking ? '思考中...' : '思考过程（点击展开）',
-                      status: item.isThinking ? 'executing' : 'success',
+                      title: item.isThinking ? (
+                        <span style={{ color: '#6b7280', fontSize: 12 }}>思考中...</span>
+                      ) : (
+                        <span style={{ color: '#6b7280', fontSize: 12 }}>
+                          {`已思考 ${item.thinkingSeconds || 3} 秒`}
+                        </span>
+                      ),
+                      status: item.isThinking ? 'executing' : undefined,
+                      icon: null,
                       content: item.thinking,
                       collapsible: true,
                       defaultCollapsed: true,
@@ -357,37 +380,17 @@ export default function ChatPanel({
               </div>
             ) : (
               /* 官方 react-markdown 库解析 Markdown 内容 */
-              <div className="react-markdown-body" style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65 }}>
+              <div className="react-markdown-body" style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65, color: isUser ? '#ffffff' : '#1f2937' }}>
                 <ReactMarkdown>{item.content || ''}</ReactMarkdown>
               </div>
             )}
 
-            {/* 替换至正文按钮 */}
-            {!isUser && item.content && onApplyText && !isInterrupted && (
-              <Button
-                size="small"
-                type="dashed"
-                icon={<CheckCircleOutlined />}
-                className="chat-apply-btn"
-                onClick={() =>
-                  onApplyText(
-                    item.content,
-                    activeSelection?.paragraphIdx,
-                    activeSelection?.paragraphUuid
-                  )
-                }
-              >
-                替换至选区/当前段落
-              </Button>
-            )}
+
 
             {/* 中断提示 */}
             {isInterrupted && (
               <div className="chat-interrupted-tag">⚠️ 生成已由用户中途停止</div>
             )}
-
-            {/* 消息时间戳 */}
-            {item.created_at && <div className="chat-msg-time">{item.created_at}</div>}
           </div>
         ),
       }
@@ -483,8 +486,8 @@ export default function ChatPanel({
           autoScroll
           roles={{
             user: {
-              placement: 'end',
-              avatar: <Avatar style={{ backgroundColor: '#374151', color: '#ffffff' }}>我</Avatar>,
+              placement: 'start',
+              avatar: <Avatar size={38} style={{ backgroundColor: '#ffffff', color: '#d4a359', border: '2px solid #d4a359', fontWeight: 600 }}>我</Avatar>,
               styles: {
                 content: {
                   backgroundColor: '#f3f4f6',
@@ -495,7 +498,7 @@ export default function ChatPanel({
             },
             assistant: {
               placement: 'start',
-              avatar: <Avatar style={{ backgroundColor: '#d4a359', color: '#ffffff' }} icon={<RobotOutlined />} />,
+              avatar: <Avatar size={38} style={{ backgroundColor: '#d4a359', color: '#ffffff' }} icon={<RobotOutlined />} />,
               styles: {
                 content: {
                   backgroundColor: '#fdfbf7',
@@ -509,8 +512,8 @@ export default function ChatPanel({
         />
       </div>
 
-      {/* 底部 Sender 输入框（footer 容器与左侧 ActionBar 等高等齐） */}
-      <div className="chat-panel-footer">
+      {/* 底部 Sender 输入框 */}
+      <div className="chat-panel-footer" style={{ border: 'none', borderTop: 'none', background: 'transparent', boxShadow: 'none' }}>
         <Sender
           value={inputValue}
           onChange={(val) => setInputValue(val)}
@@ -520,7 +523,10 @@ export default function ChatPanel({
           }}
           onCancel={handleStop}
           loading={isRequesting}
-          styles={{ input: { fontSize: `${bodyFontSize}px` } }}
+          styles={{
+            input: { fontSize: `${bodyFontSize}px` },
+            actions: { alignSelf: 'center', display: 'flex', alignItems: 'center' },
+          }}
           placeholder="问问 AI 助手，例如：“润色选中文字”..."
         />
       </div>

@@ -154,7 +154,7 @@ export function ActionBar({
   const barStyle = {
     position: 'relative',
     width: '100%',
-    height: 76,
+    height: 'var(--bar-height)',
     boxSizing: 'border-box',
     zIndex: 400,
     background: color.bgPage,
