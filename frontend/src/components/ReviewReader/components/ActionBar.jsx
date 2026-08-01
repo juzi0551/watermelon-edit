@@ -2,7 +2,7 @@ import React from 'react'
 import { Button, Tag, Space, Input, Popover, Progress, Tooltip, Select, InputNumber } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, LoadingOutlined,
-  MinusOutlined, PlusOutlined,
+  MinusOutlined, PlusOutlined, DownloadOutlined, ToolOutlined
 } from '@ant-design/icons'
 import { color, radius, fontSize } from '../../../design-tokens'
 import { kbdStyle, TYPE_OPTIONS } from '../constants'
@@ -150,6 +150,9 @@ export function ActionBar({
   projectError,
   onStartProofread,
   onStartBatchProofread,
+  onExport,
+  exporting,
+  onOpenTools,
 }) {
   const barStyle = {
     position: 'relative',
@@ -411,6 +414,29 @@ export function ActionBar({
                     title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
                   >
                     批量校对
+                  </Button>
+                  <Button
+                    shape="round"
+                    size="large"
+                    className="bar-action-btn"
+                    icon={<ToolOutlined />}
+                    onClick={onOpenTools}
+                    style={{ height: 52, paddingInline: 20, fontSize: 15, marginLeft: 8 }}
+                  >
+                    快速工具
+                  </Button>
+                  <Button
+                    type="primary"
+                    shape="round"
+                    size="large"
+                    className="bar-action-btn"
+                    icon={<DownloadOutlined />}
+                    loading={exporting}
+                    onClick={onExport}
+                    disabled={inProgress}
+                    style={{ height: 52, paddingInline: 24, fontSize: 15, marginLeft: 8 }}
+                  >
+                    导出校稿版
                   </Button>
                   <ShortcutHint />
                 </>

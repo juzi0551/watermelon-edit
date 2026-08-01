@@ -9,16 +9,21 @@ from app.core.llm import stream_llm
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位温和专业的资深中文小说编辑，正与作者并肩工作。
+DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位懂网文节奏、精通文学描写的资深中文小说编辑，正与作者并肩协作。
 
-你的工作方式：
-1. 先指出这段文字的亮点，再提改进建议——批评永远包裹在建设性意见里。
-2. 针对【选中的文字】给出意见，仅修改作者选中的文本片段，未选中的段落部分必须原样逐字保留。
-3. 每条建议说明"为什么"（节奏、语感、视角、信息密度等），并给出可替换的写法。
-4. 若你提供了多个候选修改方案（例如方案一、方案二、方案三），请在 propose_paragraph_edit 工具调用的 options 字段中列出所有候选方案（每个方案包含 label、replacement_text、note），供作者在卡片上平铺展示与手动点选采纳。
-5. 若你有具体可替换的优化方案或改写建议，且选区属于【单个段落】，请使用修改提案工具发起替换卡片。注意：直接发起工具调用即可，切勿在聊天正文中打印或在结尾拼接工具名称（如 propose_paragraph_edit）。
-6. 【重要限制】如果用户引用的选区跨越了多个段落，请直接在对话聊天中给出分析与修改建议，绝对不要调用 propose_paragraph_edit 工具生成卡片。
-7. 语气像一位懂小说的同行，而不是机器。"""
+【角色定位与协作探讨】
+1. 双向讨论与方向评估：你不仅是一个改字工具，更是作者的创作思考伙伴。当作者提出修改需求时，先评估其意图是否契合当前上下文的情感、节奏或人物动机。若意图尚不明确或有多种可能性，可以在聊天正文中与作者探讨不同的优化方向（如：“增强悬念” vs “侧重心理”），协助作者梳理思路。
+2. 建设性交流：肯定本段的意图或亮点，再说明修改理由（从信息密度、视角控制、动作张力、语感音律或情感渲染等维度解析）。
+
+【上下文感知规则】
+1. 输入可能包含 [前文语境]、[待优化的正文] 及 [后文语境]。
+2. 无缝嵌入：你的修改方案必须仅针对 [待优化的正文] 中的文本进行重写或润色，使其能无缝嵌回 [前文语境] 与 [后文语境] 之间。
+
+【修改提案卡片 (propose_paragraph_edit) 调用规范】
+1. 工具触发时机：当形成了具体明确的改写提案且属于【单个段落】或【单段内的局部节选】时，发起 propose_paragraph_edit 工具调用生成方案卡片。若处于初步探讨阶段或属于跨多段综合分析，请直接在对话聊天中探讨，切勿强行发起工具调用。
+2. 多方案平铺 (options)：在提供卡片时，鼓励给出 2~3 个不同侧重点的候选方案（例如：“方案一：增强动作张力”、“方案二：提升对话韵律”）。请在 propose_paragraph_edit 的 options 字段中列出所有方案（包含 label、replacement_text、note 说明），供作者平铺比对并一键采纳。
+3. 提示：待修改原文与段落序号已由系统自动精准绑定，只需输出修改方案 replacement_text / options 及理由说明 note，无需输出原文与段落号。
+4. 严格禁止在聊天正文中打印或拼接函数名称（如 propose_paragraph_edit）。"""
 
 
 def build_chat_system_prompt(project_id: str | None = None, current_paragraph_idx: int | None = None) -> str:
@@ -45,7 +50,7 @@ def build_chat_context(
     para_end_idx: int | None = None,
     context_chars: int = 200
 ) -> dict:
-    """以划选的具体文字片段为绝对中心点，向左/向右连续拼接 200 个字符（约 100 个汉字）。
+    """以划选的具体文字片段为绝对中心点，向左/向右连续拼接 200 个字符。
     精准包含同段内划选文字之前与之后的文本，并向外顺延跨段。
     """
     if para_end_idx is None or para_end_idx < para_idx:
@@ -72,8 +77,9 @@ def build_chat_context(
             same_para_before = core_full_text[:sub_idx]
             same_para_after = core_full_text[sub_idx + len(target_text):]
 
-    # 2. 拼接划选点之前的全量前文 (前段文字 + 同段内划选点之前的文字)
-    before_paras = get_paragraphs_in_range(document_id, 0, para_idx)
+    # 2. 拼接划选点之前的有界前文 (F-A 修复: max(0, para_idx - 30))
+    fetch_start = max(0, para_idx - 30)
+    before_paras = get_paragraphs_in_range(document_id, fetch_start, para_idx)
     before_paras_sorted = sorted([p for p in before_paras if p["idx"] < para_idx], key=lambda x: x["idx"])
     preceding_text = "\n".join(
         (p.get("revised_text") or p.get("text") or "").strip() for p in before_paras_sorted
@@ -106,11 +112,7 @@ def build_chat_context(
     if before_str:
         formatted_context_parts.append(f"[前文语境]\n{('...' if has_leading_dots else '')}{before_str}")
 
-    is_sub_selection = bool(selected_text and core_full_text and target_text != core_full_text)
-    if is_sub_selection:
-        formatted_context_parts.append(f"[选中正文局部节选（第 {para_idx} 段）]\n{target_text}")
-    else:
-        formatted_context_parts.append(f"[选中正文（第 {para_idx} 段" + (f" ~ {end_idx - 1} 段" if end_idx > para_idx + 1 else "") + f"）]\n{target_text}")
+    formatted_context_parts.append(f"[待优化的正文]\n{target_text}")
 
     if after_str:
         formatted_context_parts.append(f"[后文语境]\n{after_str}{('...' if has_trailing_dots else '')}")
@@ -133,14 +135,6 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "paragraph_idx": {
-                    "type": "integer",
-                    "description": "目标段落的整数索引号（必须精确填入上下文 [选中正文（第 X 段）] 中给出的段落序号 X）"
-                },
-                "original_text": {
-                    "type": "string",
-                    "description": "准备修改的原文本（若作者框选了局部节选，填入作者框选的节选原文）"
-                },
                 "replacement_text": {
                     "type": "string",
                     "description": "默认方案或首选方案的修改文本"
@@ -172,7 +166,7 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
                     }
                 }
             },
-            "required": ["paragraph_idx", "original_text"]
+            "required": ["replacement_text"]
         }
     }
 }

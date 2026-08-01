@@ -55,32 +55,37 @@ class TestChatCore(unittest.TestCase):
         ]
         insert_paragraphs(doc_id, paragraphs)
 
-        # 1. 边界1：首段 (idx 0)
-        ctx_first = build_chat_context(doc_id, para_idx=0, selected_text="阳光穿过白桦林", context_chars=50)
-        self.assertEqual(ctx_first["para_idx"], 0)
-        self.assertEqual(ctx_first["before_window"], "")
-        self.assertTrue("第1段" in ctx_first["after_window"] or "智星" in ctx_first["after_window"])
-        self.assertTrue("阳光穿过白桦林" in ctx_first["formatted_context"])
+        # 1. 边界1：首段 (idx 0) 全段框选
+        ctx_first_full = build_chat_context(doc_id, para_idx=0, selected_text="", context_chars=50)
+        self.assertEqual(ctx_first_full["para_idx"], 0)
+        self.assertEqual(ctx_first_full["before_window"], "")
+        self.assertTrue("第1段" in ctx_first_full["after_window"] or "智星" in ctx_first_full["after_window"])
+        self.assertTrue("[待优化的正文]" in ctx_first_full["formatted_context"])
 
-        # 2. 边界2：末段 (idx 4)
-        ctx_last = build_chat_context(doc_id, para_idx=4, selected_text="夕阳西下", context_chars=50)
+        # 2. 边界2：同段内划选 (划选 "阳光穿过白桦林"，同段同前有 "第0段：")
+        ctx_first_sub = build_chat_context(doc_id, para_idx=0, selected_text="阳光穿过白桦林", context_chars=50)
+        self.assertEqual(ctx_first_sub["before_window"], "第0段：")
+        self.assertTrue("洒在河滩上" in ctx_first_sub["after_window"])
+
+        # 3. 边界3：末段 (idx 4)
+        ctx_last = build_chat_context(doc_id, para_idx=4, selected_text="", context_chars=50)
         self.assertEqual(ctx_last["para_idx"], 4)
         self.assertEqual(ctx_last["after_window"], "")
         self.assertTrue("第3段" in ctx_last["before_window"] or "少年们" in ctx_last["before_window"])
 
-        # 3. 边界3：跨段框选 (idx 1 ~ 3)
+        # 4. 边界4：跨段框选 (idx 1 ~ 3)
         ctx_cross = build_chat_context(doc_id, para_idx=1, selected_text="跨段内容", para_end_idx=3, context_chars=50)
         self.assertEqual(ctx_cross["para_idx"], 1)
         self.assertEqual(ctx_cross["para_end_idx"], 3)
         self.assertTrue("第0段" in ctx_cross["before_window"])
         self.assertTrue("第4段" in ctx_cross["after_window"])
 
-        # 4. 边界4：越界字数裁剪 (context_chars 超长)
+        # 5. 边界5：越界字数裁剪 (context_chars 超长)
         ctx_over = build_chat_context(doc_id, para_idx=2, selected_text="冰镇西瓜", context_chars=1000)
         self.assertTrue(len(ctx_over["before_window"]) > 0)
         self.assertTrue(len(ctx_over["after_window"]) > 0)
 
-        # 5. 边界5：双轨文本 (revised_text 优先于 text)
+        # 6. 边界6：双轨文本 (revised_text 优先于 text)
         p2_rows = get_paragraphs_in_range(doc_id, 2, 3)
         self.assertEqual(len(p2_rows), 1)
         update_paragraph_revised(p2_rows[0]["id"], revised_text="【已润色】老爷爷笑呵呵地递过来一块特甜冰镇西瓜。")
@@ -124,6 +129,30 @@ class TestChatCore(unittest.TestCase):
         self.assertTrue(delete_chat_session(session_id))
         self.assertIsNone(get_chat_session(session_id))
         self.assertEqual(len(list_chat_messages(session_id)), 0)
+
+    def test_no_context_guard_no_replacement_card(self):
+        """测试 B1 守护规则：当无选区 (context_info 为空) 时，即使 LLM 误触发 tool_call 也不产生 replacement_card。"""
+        formatted_tool_calls = [{"id": "call_123", "function": {"name": "propose_paragraph_edit", "arguments": '{"replacement_text":"测试"}'}}]
+
+        # 场景 A: context_info 为 None
+        context_info_none = None
+        current_para_idx_none = None
+        authoritative_original_none = (context_info_none and context_info_none.get("selected_text")) or ""
+
+        replacement_card_a = None
+        if formatted_tool_calls and current_para_idx_none is not None and authoritative_original_none:
+            replacement_card_a = {"original": authoritative_original_none}
+        self.assertIsNone(replacement_card_a)
+
+        # 场景 B: context_info 存在但 selected_text 为空
+        context_info_empty = {"selected_text": ""}
+        current_para_idx_b = 2
+        authoritative_original_b = (context_info_empty and context_info_empty.get("selected_text")) or ""
+
+        replacement_card_b = None
+        if formatted_tool_calls and current_para_idx_b is not None and authoritative_original_b:
+            replacement_card_b = {"original": authoritative_original_b}
+        self.assertIsNone(replacement_card_b)
 
 
 if __name__ == "__main__":

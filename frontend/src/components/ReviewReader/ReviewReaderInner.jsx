@@ -31,6 +31,9 @@ export function ReviewReaderInner({
   onBodyFontSizeChange,
   fontSizeOffset,
   onAskAssistant,
+  onExport,
+  exporting,
+  onOpenTools,
 }, ref) {
   const logic = useReaderLogic({
     results,
@@ -233,6 +236,9 @@ export function ReviewReaderInner({
             projectError={projectError}
             onStartProofread={onStartProofread}
             onStartBatchProofread={onStartBatchProofread}
+            onExport={onExport}
+            exporting={exporting}
+            onOpenTools={onOpenTools}
           />
         </div>
 

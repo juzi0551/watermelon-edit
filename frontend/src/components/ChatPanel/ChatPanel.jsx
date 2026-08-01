@@ -400,7 +400,7 @@ export default function ChatPanel({
       const userIsExcerpt = isUser
         ? (isExplicitExcerpt !== undefined && isExplicitExcerpt !== null
             ? Boolean(isExplicitExcerpt)
-            : Boolean(item.context?.formatted_context && item.context.formatted_context.includes('选中正文局部节选')))
+            : Boolean(item.context?.formatted_context && (item.context.formatted_context.includes('待优化的正文') || item.context.formatted_context.includes('选中正文局部节选'))))
         : false
       const rawExcerpt = item.context?.formatted_excerpt ?? item.context?.formattedExcerpt ?? userSelectedText
       const userFormattedText = isUser && rawExcerpt

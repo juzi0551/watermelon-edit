@@ -9,7 +9,7 @@ import {
   MenuFoldOutlined, MenuUnfoldOutlined, EyeOutlined, LockOutlined, UnlockOutlined, ClearOutlined,
   BookOutlined, TeamOutlined, ToolOutlined, ThunderboltOutlined,
   SafetyOutlined, FormatPainterOutlined, BarChartOutlined, TagsOutlined, ContainerOutlined,
-  MessageOutlined, MinusOutlined, PlusOutlined,
+  MessageOutlined, MinusOutlined, PlusOutlined, RobotOutlined,
 } from '@ant-design/icons'
 import {
   getProject, uploadToProject, getModels, startProofread,
@@ -653,10 +653,10 @@ export default function ProjectDetail() {
               <span style={{ fontWeight: 600, fontSize: 18 }}>{project?.name || '加载中...'}</span>
               <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目/段落防误删）' : '锁定项目（开启项目/段落防误删）'}>
                 <Button
-                  type={project?.is_locked === 1 ? 'primary' : 'default'}
+                  type={project?.is_locked === 1 ? 'primary' : 'text'}
                   danger={project?.is_locked === 1}
                   size="small"
-                  shape="round"
+                  shape="circle"
                   icon={project?.is_locked === 1 ? <LockOutlined /> : <UnlockOutlined />}
                   onClick={async () => {
                     if (!project) return
@@ -669,15 +669,34 @@ export default function ProjectDetail() {
                       message.error(e.message || '操作失败')
                     }
                   }}
-                >
-                  {project?.is_locked === 1 ? '已锁定 🔒' : '未锁定'}
-                </Button>
+                />
               </Tooltip>
               {total > 0 && (
                 <Text type="secondary" style={{ fontSize: 13 }}>
                   {upto}/{total} 段
                 </Text>
               )}
+              <Tooltip title={(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) ? '作品设定未填写！建议配置文风与专有名词，避免 LLM 校对时误判特色词汇' : '查看与修改作品设定与文风'}>
+                <Badge dot={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()} offset={[-4, 4]}>
+                  <Button
+                    icon={<BookOutlined />}
+                    onClick={() => setProfileDrawerOpen(true)}
+                    shape="round"
+                    size="small"
+                    danger={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()}
+                  >
+                    作品设定 {(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) && <span style={{ fontSize: 11, marginLeft: 2 }}>⚠ 待配置</span>}
+                  </Button>
+                </Badge>
+              </Tooltip>
+              <Button
+                icon={<TeamOutlined />}
+                onClick={() => setCharacterGraphOpen(true)}
+                shape="round"
+                size="small"
+              >
+                人物图谱
+              </Button>
               <Button
                 icon={<EyeOutlined />}
                 onClick={() => setLlmMonitorOpen(true)}
@@ -685,17 +704,6 @@ export default function ProjectDetail() {
                 size="small"
               >
                 LLM 实时
-              </Button>
-              <Button
-                type="primary"
-                shape="round"
-                size="small"
-                icon={<DownloadOutlined />}
-                disabled={inProgress}
-                loading={exporting}
-                onClick={handleExport}
-              >
-                导出校稿版
               </Button>
               {project?.last_error && (
                 <Tag color="warning" style={{ fontSize: 12, marginLeft: 8 }}>
@@ -749,40 +757,13 @@ export default function ProjectDetail() {
         }
         extra={
           <Space wrap align="center">
-            <Tooltip title={(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) ? '作品设定未填写！建议配置文风与专有名词，避免 LLM 校对时误判特色词汇' : '查看与修改作品设定与文风'}>
-              <Badge dot={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()} offset={[-4, 4]}>
-                <Button
-                  icon={<BookOutlined />}
-                  onClick={() => setProfileDrawerOpen(true)}
-                  shape="round"
-                  danger={!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()}
-                >
-                  作品设定 {(!project?.author_name?.trim() && !project?.author_intro?.trim() && !project?.background_setting?.trim()) && <span style={{ fontSize: 11, marginLeft: 2 }}>⚠ 待配置</span>}
-                </Button>
-              </Badge>
-            </Tooltip>
-            <Button
-              icon={<TeamOutlined />}
-              onClick={() => setCharacterGraphOpen(true)}
-              shape="round"
-            >
-              人物图谱
-            </Button>
-            <Button
-              shape="round"
-              icon={<ToolOutlined />}
-              loading={cleaningEmpty || scanningTerms}
-              onClick={() => setToolsOpen(true)}
-            >
-              快速工具
-            </Button>
             <Button
               type={chatPanelOpen ? 'primary' : 'default'}
               shape="round"
-              icon={<MessageOutlined />}
+              icon={<RobotOutlined />}
               onClick={() => setChatPanelOpen((v) => !v)}
             >
-              💬 AI 助手
+              AI 助手
             </Button>
             <Modal
               title={
@@ -1131,6 +1112,9 @@ export default function ProjectDetail() {
                       onWindowSizeChange={handleWindowSizeChange}
                       fontSizeOffset={fontSizeOffset}
                       onAskAssistant={handleAskAssistant}
+                      onExport={handleExport}
+                      exporting={exporting}
+                      onOpenTools={() => setToolsOpen(true)}
                     />
                   )}
                 </div>

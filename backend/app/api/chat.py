@@ -142,9 +142,9 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
 
     if req.context and current_para_idx is not None:
         try:
-            context_chars = int(get_setting("chat_context_chars", "100") or "100")
+            context_chars = int(get_setting("chat_context_chars", "200") or "200")
         except (ValueError, TypeError):
-            context_chars = 100
+            context_chars = 200
 
         try:
             context_info = build_chat_context(
@@ -207,23 +207,23 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
 
                             formatted_tool_calls = event.get("tool_calls") or []
                             replacement_card = None
-                            for tc in formatted_tool_calls:
-                                fn = tc.get("function") or {}
-                                args_str = fn.get("arguments") or ""
-                                try:
-                                    parsed_args = json.loads(args_str)
-                                    p_idx = parsed_args.get("paragraph_idx") or parsed_args.get("paragraphIdx")
-                                    if current_para_idx is not None:
-                                        p_idx = current_para_idx
-                                    replacement_card = {
-                                        "original": parsed_args.get("original_text") or parsed_args.get("original") or "",
-                                        "replacement": parsed_args.get("replacement_text") or parsed_args.get("replacement") or "",
-                                        "note": parsed_args.get("note") or "",
-                                        "options": parsed_args.get("options") or [],
-                                        "paragraph_idx": p_idx,
-                                    }
-                                except Exception:
-                                    pass
+                            authoritative_original = (context_info and context_info.get("selected_text")) or ""
+
+                            if formatted_tool_calls and current_para_idx is not None and authoritative_original:
+                                for tc in formatted_tool_calls:
+                                    fn = tc.get("function") or {}
+                                    args_str = fn.get("arguments") or ""
+                                    try:
+                                        parsed_args = json.loads(args_str)
+                                        replacement_card = {
+                                            "original": authoritative_original,
+                                            "replacement": parsed_args.get("replacement_text") or parsed_args.get("replacement") or "",
+                                            "note": parsed_args.get("note") or "",
+                                            "options": parsed_args.get("options") or [],
+                                            "paragraph_idx": current_para_idx,
+                                        }
+                                    except Exception:
+                                        pass
 
                             msg_context = {}
                             if full_thinking:

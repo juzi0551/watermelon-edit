@@ -115,10 +115,11 @@ DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位温和专业的资深中文小说编
 
 
 def _init_default_settings(conn):
+    from app.core.chat import DEFAULT_CHAT_SYSTEM_PROMPT
     defaults = {
         "system_prompt_proofread": DEFAULT_SYSTEM_PROMPT_PROOFREAD,
         "system_prompt_chat": DEFAULT_CHAT_SYSTEM_PROMPT,
-        "chat_context_chars": "100",
+        "chat_context_chars": "200",
     }
     for key, value in defaults.items():
         conn.execute(
@@ -402,6 +403,18 @@ def _migrate_schema(conn):
             CREATE INDEX IF NOT EXISTS idx_chat_msgs_session ON chat_messages(session_id);
         """)
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '9')")
+
+    if version < 10:
+        from app.core.chat import DEFAULT_CHAT_SYSTEM_PROMPT
+        conn.execute("UPDATE settings SET value = ? WHERE key = 'system_prompt_chat'", (DEFAULT_CHAT_SYSTEM_PROMPT,))
+        conn.execute("UPDATE settings SET value = '200' WHERE key = 'chat_context_chars'")
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '10')")
+
+    if version < 11:
+        from app.core.chat import DEFAULT_CHAT_SYSTEM_PROMPT
+        conn.execute("UPDATE settings SET value = ? WHERE key = 'system_prompt_chat'", (DEFAULT_CHAT_SYSTEM_PROMPT,))
+        conn.execute("UPDATE settings SET value = '200' WHERE key = 'chat_context_chars'")
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '11')")
 
 
 
