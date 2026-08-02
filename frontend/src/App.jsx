@@ -64,11 +64,9 @@ function AppLayout() {
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Content>
-      {!isDetail && (
-        <Footer style={{ textAlign: 'center', background: 'var(--color-bgCard)', borderTop: '1px solid var(--color-border)' }}>
-          <Text type="secondary">Watermelon Edit v0.1.0 · 基于 DeepSeek / Kimi 等大模型</Text>
-        </Footer>
-      )}
+      <Footer style={{ textAlign: 'center', background: 'var(--color-bgCard)', borderTop: '1px solid var(--color-border)', padding: '12px 16px' }}>
+        <Text type="secondary">Watermelon Edit v0.1.0 · 基于 DeepSeek / Kimi 等大模型</Text>
+      </Footer>
     </Layout>
   )
 }

@@ -8,6 +8,9 @@
   flex-direction: column;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.04);
   z-index: 100;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  overflow: hidden;
 }
 
 .chat-panel-header {
@@ -19,8 +22,9 @@
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--color-border-secondary, #f0f0f0);
-  background: #ffffff;
+  background: var(--color-bgCard, #fafafa);
   gap: 8px;
+  border-top-right-radius: 10px;
 }
 
 .chat-panel-header-left {

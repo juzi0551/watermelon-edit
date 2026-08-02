@@ -103,7 +103,7 @@ export function ReaderContentArea({
           background: color.bgReader,
           borderLeft: '1px solid var(--color-borderStrong, #d9d9d9)',
           borderRight: '1px solid var(--color-borderStrong, #d9d9d9)',
-          borderRadius: `0 0 ${radius.md}px ${radius.md}px`,
+          borderRadius: 0,
           position: 'relative',
         }}
       >

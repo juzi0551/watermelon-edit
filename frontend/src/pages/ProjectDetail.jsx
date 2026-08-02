@@ -952,7 +952,7 @@ export default function ProjectDetail() {
         )}
         {total > 0 && (
           <Splitter
-            style={{ height: 'calc(100vh - 145px)' }}
+            style={{ height: 'calc(100vh - 185px)' }}
             onResize={(sizes) => {
               if (sizes && sizes.length > 1 && chatPanelOpen) {
                 const total = sizes[0] + sizes[1]
