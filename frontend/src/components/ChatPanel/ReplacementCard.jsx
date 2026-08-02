@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Button, Tooltip, Tag } from 'antd'
-import { CheckOutlined, CloseOutlined, DiffOutlined } from '@ant-design/icons'
+import { CheckOutlined, CloseOutlined, DiffOutlined, DownOutlined, UpOutlined } from '@ant-design/icons'
 import { updateCardStatus } from '../../services/api'
 
 export function ReplacementCard({
@@ -16,6 +16,8 @@ export function ReplacementCard({
 }) {
   const [status, setStatus] = useState(cardData?.status || 'pending')
   const [selectedOptionIdx, setSelectedOptionIdx] = useState(0)
+  const [showAllAcceptedOptions, setShowAllAcceptedOptions] = useState(false)
+  const [expandedRejected, setExpandedRejected] = useState(false)
 
   useEffect(() => {
     if (cardData?.status) {
@@ -79,6 +81,60 @@ export function ReplacementCard({
   const targetIdx = paragraphIdx ?? cardData?.paragraph_idx ?? cardData?.paragraphIdx
   const isDefined = targetIdx !== undefined && targetIdx !== null
 
+  // 1. 已拒绝且未展开时的精简单行状态
+  if (status === 'rejected' && !expandedRejected) {
+    return (
+      <div
+        style={{
+          marginTop: 10,
+          padding: '8px 12px',
+          borderRadius: 8,
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Tag color="default" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>
+            ✕ 已忽略修改建议
+          </Tag>
+          <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx} 段并高亮` : '段落未定'}>
+            <Tag
+              color={isDefined ? "blue" : "volcano"}
+              onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
+              style={{
+                marginLeft: 2,
+                fontWeight: 500,
+                fontSize: 11,
+                borderRadius: 4,
+                cursor: isDefined ? 'pointer' : 'default',
+                userSelect: 'none',
+              }}
+            >
+              段落 #{isDefined ? targetIdx : 'undefined'}
+            </Tag>
+          </Tooltip>
+        </div>
+        <Button
+          type="link"
+          size="small"
+          onClick={() => setExpandedRejected(true)}
+          style={{ padding: 0, fontSize: 12, color: '#64748b' }}
+        >
+          查看原本方案 ▾
+        </Button>
+      </div>
+    )
+  }
+
+  // 2. 正常卡片模式
+  const visibleOptions = (status === 'accepted' && !showAllAcceptedOptions)
+    ? optionsList.filter((_, idx) => idx === selectedOptionIdx)
+    : optionsList
+
   return (
     <div
       style={{
@@ -88,6 +144,7 @@ export function ReplacementCard({
         background: '#ffffff',
         border: '1px solid #e2e8f0',
         boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+        transition: 'all 0.2s ease',
       }}
     >
       {/* 头部：标题与段落 Tag */}
@@ -112,8 +169,20 @@ export function ReplacementCard({
             </Tag>
           </Tooltip>
         </div>
-        {status === 'accepted' && <Tag color="green" style={{ margin: 0, fontSize: 11 }}>已采纳</Tag>}
-        {status === 'rejected' && <Tag color="default" style={{ margin: 0, fontSize: 11 }}>已拒绝</Tag>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {status === 'accepted' && <Tag color="green" style={{ margin: 0, fontSize: 11 }}>✓ 已采纳</Tag>}
+          {status === 'rejected' && <Tag color="default" style={{ margin: 0, fontSize: 11 }}>✕ 已忽略</Tag>}
+          {status === 'rejected' && expandedRejected && (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setExpandedRejected(false)}
+              style={{ padding: 0, fontSize: 12, color: '#64748b' }}
+            >
+              收起 ▴
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* 原文展现：使用典雅灰左边框线引用 */}
@@ -135,14 +204,15 @@ export function ReplacementCard({
         </div>
       )}
 
-      {/* 平铺所有候选方案，支持点击 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
-        {optionsList.map((opt, idx) => {
-          const isSelected = selectedOptionIdx === idx
+      {/* 候选方案列表（已采纳默认收缩未选方案） */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: (status === 'accepted' || status === 'rejected') ? 4 : 14 }}>
+        {visibleOptions.map((opt, idx) => {
+          const originalIdx = optionsList.indexOf(opt)
+          const isSelected = selectedOptionIdx === (originalIdx >= 0 ? originalIdx : idx)
           return (
             <div
               key={idx}
-              onClick={() => status === 'pending' && setSelectedOptionIdx(idx)}
+              onClick={() => status === 'pending' && setSelectedOptionIdx(originalIdx >= 0 ? originalIdx : idx)}
               style={{
                 padding: '10px 14px',
                 borderRadius: 8,
@@ -153,7 +223,7 @@ export function ReplacementCard({
                 boxShadow: isSelected ? '0 2px 8px rgba(34, 197, 94, 0.12)' : 'none',
               }}
             >
-              {/* 方案标题：右对齐浅灰色方案名（字号为 bodyFontSize - 4） */}
+              {/* 方案标题：右对齐浅灰色方案名 */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginBottom: 4 }}>
                 <span style={{ fontWeight: 500, fontSize: `${Math.max(11, bodyFontSize - 4)}px`, color: '#94a3b8' }}>
                   {opt.cleanName}
@@ -170,13 +240,13 @@ export function ReplacementCard({
                 )}
               </div>
 
-              {/* 改写内容：改写前缀与改写内容保持同行 */}
+              {/* 改写内容 */}
               <div style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65, color: isSelected ? '#14532d' : '#1f2937' }}>
                 <span style={{ fontWeight: 600, color: isSelected ? '#166534' : '#475569', marginRight: 6 }}>改写：</span>
                 {opt.replacement}
               </div>
 
-              {/* 浅灰色非通栏分割线 + 去掉图标的理由 */}
+              {/* 理由说明 */}
               {opt.note && (
                 <>
                   <div style={{ height: 1, background: '#e2e8f0', margin: '8px 0 6px 0', width: '92%' }} />
@@ -191,19 +261,29 @@ export function ReplacementCard({
         })}
       </div>
 
-      {/* 采纳与拒绝操作按钮 */}
+      {/* 已采纳下折叠/展开其他方案操作 */}
+      {status === 'accepted' && optionsList.length > 1 && (
+        <div style={{ textAlign: 'center', marginTop: 6 }}>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => setShowAllAcceptedOptions(!showAllAcceptedOptions)}
+            style={{ fontSize: 12, color: '#64748b', padding: 0 }}
+          >
+            {showAllAcceptedOptions ? '收起其他方案 ▴' : `展开查看其他 ${optionsList.length - 1} 个未采纳方案 ▾`}
+          </Button>
+        </div>
+      )}
+
+      {/* 采纳与拒绝操作按钮区 */}
       {isCrossPara ? (
         <Tooltip title="V1 首版跨段修改暂请手动复制应用">
-          <Button size="middle" disabled block style={{ fontSize: btnFontSize }}>
+          <Button size="middle" disabled block style={{ fontSize: btnFontSize, marginTop: 8 }}>
             跨段修改请手动复制应用
           </Button>
         </Tooltip>
-      ) : status === 'accepted' ? null : status === 'rejected' ? (
-        <Button size="middle" disabled block icon={<CloseOutlined />} style={{ fontSize: btnFontSize, borderRadius: 6, height: 36 }}>
-          已忽略修改建议
-        </Button>
-      ) : (
-        <div style={{ display: 'flex', gap: 10 }}>
+      ) : status === 'pending' ? (
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
           <Button
             size="middle"
             type="primary"
@@ -238,7 +318,7 @@ export function ReplacementCard({
             拒绝
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

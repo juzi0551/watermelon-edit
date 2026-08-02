@@ -11,7 +11,9 @@
 }
 
 .chat-panel-header {
-  height: 52px;
+  height: 56px;
+  min-height: 56px;
+  box-sizing: border-box;
   padding: 0 16px;
   display: flex;
   align-items: center;
@@ -76,28 +78,37 @@
   -webkit-user-select: text !important;
 }
 
+/* 头像防挤压变形控制 */
+.chat-messages-container .ant-bubble-avatar {
+  flex-shrink: 0 !important;
+  margin-right: 8px !important;
+}
+
 /* 调整 ant-bubble 容器宽度：最大 100% 充分利用空间，最小 48px，干掉 ant-bubble-start 右侧默认 padding */
 .chat-messages-container .ant-bubble,
 .chat-messages-container .ant-bubble-start {
   width: fit-content;
-  max-width: 100%;
-  min-width: 48px;
+  max-width: 100% !important;
+  min-width: 0 !important;
   padding-inline-end: 0 !important;
   padding-right: 0 !important;
 }
 
 .chat-messages-container .ant-bubble-body {
   width: fit-content;
-  max-width: 100%;
-  min-width: 48px;
+  max-width: calc(100% - 68px) !important;
+  min-width: 0 !important;
 }
 
 .chat-messages-container .ant-bubble-content {
   border-radius: 10px !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
   width: fit-content;
-  max-width: 100%;
-  min-width: 48px;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  overflow: hidden !important;
 }
 
 /* 清理 ReactMarkdown 内部 <p> 标签浏览器默认边距撑开 */

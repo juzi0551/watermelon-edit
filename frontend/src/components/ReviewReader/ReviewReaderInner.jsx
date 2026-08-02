@@ -10,6 +10,7 @@ import { ErrorSidebar } from './components/ErrorSidebar'
 import { ActionBar } from './components/ActionBar'
 import { FloatCardLayer } from './components/FloatCardLayer'
 import { SelectionToolbar } from './components/SelectionToolbar'
+import { ReaderHeader } from './components/ReaderHeader'
 
 export function ReviewReaderInner({
   results, project, inProgress, onSetStatus, onAcceptAll,
@@ -144,7 +145,16 @@ export function ReviewReaderInner({
 
   return (
     <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: '0 16px 0', position: 'relative' }}>
+      <ReaderHeader
+        project={project}
+        chapters={chapters}
+        selectedChapter={selectedChapter}
+        onSelectChapter={onChapterChange}
+        pendingCount={logic.pending.length}
+        panelOpen={panelOpen}
+        onTogglePanel={onTogglePanel}
+      />
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: 0, position: 'relative' }}>
         <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
           <ReaderContentArea
             contentRef={logic.contentRef}
@@ -196,6 +206,7 @@ export function ReviewReaderInner({
             onAskAssistant={onAskAssistant}
             onSelectionChange={logic.handleSelectionChange}
             tbFontSize={logic.tbFontSize}
+            mergeMode={logic.mergeMode}
           />
 
           <ActionBar
@@ -243,6 +254,7 @@ export function ReviewReaderInner({
         </div>
 
         <ErrorSidebar
+          mergeMode={logic.mergeMode}
           showPanel={showPanel}
           onTogglePanel={onTogglePanel}
           panelTab={logic.panelTab}
@@ -261,6 +273,7 @@ export function ReviewReaderInner({
       </div>
 
       <FloatCardLayer
+        mergeMode={logic.mergeMode}
         selectedError={logic.selectedError}
         floatCardElRef={logic.floatCardElRef}
         currentBodyFontSize={logic.currentBodyFontSize}

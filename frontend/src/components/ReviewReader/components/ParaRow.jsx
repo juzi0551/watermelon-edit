@@ -198,18 +198,31 @@ export const ParaRow = React.memo(function ParaRow({
                   : '4px solid transparent',
         }}
       >
-        <span style={{
-          color: para?.revised_text ? color.success : color.textTertiary,
-          fontWeight: para?.revised_text ? 600 : 400,
-          fontVariantNumeric: 'tabular-nums',
-          display: 'inline-block',
-          fontSize: fontSize.bodyXs,
-          flexShrink: 0,
-          lineHeight: 1.9,
-          minWidth: 24,
-          textAlign: 'left',
-          userSelect: 'none',
-        }}>
+        <span
+          title="点击唤起该段落工具条"
+          onClick={(e) => {
+            if (!mergeMode) {
+              try { window.getSelection()?.removeAllRanges() } catch {}
+            }
+          }}
+          style={{
+            color: para?.revised_text ? color.success : color.textTertiary,
+            fontWeight: para?.revised_text ? 600 : 400,
+            fontVariantNumeric: 'tabular-nums',
+            display: 'inline-block',
+            fontSize: fontSize.bodyXs,
+            flexShrink: 0,
+            lineHeight: 1.9,
+            minWidth: 24,
+            textAlign: 'left',
+            userSelect: 'none',
+            cursor: 'pointer',
+            borderRadius: 3,
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary, #13c2c2)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = para?.revised_text ? color.success : color.textTertiary }}
+        >
           {para.idx}
         </span>
 
@@ -365,6 +378,7 @@ export const ParaRow = React.memo(function ParaRow({
                   editNote={para.edit_note}
                   paraIdx={para.idx}
                   onSelectManualEdit={onSelectManualEdit}
+                  mergeMode={mergeMode}
                 />
               )}
             </div>

@@ -5,7 +5,7 @@ import { color, radius, spacing, fontSize } from '../../../design-tokens'
 import { TYPE_LABEL, SEVERITY_COLOR, SEVERITY_LABEL } from '../constants'
 import { DiffView } from './DiffView'
 
-export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus }) {
+export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus, mergeMode }) {
   return errors.map(e => {
     const statusColor = e.user_status === 'pending' ? color.warning
       : e.user_status === 'accepted' ? color.success : color.borderRejected
@@ -16,7 +16,7 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
         key={e.id}
         className="error-list-item"
         style={{
-          cursor: 'pointer',
+          cursor: mergeMode ? 'default' : 'pointer',
           background: e.id === selectedId ? color.bgHighlight : color.bgPage,
           padding: '10px 14px',
           borderRadius: radius.md,
@@ -27,7 +27,10 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
           borderLeft: `3px solid ${statusColor}`,
           transition: 'background 0.15s, box-shadow 0.15s',
         }}
-        onClick={() => onSelect(e.id)}
+        onClick={() => {
+          if (mergeMode) return
+          onSelect(e.id)
+        }}
         onMouseEnter={(ev) => {
           if (e.id !== selectedId) ev.currentTarget.style.background = color.bgCard
         }}
@@ -72,6 +75,7 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
 })
 
 export function ErrorSidebar({
+  mergeMode,
   showPanel,
   onTogglePanel,
   panelTab,
@@ -132,6 +136,7 @@ export function ErrorSidebar({
                     onSelect={handleSelectError}
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
+                    mergeMode={mergeMode}
                   />
                 ),
             },
@@ -147,6 +152,7 @@ export function ErrorSidebar({
                     onSelect={handleSelectError}
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
+                    mergeMode={mergeMode}
                   />
                 ),
             },
@@ -162,6 +168,7 @@ export function ErrorSidebar({
                     onSelect={handleSelectError}
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
+                    mergeMode={mergeMode}
                   />
                 ),
             },
@@ -177,6 +184,7 @@ export function ErrorSidebar({
                     onSelect={(id) => handleSelectObsoleteError(id, jumpToParagraphExact)}
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
+                    mergeMode={mergeMode}
                   />
                 ),
             },

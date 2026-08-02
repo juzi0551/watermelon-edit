@@ -291,3 +291,16 @@ a:hover, .ant-btn-link:hover, .ant-typography a:hover {
   padding-top: 12px !important;
   padding-bottom: 12px !important;
 }
+
+/* 自定义 Splitter 分割条手柄尺寸：默认 4px，悬停/激活 6px */
+.ant-splitter-bar {
+  width: 8px !important;
+}
+.ant-splitter-bar-dragger {
+  width: 4px !important;
+  transition: width 0.15s ease, background-color 0.15s ease !important;
+}
+.ant-splitter-bar:hover .ant-splitter-bar-dragger,
+.ant-splitter-bar-active .ant-splitter-bar-dragger {
+  width: 6px !important;
+}

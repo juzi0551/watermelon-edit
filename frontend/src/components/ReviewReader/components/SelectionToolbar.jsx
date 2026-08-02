@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Button, Space, Tooltip } from 'antd'
 import { RocketOutlined, BulbOutlined, MessageOutlined } from '@ant-design/icons'
 
-export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelectionChange, tbFontSize = 14 }) {
+export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelectionChange, tbFontSize = 14, mergeMode }) {
   const [visible, setVisible] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const [selectionData, setSelectionData] = useState(null)
@@ -162,7 +162,7 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
     }
   }, [containerRef, visible, updateSelectionState])
 
-  if (!visible || !selectionData) return null
+  if (mergeMode || !visible || !selectionData) return null
 
   const handleAction = (actionType) => {
     if (!onAskAssistant || !selectionData) return

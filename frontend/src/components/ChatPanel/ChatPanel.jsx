@@ -471,7 +471,7 @@ export default function ChatPanel({
                     overflow: 'hidden',
                   }}
                 >
-                  <span style={{ fontWeight: 600, flexShrink: 0, opacity: 0.95 }}>
+                  <span style={{ fontWeight: 600, flexShrink: 0, opacity: 0.95, whiteSpace: 'nowrap' }}>
                     段落#{userParaIdx}{userIsExcerpt ? ' 节选' : ''}
                   </span>
                   {userFormattedText && (
@@ -480,6 +480,7 @@ export default function ChatPanel({
                       <span
                         style={{
                           flex: 1,
+                          minWidth: 0,
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',

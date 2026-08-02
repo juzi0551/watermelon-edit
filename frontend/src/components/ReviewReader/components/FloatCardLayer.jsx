@@ -3,6 +3,7 @@ import { ErrorDetailCard } from './ErrorDetailCard'
 import { ManualEditDetailCard } from './ManualEditDetailCard'
 
 export function FloatCardLayer({
+  mergeMode,
   selectedError,
   floatCardElRef,
   currentBodyFontSize,
@@ -16,6 +17,8 @@ export function FloatCardLayer({
   handleRevertManualEdit,
   setSelectedManualEditIdx,
 }) {
+  if (mergeMode) return null
+
   return (
     <>
       {selectedError && (

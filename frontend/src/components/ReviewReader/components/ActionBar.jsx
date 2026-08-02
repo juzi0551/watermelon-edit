@@ -2,7 +2,7 @@ import React from 'react'
 import { Button, Tag, Space, Input, Popover, Progress, Tooltip, Select, InputNumber } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, LoadingOutlined,
-  MinusOutlined, PlusOutlined, DownloadOutlined, ToolOutlined
+  MinusOutlined, PlusOutlined, DownloadOutlined, ToolOutlined, SettingOutlined
 } from '@ant-design/icons'
 import { color, radius, fontSize } from '../../../design-tokens'
 import { kbdStyle, TYPE_OPTIONS } from '../constants'
@@ -221,23 +221,28 @@ export function ActionBar({
                   />
                 }
               >
-                <Button
-                  type="text"
-                  size="middle"
-                  style={{
-                    color: color.textPrimary, fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap',
-                    maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', flexShrink: 0,
-                  }}
-                >
-                  {showOptions ? '◀' : '▶'} 校对配置 ({
-                    (() => {
-                      const m = models.find(x => x.model_id === selectedModel)
-                      return m ? `${m.provider_name || m.provider} · ${m.name}` : selectedModel
-                    })()
-                  })
-                </Button>
+                <Tooltip title="校对配置">
+                  <Button
+                    shape="circle"
+                    size="large"
+                    className="bar-action-btn"
+                    icon={<SettingOutlined />}
+                    style={{ height: 44, width: 44, fontSize: 18 }}
+                  />
+                </Tooltip>
               </Popover>
             )}
+
+            <Tooltip title="快速工具">
+              <Button
+                shape="circle"
+                size="large"
+                className="bar-action-btn"
+                icon={<ToolOutlined />}
+                onClick={onOpenTools}
+                style={{ height: 44, width: 44, fontSize: 18, marginLeft: 8 }}
+              />
+            </Tooltip>
 
             {batchInfo && (
               <Popover
@@ -379,7 +384,6 @@ export function ActionBar({
                       <Tag style={{ marginLeft: 4, fontSize: 15, padding: '4px 10px', borderRadius: 999, flexShrink: 0 }}>
                         {pending.findIndex(e => e.id === selectedId) + 1}/{pending.length}
                       </Tag>
-                      <ShortcutHint />
                     </>
                   ) : (
                     <span style={{ color: color.textTertiary }}>
@@ -388,59 +392,44 @@ export function ActionBar({
                   )}
                 </>
               ) : (
-                <>
-                  <Button
-                    type="primary"
-                    shape="round"
-                    size="large"
-                    className="bar-action-btn"
-                    icon={<ThunderboltOutlined />}
-                    loading={proofreading}
-                    onClick={onStartProofread}
-                    disabled={inProgress}
-                    style={{ height: 52, paddingInline: 36, fontSize: 17 }}
-                  >
-                    {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
-                  </Button>
-                  <Button
-                    shape="round"
-                    size="large"
-                    className="bar-action-btn"
-                    icon={<ThunderboltOutlined />}
-                    loading={proofreading}
-                    onClick={onStartBatchProofread}
-                    disabled={inProgress}
-                    style={{ height: 52, paddingInline: 24, fontSize: 16, marginLeft: 8 }}
-                    title={`批量并行校对多窗口（每个窗口 ${proofreadWindowSize} 段，可以在校对配置中调整）`}
-                  >
-                    批量校对
-                  </Button>
-                  <Button
-                    shape="round"
-                    size="large"
-                    className="bar-action-btn"
-                    icon={<ToolOutlined />}
-                    onClick={onOpenTools}
-                    style={{ height: 52, paddingInline: 20, fontSize: 15, marginLeft: 8 }}
-                  >
-                    快速工具
-                  </Button>
-                  <Button
-                    type="primary"
-                    shape="round"
-                    size="large"
-                    className="bar-action-btn"
-                    icon={<DownloadOutlined />}
-                    loading={exporting}
-                    onClick={onExport}
-                    disabled={inProgress}
-                    style={{ height: 52, paddingInline: 24, fontSize: 15, marginLeft: 8 }}
-                  >
-                    导出校稿版
-                  </Button>
-                  <ShortcutHint />
-                </>
+                <Button
+                  type="primary"
+                  shape="round"
+                  size="large"
+                  className="bar-action-btn"
+                  icon={<ThunderboltOutlined />}
+                  loading={proofreading}
+                  onClick={onStartProofread}
+                  disabled={inProgress}
+                  style={{ height: 52, paddingInline: 36, fontSize: 17 }}
+                >
+                  {allDone ? '继续校对' : projectError ? '重试' : '开始校对'}
+                </Button>
               )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <Button
+                type="primary"
+                shape="round"
+                size="large"
+                className="bar-action-btn"
+                icon={<DownloadOutlined />}
+                loading={exporting}
+                onClick={onExport}
+                disabled={inProgress}
+                style={{
+                  height: 52,
+                  paddingInline: 24,
+                  fontSize: 15,
+                  backgroundColor: '#d4a359',
+                  borderColor: '#d4a359',
+                  color: '#ffffff',
+                }}
+              >
+                导出校稿版
+              </Button>
+              <ShortcutHint />
             </div>
           </>
         )}

@@ -101,7 +101,9 @@ export function ReaderContentArea({
           overflowY: 'auto',
           padding: '12px 24px 72px 24px',
           background: color.bgReader,
-          borderRadius: radius.md,
+          borderLeft: '1px solid var(--color-borderStrong, #d9d9d9)',
+          borderRight: '1px solid var(--color-borderStrong, #d9d9d9)',
+          borderRadius: `0 0 ${radius.md}px ${radius.md}px`,
           position: 'relative',
         }}
       >

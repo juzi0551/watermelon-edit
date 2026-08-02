@@ -22,7 +22,7 @@ export function useReaderCardPosition({
     const el = floatCardElRef.current
     if (!container || !el || !selectedId) return
     const id = selectedIdRef.current
-    const err = flatErrors.find(e => e.id === id)
+    const err = flatErrors.find(e => String(e.id) === String(id))
     if (!err || err.is_obsolete === 1) {
       el.style.opacity = '0'
       el.style.transform = 'translateY(3px)'

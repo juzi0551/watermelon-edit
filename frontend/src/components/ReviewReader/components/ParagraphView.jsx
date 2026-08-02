@@ -4,18 +4,9 @@ import { color } from '../../../design-tokens'
 import { parseEditNotes } from '../utils/readerUtils'
 import { computeExactLcsDiff } from '../utils/diffUtils'
 
-export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editNote, paraIdx, onSelectManualEdit }) {
-  if (!text) return null
-
+export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editNote, paraIdx, onSelectManualEdit, mergeMode }) {
   // 1. 过滤活跃未作废错误
-  const activeErrs = paraErrors.filter(e => !e.is_obsolete)
-
-  // 2. 是否存在真正的手工编辑履历
-  const manualNotes = parseEditNotes(editNote)
-  const hasManualEditNotes = Boolean(manualNotes.length > 0)
-  const manualLcs = (hasManualEditNotes && origText && text && origText !== text)
-    ? computeExactLcsDiff(origText, text)
-    : null
+  const activeErrs = (paraErrors || []).filter(e => !e.is_obsolete)
 
   // 预构建字典：映射 original_text -> error (O(1) 查询)
   const errByOrigMap = useMemo(() => {
@@ -25,6 +16,15 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
     })
     return map
   }, [activeErrs])
+
+  if (!text) return null
+
+  // 2. 是否存在真正的手工编辑履历
+  const manualNotes = parseEditNotes(editNote)
+  const hasManualEditNotes = Boolean(manualNotes.length > 0)
+  const manualLcs = (hasManualEditNotes && origText && text && origText !== text)
+    ? computeExactLcsDiff(origText, text)
+    : null
 
   // 收集所有纯删除及纯新增记录与发生位置
   const pureDeletionsByPos = {} // pos -> Array of deletion items
@@ -56,7 +56,7 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
         pureAdditionsByPos[pos].push({
           type: 'ai',
           errorId: e.id,
-          isSelected: e.id === selectedId,
+          isSelected: String(e.id) === String(selectedId),
           suggestedText: e.suggested_text,
         })
       } else {
@@ -79,7 +79,7 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
                   pureAdditionsByPos[insertPos].push({
                     type: 'ai',
                     errorId: e.id,
-                    isSelected: e.id === selectedId,
+                    isSelected: String(e.id) === String(selectedId),
                     suggestedText: c.value,
                   })
                 }
@@ -203,6 +203,7 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
           data-error-id={isAi ? item.errorId : undefined}
           data-manual-edit={!isAi ? 'true' : undefined}
           onClick={(ev) => {
+            if (mergeMode) return
             ev.stopPropagation()
             if (isAi) {
               onSelect(item.errorId)
@@ -236,6 +237,7 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
           key={`add_${pos}_${idx}`}
           data-error-id={item.errorId}
           onClick={(ev) => {
+            if (mergeMode) return
             ev.stopPropagation()
             onSelect(item.errorId)
           }}
@@ -339,6 +341,7 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
               return
             }
 
+            if (mergeMode) return
             ev.stopPropagation()
             if (isManualEditSpan) {
               onSelectManualEdit?.(paraIdx)

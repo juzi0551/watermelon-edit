@@ -508,7 +508,7 @@ export function useReaderLogic({
   }, [project?.id, selectedMergeParas, paraMap, paraMapByIdx, handleExitMergeMode, onReloadProject])
 
   const selectedError = useMemo(
-    () => flatErrors.find(e => e.id === selectedId),
+    () => flatErrors.find(e => String(e.id) === String(selectedId)),
     [flatErrors, selectedId],
   )
 
@@ -529,7 +529,7 @@ export function useReaderLogic({
     const custom = status === 'accepted' && customEdit !== selectedError?.suggested_text
       ? customEdit : undefined
 
-    const idx = pending.findIndex(e => e.id === curId)
+    const idx = pending.findIndex(e => String(e.id) === String(curId))
     if (idx >= 0 && idx + 1 < pending.length) {
       setSelectedId(pending[idx + 1].id)
     } else if (idx > 0) {
