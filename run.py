@@ -114,7 +114,9 @@ def main():
         import app.core.database as db_mod
         db_mod.DB_DIR = user_data
         db_mod.DB_PATH = os.path.join(user_data, 'novel_proofreader.db')
-        print("  [OK] database patched")
+        db_mod.init_db()
+        db_mod._load_settings_cache()
+        print("  [OK] database patched & initialized")
 
         # 2. config — KEYS_DIR / KEYS_PATH
         import config as cfg_mod

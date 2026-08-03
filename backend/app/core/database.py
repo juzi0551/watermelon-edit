@@ -366,15 +366,18 @@ def _migrate_schema(conn):
                     [(generate_id(), r["id"]) for r in para_rows],
                 )
             # Step 2：用 idx 关系回填 errors.paragraph_uuid
-            conn.execute(
-                """UPDATE errors
-                   SET paragraph_uuid = (
-                       SELECT p.uuid FROM paragraphs p
-                       WHERE p.idx = errors.paragraph_index
-                         AND p.document_id = errors.document_id
-                   )
-                   WHERE paragraph_uuid IS NULL"""
-            )
+            try:
+                conn.execute(
+                    """UPDATE errors
+                       SET paragraph_uuid = (
+                           SELECT p.uuid FROM paragraphs p
+                           WHERE p.idx = errors.paragraph_index
+                             AND p.document_id = errors.document_id
+                       )
+                       WHERE paragraph_uuid IS NULL"""
+                )
+            except sqlite3.OperationalError:
+                pass
 
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '8')")
 
@@ -548,10 +551,12 @@ def init_db():
 
 @contextmanager
 def get_conn():
-    """获取数据库连接（自动提交/关闭）。"""
-    conn = sqlite3.connect(DB_PATH)
+    """获取数据库连接（自动提交/关闭，并发增强）。"""
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
         yield conn
         conn.commit()
     finally:
