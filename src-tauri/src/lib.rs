@@ -78,11 +78,10 @@ pub fn run() {
                     "binaries/watermelon-server.exe",
                 ];
                 for name in candidates {
-                    if let Ok(cmd) = app.shell().command(name) {
-                        if let Ok(res) = cmd.spawn() {
-                            spawned = Some(res);
-                            break;
-                        }
+                    let cmd = app.shell().command(name);
+                    if let Ok(res) = cmd.spawn() {
+                        spawned = Some(res);
+                        break;
                     }
                 }
             }
