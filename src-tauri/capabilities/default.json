@@ -9,7 +9,6 @@
     "shell:allow-spawn",
     "shell:allow-stdin-write",
     "shell:allow-kill",
-    "shell:allow-execute",
-    "shell:allow-watermelon-server-sidecar"
+    "shell:allow-execute"
   ]
 }
