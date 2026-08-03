@@ -191,7 +191,7 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
 }
 
 
-def sanitize_history_messages(raw_history: list[dict], max_count: int = 20) -> list[dict]:
+def sanitize_history_messages(raw_history: list[dict], max_count: int = 50) -> list[dict]:
     """对历史消息进行安全的截断，确保 tool_calls 与对应 role: tool 消息同组原子化进出，杜绝 400 错配。"""
     if not raw_history:
         return []
@@ -234,7 +234,7 @@ async def stream_chat(
 
     # 追加历史消息 (严格兼容 tool_calls 与 role=tool 协议，原子化同组进出)
     if history_messages:
-        safe_history = sanitize_history_messages(history_messages, max_count=20)
+        safe_history = sanitize_history_messages(history_messages, max_count=50)
         for msg in safe_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")

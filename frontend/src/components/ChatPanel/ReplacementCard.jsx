@@ -18,6 +18,7 @@ export function ReplacementCard({
   const [selectedOptionIdx, setSelectedOptionIdx] = useState(0)
   const [showAllAcceptedOptions, setShowAllAcceptedOptions] = useState(false)
   const [expandedRejected, setExpandedRejected] = useState(false)
+  const [expandedAccepted, setExpandedAccepted] = useState(false)
 
   useEffect(() => {
     if (cardData?.status) {
@@ -81,56 +82,155 @@ export function ReplacementCard({
   const targetIdx = paragraphIdx ?? cardData?.paragraph_idx ?? cardData?.paragraphIdx
   const isDefined = targetIdx !== undefined && targetIdx !== null
 
-  // 1. 已拒绝且未展开时的精简单行状态
+  // 1. 已拒绝且未展开时的提示状态卡片（增加卡片大小、字号与方案文字预览，提升清晰度）
   if (status === 'rejected' && !expandedRejected) {
+    const previewText = currentReplacement ? (currentReplacement.length > 25 ? `${currentReplacement.slice(0, 25)}…` : currentReplacement) : ''
+    const rejectedTagFontSize = `${Math.max(12, bodyFontSize - 4)}px`
+    const rejectedBodyFontSize = `${Math.max(13, bodyFontSize - 3)}px`
+
     return (
       <div
         style={{
           marginTop: 10,
-          padding: '8px 12px',
-          borderRadius: 8,
+          padding: '12px 14px',
+          borderRadius: 10,
           background: '#f8fafc',
-          border: '1px solid #e2e8f0',
+          border: '1px solid #cbd5e1',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
           display: 'flex',
-          alignItems: 'center',
-          justify: 'space-between',
+          flexDirection: 'column',
+          gap: 8,
           transition: 'all 0.2s ease',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Tag color="default" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>
-            ✕ 已忽略修改建议
-          </Tag>
-          <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx} 段并高亮` : '段落未定'}>
-            <Tag
-              color={isDefined ? "blue" : "volcano"}
-              onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
-              style={{
-                marginLeft: 2,
-                fontWeight: 500,
-                fontSize: 11,
-                borderRadius: 4,
-                cursor: isDefined ? 'pointer' : 'default',
-                userSelect: 'none',
-              }}
-            >
-              段落 #{isDefined ? targetIdx : 'undefined'}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Tag color="default" style={{ margin: 0, fontSize: rejectedTagFontSize, padding: '2px 8px', borderRadius: 4, fontWeight: 500 }}>
+              ✕ 已忽略修改建议
             </Tag>
-          </Tooltip>
+            <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx} 段并高亮` : '段落未定'}>
+              <Tag
+                color={isDefined ? "blue" : "volcano"}
+                onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
+                style={{
+                  margin: 0,
+                  fontWeight: 500,
+                  fontSize: rejectedTagFontSize,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  cursor: isDefined ? 'pointer' : 'default',
+                  userSelect: 'none',
+                }}
+              >
+                段落 #{isDefined ? targetIdx : 'undefined'}
+              </Tag>
+            </Tooltip>
+          </div>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => setExpandedRejected(true)}
+            style={{ padding: 0, fontSize: rejectedBodyFontSize, color: '#2563eb', fontWeight: 500 }}
+          >
+            查看原方案 ▾
+          </Button>
         </div>
-        <Button
-          type="link"
-          size="small"
-          onClick={() => setExpandedRejected(true)}
-          style={{ padding: 0, fontSize: 12, color: '#64748b' }}
-        >
-          查看原本方案 ▾
-        </Button>
+
+        {previewText && (
+          <div
+            style={{
+              fontSize: rejectedBodyFontSize,
+              color: '#64748b',
+              lineHeight: 1.5,
+              background: '#f1f5f9',
+              padding: '6px 10px',
+              borderRadius: 6,
+              wordBreak: 'break-all',
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#475569', marginRight: 4 }}>已忽略方案：</span>
+            {previewText}
+          </div>
+        )}
       </div>
     )
   }
 
-  // 2. 正常卡片模式
+  // 2. 已采纳且未展开时的提示状态卡片
+  if (status === 'accepted' && !expandedAccepted) {
+    const previewText = currentReplacement ? (currentReplacement.length > 25 ? `${currentReplacement.slice(0, 25)}…` : currentReplacement) : ''
+    const acceptedTagFontSize = `${Math.max(12, bodyFontSize - 4)}px`
+    const acceptedBodyFontSize = `${Math.max(13, bodyFontSize - 3)}px`
+
+    return (
+      <div
+        style={{
+          marginTop: 10,
+          padding: '12px 14px',
+          borderRadius: 10,
+          background: '#f0fdf4',
+          border: '1px solid #bbf7d0',
+          boxShadow: '0 2px 6px rgba(34, 197, 94, 0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Tag color="green" style={{ margin: 0, fontSize: acceptedTagFontSize, padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
+              ✓ 已采纳修改建议
+            </Tag>
+            <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx} 段并高亮` : '段落未定'}>
+              <Tag
+                color={isDefined ? "blue" : "volcano"}
+                onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
+                style={{
+                  margin: 0,
+                  fontWeight: 500,
+                  fontSize: acceptedTagFontSize,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  cursor: isDefined ? 'pointer' : 'default',
+                  userSelect: 'none',
+                }}
+              >
+                段落 #{isDefined ? targetIdx : 'undefined'}
+              </Tag>
+            </Tooltip>
+          </div>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => setExpandedAccepted(true)}
+            style={{ padding: 0, fontSize: acceptedBodyFontSize, color: '#2563eb', fontWeight: 500 }}
+          >
+            查看原方案 ▾
+          </Button>
+        </div>
+
+        {previewText && (
+          <div
+            style={{
+              fontSize: acceptedBodyFontSize,
+              color: '#166534',
+              lineHeight: 1.5,
+              background: '#dcfce7',
+              padding: '6px 10px',
+              borderRadius: 6,
+              wordBreak: 'break-all',
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#15803d', marginRight: 4 }}>已采纳方案：</span>
+            {previewText}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // 3. 正常展开卡片模式
   const visibleOptions = (status === 'accepted' && !showAllAcceptedOptions)
     ? optionsList.filter((_, idx) => idx === selectedOptionIdx)
     : optionsList
@@ -172,12 +272,22 @@ export function ReplacementCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {status === 'accepted' && <Tag color="green" style={{ margin: 0, fontSize: 11 }}>✓ 已采纳</Tag>}
           {status === 'rejected' && <Tag color="default" style={{ margin: 0, fontSize: 11 }}>✕ 已忽略</Tag>}
+          {status === 'accepted' && expandedAccepted && (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setExpandedAccepted(false)}
+              style={{ padding: '2px 8px', fontSize: `${Math.max(13, bodyFontSize - 3)}px`, color: '#2563eb', fontWeight: 500 }}
+            >
+              收起 ▴
+            </Button>
+          )}
           {status === 'rejected' && expandedRejected && (
             <Button
               type="link"
               size="small"
               onClick={() => setExpandedRejected(false)}
-              style={{ padding: 0, fontSize: 12, color: '#64748b' }}
+              style={{ padding: '2px 8px', fontSize: `${Math.max(13, bodyFontSize - 3)}px`, color: '#2563eb', fontWeight: 500 }}
             >
               收起 ▴
             </Button>
@@ -263,12 +373,12 @@ export function ReplacementCard({
 
       {/* 已采纳下折叠/展开其他方案操作 */}
       {status === 'accepted' && optionsList.length > 1 && (
-        <div style={{ textAlign: 'center', marginTop: 6 }}>
+        <div style={{ textAlign: 'center', marginTop: 8 }}>
           <Button
             type="link"
             size="small"
             onClick={() => setShowAllAcceptedOptions(!showAllAcceptedOptions)}
-            style={{ fontSize: 12, color: '#64748b', padding: 0 }}
+            style={{ fontSize: `${Math.max(13, bodyFontSize - 3)}px`, color: '#2563eb', fontWeight: 500, padding: '4px 10px' }}
           >
             {showAllAcceptedOptions ? '收起其他方案 ▴' : `展开查看其他 ${optionsList.length - 1} 个未采纳方案 ▾`}
           </Button>

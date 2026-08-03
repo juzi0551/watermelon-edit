@@ -408,10 +408,10 @@ export default function ChatPanel({
       const isSameRoleAsPrev = prevItem && prevItem.role === item.role
       const isFirstInGroup = !isSameRoleAsPrev
       const userParaIdx = isUser
-        ? (item.context?.paragraph_idx ?? item.context?.paragraphIdx ?? item.context?.para_idx ?? nextItem?.context?.paragraph_idx ?? nextItem?.context?.paragraphIdx ?? nextItem?.context?.para_idx ?? nextItem?.replacementCard?.paragraph_idx ?? nextItem?.replacementCard?.paragraphIdx)
+        ? (item.context?.paragraph_idx ?? item.context?.paragraphIdx ?? item.context?.para_idx)
         : null
       const userSelectedText = isUser
-        ? (item.context?.selected_text ?? item.context?.selectedText ?? nextItem?.context?.selected_text ?? nextItem?.replacementCard?.original)
+        ? (item.context?.selected_text ?? item.context?.selectedText)
         : null
 
       const isExplicitExcerpt = item.context?.is_excerpt ?? item.context?.isExcerpt
