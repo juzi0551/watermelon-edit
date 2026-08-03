@@ -57,7 +57,7 @@ export default function ProjectList() {
       const proj = await createProject(name)
       await uploadToProject(proj.id, file)
       message.success('上传并解析成功')
-      navigate(`/project/${proj.id}`)
+      navigate(`/project/${proj.id}`, { state: { isNewProject: true } })
     } catch (e) {
       message.error('上传失败：' + (e.response?.data?.detail || e.message))
       setLoading(false)

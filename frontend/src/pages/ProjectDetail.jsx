@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   Card, Button, Upload, Tag, Space, List, Typography, Spin, message,
-  Empty, Drawer, Tooltip, Popconfirm, Dropdown, Modal, Popover, Badge, Splitter, Progress,
+  Empty, Drawer, Tooltip, Popconfirm, Dropdown, Modal, Popover, Badge, Splitter, Progress, Avatar,
 } from 'antd'
 import {
   InboxOutlined, ArrowLeftOutlined, DownloadOutlined, UnorderedListOutlined,
@@ -83,6 +83,8 @@ export default function ProjectDetail() {
   const [toolsOpen, setToolsOpen] = useState(false)
   const [llmCalls, setLlmCalls] = useState([])
   const [llmMonitorLoading, setLlmMonitorLoading] = useState(false)
+  const location = useLocation()
+  const autoOpenedProfileRef = useRef(false)
   const readerRef = useRef(null)
   const llmTimerRef = useRef(null)
   // batch 模式专用 state
@@ -285,6 +287,18 @@ export default function ProjectDetail() {
     loadModels()
   }, [projectId])
 
+  // 首次新建项目进入页面且作品设定仍为空时，自动弹出作品设定抽屉面板
+  useEffect(() => {
+    if (!autoOpenedProfileRef.current && project) {
+      const isProfileEmpty = !project.author_name?.trim() && !project.author_intro?.trim() && !project.background_setting?.trim()
+      const isNew = location.state?.isNewProject || new URLSearchParams(location.search).get('isNew') === 'true'
+      if (isNew && isProfileEmpty) {
+        autoOpenedProfileRef.current = true
+        setProfileDrawerOpen(true)
+      }
+    }
+  }, [location, project])
+
   useEffect(() => {
     document.title = project?.name || 'Watermelon Edit'
   }, [project])
@@ -326,7 +340,7 @@ export default function ProjectDetail() {
   }
 
   const handleWindowSizeChange = (val) => {
-    const num = Math.max(5, Math.min(val || 5, 100))
+    const num = Math.max(5, Math.min(val || 5, 500))
     setProofreadWindowSize(num)
     localStorage.setItem('proofread_window_size', String(num))
     saveWindowSize(num).catch(() => { })
@@ -646,8 +660,11 @@ export default function ProjectDetail() {
   return (
     <div>
       <Card
+        styles={{
+          title: { width: '100%', overflow: 'visible', paddingRight: 0 },
+        }}
         title={
-          <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative' }}>
             <Space wrap style={{ flexShrink: 0 }}>
               <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
               <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目/段落防误删）' : '锁定项目（开启项目/段落防误删）'}>
@@ -719,8 +736,8 @@ export default function ProjectDetail() {
               )}
             </Space>
 
-            {/* Flex 弹性填充正中间放置「字号： [ - ] 17 [ + ]」组件 */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 140 }}>
+            {/* 基于 100% 通栏绝对数学居中放置「字号： [ - ] 17 [ + ]」组件 */}
+            <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -764,14 +781,32 @@ export default function ProjectDetail() {
         }
         extra={
           <Space wrap align="center">
-            <Button
-              type={chatPanelOpen ? 'primary' : 'default'}
-              shape="round"
-              icon={<RobotOutlined />}
-              onClick={() => setChatPanelOpen((v) => !v)}
-            >
-              AI 助手
-            </Button>
+            <Tooltip title={chatPanelOpen ? '收起 AI 助手' : '展开 AI 助手'}>
+              <div
+                onClick={() => setChatPanelOpen((v) => !v)}
+                style={{
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '50%',
+                  transition: 'all 0.25s ease',
+                  boxShadow: chatPanelOpen ? '0 4px 12px rgba(59, 130, 246, 0.35)' : 'none',
+                }}
+              >
+                <Avatar
+                  size={40}
+                  src="/assistant-avatar.png"
+                  style={{
+                    background: chatPanelOpen
+                      ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
+                      : 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)',
+                    transition: 'all 0.25s ease',
+                    border: chatPanelOpen ? '2px solid #60a5fa' : '1px solid #bae6fd',
+                  }}
+                />
+              </div>
+            </Tooltip>
             <Modal
               title={
                 <Space>
@@ -936,7 +971,7 @@ export default function ProjectDetail() {
             </Modal>
           </Space>
         }
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 0 }}
       >
 
         {(!project?.paragraph_count || project.paragraph_count === 0) && (
@@ -952,7 +987,7 @@ export default function ProjectDetail() {
         )}
         {total > 0 && (
           <Splitter
-            style={{ height: 'calc(100vh - 185px)' }}
+            style={{ height: 'calc(100vh - 118px)' }}
             onResize={(sizes) => {
               if (sizes && sizes.length > 1 && chatPanelOpen) {
                 const total = sizes[0] + sizes[1]
@@ -1027,6 +1062,7 @@ export default function ProjectDetail() {
                   activeSelection={chatSelection}
                   onClearSelection={() => setChatSelection(null)}
                   onApplyText={handleApplyChatText}
+                  selectedModel={selectedModel}
                   bodyFontSize={bodyFontSize}
                   onScrollToParagraph={(idx) => readerRef.current?.scrollToParagraph?.(idx)}
                 />
@@ -1048,6 +1084,7 @@ export default function ProjectDetail() {
           project={project}
           onProjectUpdated={loadProject}
           onResultsReload={loadResults}
+          bodyFontSize={bodyFontSize}
         />
 
         <CharacterGraph

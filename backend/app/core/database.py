@@ -416,6 +416,11 @@ def _migrate_schema(conn):
         conn.execute("UPDATE settings SET value = '200' WHERE key = 'chat_context_chars'")
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '11')")
 
+    if version < 12:
+        from app.core.chat import DEFAULT_CHAT_SYSTEM_PROMPT
+        conn.execute("UPDATE settings SET value = ? WHERE key = 'system_prompt_chat'", (DEFAULT_CHAT_SYSTEM_PROMPT,))
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '12')")
+
 
 
 def init_db():

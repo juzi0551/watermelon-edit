@@ -5,7 +5,10 @@ import { color, radius, spacing, fontSize } from '../../../design-tokens'
 import { TYPE_LABEL, SEVERITY_COLOR, SEVERITY_LABEL } from '../constants'
 import { DiffView } from './DiffView'
 
-export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus, mergeMode }) {
+export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect, unmatchedIds, onSetStatus, mergeMode, tbFontSize }) {
+  const subFontSize = Math.max(12, (tbFontSize || 17) - 2)
+  const tagFontSize = Math.max(11, subFontSize - 1)
+
   return errors.map(e => {
     const statusColor = e.user_status === 'pending' ? color.warning
       : e.user_status === 'accepted' ? color.success : color.borderRejected
@@ -39,36 +42,36 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
         }}
       >
         <Space size={spacing.xs} style={{ marginBottom: 4 }}>
-          <Tag style={{ fontSize: fontSize.metaSm, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
+          <Tag style={{ fontSize: tagFontSize, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
             第{e.paragraph_index}段
           </Tag>
-          {noLoc && <Tag color="warning" style={{ fontSize: fontSize.metaSm, margin: 0 }}>位置异常</Tag>}
-          <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
-          <Tag style={{ fontSize: fontSize.metaSm, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
+          {noLoc && <Tag color="warning" style={{ fontSize: tagFontSize, margin: 0 }}>位置异常</Tag>}
+          <Tag style={{ fontSize: tagFontSize, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
+          <Tag style={{ fontSize: tagFontSize, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
             {SEVERITY_LABEL[e.severity]}
           </Tag>
           {e.is_obsolete === 1 ? (
-            <Tag color="default" style={{ fontSize: fontSize.metaSm, margin: 0 }}>
+            <Tag color="default" style={{ fontSize: tagFontSize, margin: 0 }}>
               历史存档 (已覆盖)
             </Tag>
           ) : (
-            e.source === 'rule' && <Tag color="blue" style={{ fontSize: fontSize.metaSm, margin: 0 }}>规范检测</Tag>
+            e.source === 'rule' && <Tag color="blue" style={{ fontSize: tagFontSize, margin: 0 }}>规范检测</Tag>
           )}
           {done && !e.is_obsolete && (
             <Button
               type="text"
               size="small"
               onClick={(ev) => { ev.stopPropagation(); onSetStatus?.(e.id, 'pending') }}
-              style={{ height: 20, fontSize: 11, lineHeight: '18px', paddingInline: 6, color: color.textSecondary }}
+              style={{ height: 20, fontSize: Math.max(10, tagFontSize - 1), lineHeight: '18px', paddingInline: 6, color: color.textSecondary }}
             >
               重置
             </Button>
           )}
         </Space>
         <div style={{ margin: '4px 0' }}>
-          <DiffView original={e.original_text} suggested={e.suggested_text} />
+          <DiffView original={e.original_text} suggested={e.suggested_text} fontSize={subFontSize} />
         </div>
-        <div style={{ fontSize: fontSize.meta, color: color.textDescription, marginTop: 3 }}>{e.description}</div>
+        <div style={{ fontSize: subFontSize, color: color.textDescription, marginTop: 3 }}>{e.description}</div>
       </div>
     )
   })
@@ -90,7 +93,10 @@ export function ErrorSidebar({
   unmatchedIds,
   onSetStatus,
   jumpToParagraphExact,
+  tbFontSize,
 }) {
+  const subFontSize = Math.max(12, (tbFontSize || 17) - 2)
+
   return (
     <div
       style={{
@@ -109,7 +115,7 @@ export function ErrorSidebar({
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '14px 16px 0',
         }}>
-          <span style={{ fontWeight: 600, fontSize: 15 }}>问题列表</span>
+          <span style={{ fontWeight: 600, fontSize: subFontSize + 2 }}>问题列表</span>
           <Button type="text" size="small" icon={<MenuFoldOutlined style={{ transform: 'scaleX(-1)' }} />} onClick={onTogglePanel} />
         </div>
 
@@ -117,6 +123,7 @@ export function ErrorSidebar({
           .right-panel-tabs .ant-tabs-content-holder { overflow: hidden; }
           .right-panel-tabs .ant-tabs-content { height: 100%; }
           .right-panel-tabs .ant-tabs-tabpane-active { height: 100%; overflow-y: auto; padding-bottom: 72px; }
+          .right-panel-tabs .ant-tabs-tab-btn { font-size: ${subFontSize + 1}px !important; }
         `}</style>
         <Tabs
           activeKey={panelTab}
@@ -137,6 +144,7 @@ export function ErrorSidebar({
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
                     mergeMode={mergeMode}
+                    tbFontSize={tbFontSize}
                   />
                 ),
             },
@@ -153,6 +161,7 @@ export function ErrorSidebar({
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
                     mergeMode={mergeMode}
+                    tbFontSize={tbFontSize}
                   />
                 ),
             },
@@ -169,6 +178,7 @@ export function ErrorSidebar({
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
                     mergeMode={mergeMode}
+                    tbFontSize={tbFontSize}
                   />
                 ),
             },
@@ -185,6 +195,7 @@ export function ErrorSidebar({
                     unmatchedIds={unmatchedIds}
                     onSetStatus={onSetStatus}
                     mergeMode={mergeMode}
+                    tbFontSize={tbFontSize}
                   />
                 ),
             },

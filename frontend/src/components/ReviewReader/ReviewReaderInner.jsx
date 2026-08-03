@@ -153,6 +153,7 @@ export function ReviewReaderInner({
         pendingCount={logic.pending.length}
         panelOpen={panelOpen}
         onTogglePanel={onTogglePanel}
+        tbFontSize={logic.tbFontSize}
       />
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: 0, position: 'relative' }}>
         <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -250,6 +251,7 @@ export function ReviewReaderInner({
             onExport={onExport}
             exporting={exporting}
             onOpenTools={onOpenTools}
+            tbFontSize={logic.tbFontSize}
           />
         </div>
 
@@ -269,6 +271,7 @@ export function ReviewReaderInner({
           unmatchedIds={logic.unmatchedIds}
           onSetStatus={onSetStatus}
           jumpToParagraphExact={jumpToParagraphExact}
+          tbFontSize={logic.tbFontSize}
         />
       </div>
 

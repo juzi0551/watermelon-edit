@@ -13,8 +13,10 @@ export function ReaderHeader({
   pendingCount = 0,
   panelOpen,
   onTogglePanel,
+  tbFontSize,
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const subFontSize = Math.max(12, (tbFontSize || 17) - 2)
 
   const chapterMenuContent = (
     <div style={{
@@ -28,14 +30,14 @@ export function ReaderHeader({
         borderBottom: '1px solid var(--color-border)',
         marginBottom: 6,
         fontWeight: 600,
-        fontSize: 14,
+        fontSize: subFontSize + 1,
         color: color.textPrimary,
       }}>
         章节目录 ({chapters.length})
       </div>
       {chapters.length === 0 ? (
         <div style={{ padding: '16px 12px', textAlign: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 13 }}>尚未生成章节结构</Text>
+          <Text type="secondary" style={{ fontSize: subFontSize }}>尚未生成章节结构</Text>
         </div>
       ) : (
         <List
@@ -65,7 +67,7 @@ export function ReaderHeader({
                   <Text
                     ellipsis
                     style={{
-                      fontSize: ch.level >= 3 ? 12 : 13,
+                      fontSize: ch.level >= 3 ? Math.max(11, subFontSize - 1) : subFontSize,
                       fontWeight: ch.level === 1 ? 600 : isSelected ? 600 : 400,
                       color: isSelected ? color.primary : ch.level >= 3 ? color.textTertiary : color.textPrimary,
                       flex: 1,

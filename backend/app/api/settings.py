@@ -151,7 +151,7 @@ async def update_prompts(req: UpdatePromptsRequest):
         val = max(1, min(req.batch_max_concurrent, 20))
         set_setting("batch_max_concurrent", str(val))
     if req.proofread_window_size is not None:
-        ws = max(5, min(req.proofread_window_size, 100))
+        ws = max(5, min(req.proofread_window_size, 500))
         set_setting("proofread_window_size", str(ws))
     return {"status": "ok"}
 

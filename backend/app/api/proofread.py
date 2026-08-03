@@ -42,7 +42,7 @@ def get_max_concurrent() -> int:
 def get_window_size() -> int:
     try:
         val = int(get_setting("proofread_window_size", "30"))
-        return max(5, min(val, 100))
+        return max(5, min(val, 500))
     except (ValueError, TypeError):
         return 30
 

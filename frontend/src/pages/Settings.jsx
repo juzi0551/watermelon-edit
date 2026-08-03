@@ -451,34 +451,20 @@ export default function Settings() {
       children: (
         <Card style={{ borderRadius: 8 }}>
           <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-            配置校对时的单个 LLM 窗口段落数量以及“批量校对”时的并行窗口并发数量。
+            配置校对时的单个 LLM 窗口段落数量。
           </Text>
 
           <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
             <Text strong style={{ minWidth: 120 }}>单窗口段落数量：</Text>
             <InputNumber
               min={5}
-              max={100}
+              max={500}
               value={proofreadWindowSize}
               onChange={(val) => setProofreadWindowSize(val || 5)}
               style={{ width: 120 }}
             />
             <Text type="secondary" style={{ fontSize: 13 }}>
-              （默认：30 段。范围：5 ~ 100 段）
-            </Text>
-          </div>
-
-          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Text strong style={{ minWidth: 120 }}>最大并发窗口数：</Text>
-            <InputNumber
-              min={1}
-              max={20}
-              value={batchMaxConcurrent}
-              onChange={(val) => setBatchMaxConcurrent(val || 1)}
-              style={{ width: 120 }}
-            />
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              （推荐：2 ~ 5。单次批量并发处理 {batchMaxConcurrent * proofreadWindowSize} 段）
+              （默认：30 段。范围：5 ~ 500 段）
             </Text>
           </div>
 

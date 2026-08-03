@@ -51,18 +51,6 @@ export function ParaHoverToolbar({
         pointerEvents: 'auto',
       }}
     >
-      <Tooltip title="编辑段落文本,支持双击进入" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
-        <Button
-          type="text"
-          size="small"
-          icon={<EditOutlined style={{ color: '#7c3aed', fontSize: iconFontSize }} />}
-          onClick={() => handleStartEdit(activePara)}
-          style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
-        >
-          编辑
-        </Button>
-      </Tooltip>
-
       <Tooltip title="将整段文字带入 AI 助手侧栏" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
         <Button
           type="text"
@@ -76,6 +64,18 @@ export function ParaHoverToolbar({
           style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
         >
           问 AI
+        </Button>
+      </Tooltip>
+
+      <Tooltip title="编辑段落文本,支持双击进入" mouseEnterDelay={0.5} mouseLeaveDelay={0}>
+        <Button
+          type="text"
+          size="small"
+          icon={<EditOutlined style={{ color: '#7c3aed', fontSize: iconFontSize }} />}
+          onClick={() => handleStartEdit(activePara)}
+          style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
+        >
+          编辑
         </Button>
       </Tooltip>
 

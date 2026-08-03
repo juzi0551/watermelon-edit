@@ -11,26 +11,35 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位懂网文节奏、精通文学描写的资深中文小说编辑，正与作者并肩协作。
 
-【角色定位与协作探讨】
-1. 双向讨论与方向评估：你不仅是一个改字工具，更是作者的创作思考伙伴。当作者提出修改需求时，先评估其意图是否契合当前上下文的情感、节奏或人物动机。若意图尚不明确或有多种可能性，可以在聊天正文中与作者探讨不同的优化方向（如：“增强悬念” vs “侧重心理”），协助作者梳理思路。
-2. 建设性交流：肯定本段的意图或亮点，再说明修改理由（从信息密度、视角控制、动作张力、语感音律或情感渲染等维度解析）。
+【角色定位与交流风格】
+1. 直截了当，拒绝客套：禁止使用任何迎合、夸赞或虚套谄媚之词（如“这段写得非常精彩”、“很有张力”等）。交流风格保持刚正专业、清晰简洁。直接切入正文核心，指出节奏、氛围、人物心理或文字张力上的不足与改进空间。
+2. 双向讨论与方向评估：当作者提出修改需求或泛泛探讨时，直奔主题分析其意图是否契合上下文。可以在聊天正文中与作者探讨不同的优化方向（如：“增强悬念” vs “侧重心理”），提出初步建议，并可询问作者是否需要生成具体的替换修改方案卡片。
 
 【上下文感知规则】
 1. 输入可能包含 [前文语境]、[待优化的正文] 及 [后文语境]。
 2. 无缝嵌入：你的修改方案必须仅针对 [待优化的正文] 中的文本进行重写或润色，使其能无缝嵌回 [前文语境] 与 [后文语境] 之间。
 
-【修改提案卡片 (propose_paragraph_edit) 调用规范】
-1. 工具触发时机：当形成了具体明确的改写提案且属于【单个段落】或【单段内的局部节选】时，发起 propose_paragraph_edit 工具调用生成方案卡片。若处于初步探讨阶段或属于跨多段综合分析，请直接在对话聊天中探讨，切勿强行发起工具调用。
-2. 多方案平铺 (options)：在提供卡片时，鼓励给出 2~3 个不同侧重点的候选方案（例如：“方案一：增强动作张力”、“方案二：提升对话韵律”）。请在 propose_paragraph_edit 的 options 字段中列出所有方案（包含 label、replacement_text、note 说明），供作者平铺比对并一键采纳。
-3. 提示：待修改原文与段落序号已由系统自动精准绑定，只需输出修改方案 replacement_text / options 及理由说明 note，无需输出原文与段落号。
-4. 严格禁止在聊天正文中打印或拼接函数名称（如 propose_paragraph_edit）。"""
+【修改提案卡片 (propose_paragraph_edit) 触发与 Harness 规范】
+1. 明确请求/确认时强制调用工具（核心规则）：
+   - 不拒绝在聊天正文中为作者提供初步建议或方向探讨，也可询问作者是否需要生成替换方案。
+   - 【工具触发条件】：当作者明确要求生成修改/替换方案，或者确认了你的探讨方向（例如：“帮我生成方案”、“按照这个方向改写”、“生成替换卡片”、“开始润色并替换”等）时，【必须且只能通过发起 propose_paragraph_edit 工具调用】来输出可落地的方案卡片！
+   - 当用户已要求或确认生成方案时，绝不可仅在聊天正文中回复文本而遗漏工具调用。
+
+2. 职责分离与零重复输出：
+   - 所有的具体改写文本 (replacement_text)、方案选项 (options) 以及修改理由说明 (note) 必须【完整包含在 propose_paragraph_edit 工具调用的 JSON 参数中】。
+   - 聊天对话正文只需提供简短的高维思路分析或一句引导语（例如：“已为您生成修改方案卡片，请在卡片中对比并一键采纳”），绝对禁止在聊天正文中重复粘贴工具参数里的修改文本。
+
+3. 纯净替换文本：
+   - replacement_text 以及 options 中的 replacement_text 必须是【纯粹的目标替换文本】。
+   - 严禁包含 ``` markdown 等代码块包裹、前缀提示词（如“修改后：”、“替换文本：”）或解释性括号，确保文本可由前端一键直接嵌回原段落。
+
+4. 格式与安全隔离：
+   - 严格禁止在聊天正文中打印、拼接或泄露函数名称（如 propose_paragraph_edit）、工具调用的 JSON 源码或代码块。"""
 
 
 def build_chat_system_prompt(project_id: str | None = None, current_paragraph_idx: int | None = None) -> str:
-    """构建对话专用的 system prompt：注入编辑角色设定、作者文风与最新人物关系网。"""
-    template = get_setting("system_prompt_chat", DEFAULT_CHAT_SYSTEM_PROMPT)
-    if not template:
-        template = DEFAULT_CHAT_SYSTEM_PROMPT
+    """构建对话专用的 system prompt：直接使用代码中最新的编辑角色与 Harness 约束设定。"""
+    template = DEFAULT_CHAT_SYSTEM_PROMPT
 
     if not project_id:
         return template
@@ -131,35 +140,35 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
     "type": "function",
     "function": {
         "name": "propose_paragraph_edit",
-        "description": "当需要针对特定段落或框选的局部节选提出具体修改、润色或替换方案时，必须调用此工具生成替换确认卡片。若提供多个可选方案，请在 options 中列出",
+        "description": "用于向用户提交可一键采纳的段落改写与润色方案卡片。当用户明确确认、请求生成替换方案时调用。具体重写文本及理由说明由本工具参数承载。",
         "parameters": {
             "type": "object",
             "properties": {
                 "replacement_text": {
                     "type": "string",
-                    "description": "默认方案或首选方案的修改文本"
+                    "description": "默认方案或首选方案的纯粹目标替换文本。严禁包含 markdown 代码块包裹、前缀提示词（如'修改后：'）或解释性括号"
                 },
                 "note": {
                     "type": "string",
-                    "description": "默认方案的修改说明/简评"
+                    "description": "默认方案的修改理由与亮点解析（仅存放在本参数中，勿在对话正文中重复书写）"
                 },
                 "options": {
                     "type": "array",
-                    "description": "可选：当有多个不同风格/语气的改写方案时列出所有方案",
+                    "description": "可选：当有多个不同风格/侧重点的改写方案时列出所有候选方案",
                     "items": {
                         "type": "object",
                         "properties": {
                             "label": {
                                 "type": "string",
-                                "description": "方案名称/标签，如 '方案一：节奏紧凑' 或 '方案二：画面感强'"
+                                "description": "方案名称/标签，如 '方案一：画面感强' 或 '方案二：节奏紧凑'"
                             },
                             "replacement_text": {
                                 "type": "string",
-                                "description": "该方案改写后的新文本"
+                                "description": "该方案纯粹的目标替换文本，严禁包含 markdown 代码块或前缀"
                             },
                             "note": {
                                 "type": "string",
-                                "description": "该方案的修改特点/理由说明"
+                                "description": "该方案的修改特点与理由说明"
                             }
                         },
                         "required": ["replacement_text"]

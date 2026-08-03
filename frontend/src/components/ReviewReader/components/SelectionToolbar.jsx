@@ -212,6 +212,18 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
       onMouseDown={(e) => e.preventDefault()}
     >
       <Space size={4}>
+        <Tooltip title="在侧栏问 AI 并附带此选区上下文">
+          <Button
+            type="text"
+            size="small"
+            icon={<MessageOutlined style={{ color: '#2563eb', fontSize: iconFontSize }} />}
+            onClick={() => handleAction('ask')}
+            style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
+          >
+            问 AI
+          </Button>
+        </Tooltip>
+
         <Tooltip title="针对选中文字发起 AI 润色建议">
           <Button
             type="text"
@@ -233,18 +245,6 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
             style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
           >
             提意见
-          </Button>
-        </Tooltip>
-
-        <Tooltip title="在侧栏问 AI 并附带此选区上下文">
-          <Button
-            type="text"
-            size="small"
-            icon={<MessageOutlined style={{ color: '#2563eb', fontSize: iconFontSize }} />}
-            onClick={() => handleAction('ask')}
-            style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
-          >
-            问 AI
           </Button>
         </Tooltip>
       </Space>

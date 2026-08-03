@@ -3,7 +3,7 @@
   height: 100%;
   box-sizing: border-box;
   background: #ffffff;
-  border: 1px solid var(--color-border-secondary, #e5e7eb);
+  border: 1px solid var(--color-borderStrong, #d9d9d9);
   display: flex;
   flex-direction: column;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.04);
@@ -21,7 +21,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--color-border-secondary, #f0f0f0);
+  border-bottom: 1px solid var(--color-borderStrong, #d9d9d9);
   background: var(--color-bgCard, #fafafa);
   gap: 8px;
   border-top-right-radius: 10px;

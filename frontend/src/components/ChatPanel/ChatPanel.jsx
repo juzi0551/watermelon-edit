@@ -61,12 +61,14 @@ export default function ChatPanel({
   onApplyText,
   bodyFontSize = 17,
   onScrollToParagraph,
+  selectedModel: propSelectedModel,
 }) {
-  // 模型选择持久化记忆
+  // 模型选择持久化记忆（优先使用全局校稿模型）
   const [models, setModels] = useState([])
-  const [selectedModel, setSelectedModel] = useState(() => {
-    return localStorage.getItem('chat_selected_model') || null
+  const [internalSelectedModel, setInternalSelectedModel] = useState(() => {
+    return localStorage.getItem('proofread_selected_model') || localStorage.getItem('chat_selected_model') || null
   })
+  const selectedModel = propSelectedModel || internalSelectedModel
 
   // 会话列表状态
   const [sessions, setSessions] = useState([])
@@ -86,9 +88,9 @@ export default function ChatPanel({
           setModels(mList)
           const savedModel = localStorage.getItem('chat_selected_model')
           if (savedModel && mList.some((m) => m.model_id === savedModel)) {
-            setSelectedModel(savedModel)
+            setInternalSelectedModel(savedModel)
           } else if (mList.length > 0) {
-            setSelectedModel(mList[0].model_id)
+            setInternalSelectedModel(mList[0].model_id)
           }
         }
       })
@@ -98,7 +100,7 @@ export default function ChatPanel({
   }, [projectId, visible])
 
   const handleModelChange = (val) => {
-    setSelectedModel(val)
+    setInternalSelectedModel(val)
     localStorage.setItem('chat_selected_model', val)
   }
 
@@ -343,14 +345,30 @@ export default function ChatPanel({
     }
   }
 
-  // 转换为 @ant-design/x Conversations 所需 items
+  // 转换为 @ant-design/x Conversations 所需 items（支持右键/悬浮菜单删除）
   const conversationItems = useMemo(() => {
     return sessions.map((s) => ({
       key: s.id,
       label: s.title || '新对话',
       icon: <MessageOutlined />,
+      menu: {
+        items: [
+          {
+            key: 'delete',
+            label: '删除此对话',
+            icon: <DeleteOutlined />,
+            danger: true,
+          },
+        ],
+        onClick: ({ key, domEvent }) => {
+          domEvent?.stopPropagation?.()
+          if (key === 'delete') {
+            handleDeleteSession(s.id)
+          }
+        },
+      },
     }))
-  }, [sessions])
+  }, [sessions, handleDeleteSession])
 
   // 空态用 @ant-design/x Prompts 快捷指令
   const promptItems = [
@@ -418,7 +436,7 @@ export default function ChatPanel({
           isUser ? (
             <Avatar size={57} style={{ backgroundColor: '#374151', color: '#ffffff', fontWeight: 600, fontSize: 18 }}>我</Avatar>
           ) : (
-            <Avatar size={57} style={{ backgroundColor: '#d4a359', color: '#ffffff', fontSize: 24 }} icon={<RobotOutlined />} />
+            <Avatar size={57} src="/assistant-avatar.png" style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)', border: '1px solid #bae6fd' }} />
           )
         ) : (
           <div style={{ width: 57, height: 57, flexShrink: 0 }} />
@@ -552,8 +570,21 @@ export default function ChatPanel({
   return (
     <div className="chat-panel-sidebar">
       {/* 顶栏 */}
-      <div className="chat-panel-header">
+      <div className="chat-panel-header" style={{ background: 'var(--color-bgCard, #fafafa)' }}>
         <div className="chat-panel-header-left">
+          <Tooltip title="新建对话">
+            <Button
+              type="text"
+              icon={<PlusOutlined style={{ fontWeight: 'bold' }} />}
+              onClick={handleCreateSession}
+              style={{ fontWeight: 600, fontSize: 14 }}
+            >
+              新建对话
+            </Button>
+          </Tooltip>
+        </div>
+
+        <div className="chat-panel-header-right">
           <Tooltip title="历史会话列表">
             <Button
               type={conversationsOpen ? 'primary' : 'text'}
@@ -561,33 +592,6 @@ export default function ChatPanel({
               onClick={() => setConversationsOpen((v) => !v)}
             />
           </Tooltip>
-
-          {/* 模型下拉选择框 */}
-          <Select
-            value={selectedModel}
-            onChange={handleModelChange}
-            style={{ width: 170 }}
-            popupMatchSelectWidth={false}
-            placeholder="选择 AI 模型"
-            options={modelOptions}
-          />
-
-          <Tooltip title="新建对话">
-            <Button icon={<PlusOutlined />} type="text" onClick={handleCreateSession} />
-          </Tooltip>
-        </div>
-
-        <div className="chat-panel-header-right">
-          {activeSessionId && (
-            <Popconfirm
-              title="确定删除此对话？"
-              onConfirm={() => handleDeleteSession(activeSessionId)}
-              okText="删除"
-              cancelText="取消"
-            >
-              <Button icon={<DeleteOutlined />} type="text" danger />
-            </Popconfirm>
-          )}
           <Button icon={<CloseOutlined />} type="text" onClick={onClose} />
         </div>
       </div>
@@ -609,14 +613,38 @@ export default function ChatPanel({
       {/* 消息列表区域：采用 @ant-design/x Bubble.List + autoScroll 自动滚动与视口保护 */}
       <div className="chat-messages-container">
         {messages.length === 0 && (
-          <div style={{ padding: '24px 8px 12px 8px' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#4b5563', marginBottom: 12 }}>
-              💡 快捷提问指令
+          <div style={{ padding: '24px 16px 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* 段落 AI 助手说明 */}
+            <div style={{
+              background: 'var(--color-bgCard, #ffffff)',
+              border: '1px solid var(--color-border, #e5e7eb)',
+              borderRadius: 12,
+              padding: '16px 18px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+            }}>
+              <div style={{ fontSize: `${bodyFontSize + 1}px`, fontWeight: 600, color: '#1e293b', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: `${bodyFontSize + 3}px` }}>💬</span> 段落 AI 助手
+              </div>
+              <div style={{ fontSize: `${bodyFontSize}px`, color: '#475569', lineHeight: 1.65 }}>
+                点击任意段落，在顶部浮条中点击 <b>「问 AI」</b> 按钮，即可将整段文本带入助手侧栏，针对该段落内容进行提问、分析或润色。
+              </div>
             </div>
-            <Prompts
-              items={promptItems}
-              onItemClick={(item) => handleSend(item.description)}
-            />
+
+            {/* 划选文本 AI 助手说明 */}
+            <div style={{
+              background: 'var(--color-bgCard, #ffffff)',
+              border: '1px solid var(--color-border, #e5e7eb)',
+              borderRadius: 12,
+              padding: '16px 18px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+            }}>
+              <div style={{ fontSize: `${bodyFontSize + 1}px`, fontWeight: 600, color: '#1e293b', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: `${bodyFontSize + 3}px` }}>✨</span> 划选文本 AI 助手
+              </div>
+              <div style={{ fontSize: `${bodyFontSize}px`, color: '#475569', lineHeight: 1.65 }}>
+                鼠标拖拽划选正文中任意字句短语，在弹出的 AI 浮条中点击 <b>「问 AI」</b>、<b>「润色」</b> 或 <b>「提意见」</b>，即可附带选区上下文发起 AI 交互。
+              </div>
+            </div>
           </div>
         )}
 
@@ -636,7 +664,7 @@ export default function ChatPanel({
             },
             assistant: {
               placement: 'start',
-              avatar: <Avatar size={38} style={{ backgroundColor: '#d4a359', color: '#ffffff' }} icon={<RobotOutlined />} />,
+              avatar: <Avatar size={40} src="/assistant-avatar.png" style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)', border: '1px solid #bae6fd' }} />,
               styles: {
                 content: {
                   backgroundColor: '#fdfbf7',

@@ -37,14 +37,20 @@ export function ControlsRow({
   batchMaxConcurrent, onBatchMaxConcurrentChange,
   proofreadWindowSize, onWindowSizeChange,
   inProgress,
+  tbFontSize,
 }) {
   if (!showOptions) return null
+  const subFontSize = Math.max(12, (tbFontSize || 17) - 2)
+  const tagFontSize = Math.max(11, subFontSize - 1)
+
+  const labelMinWidth = Math.max(44, Math.round(subFontSize * 3.2))
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>模型</span>
+        <span style={{ fontSize: subFontSize, color: color.textPrimary, fontWeight: 500, minWidth: labelMinWidth }}>模型</span>
         <Select
-          style={{ flex: 1 }}
+          style={{ flex: 1, fontSize: subFontSize }}
           popupMatchSelectWidth={false}
           value={selectedModel}
           disabled={inProgress}
@@ -54,10 +60,10 @@ export function ControlsRow({
         />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>分类</span>
+        <span style={{ fontSize: subFontSize, color: color.textPrimary, fontWeight: 500, minWidth: labelMinWidth }}>分类</span>
         <Select
           mode="multiple"
-          style={{ flex: 1 }}
+          style={{ flex: 1, fontSize: subFontSize }}
           value={selectedTypes}
           disabled={inProgress}
           onChange={onTypesChange}
@@ -71,7 +77,7 @@ export function ControlsRow({
                 onClose={onClose}
                 style={{
                   margin: '1px 2px',
-                  fontSize: 11,
+                  fontSize: tagFontSize,
                   background: 'var(--color-bgPage)',
                   color: 'var(--color-textPrimary)',
                   borderColor: 'var(--color-borderBar)',
@@ -84,33 +90,18 @@ export function ControlsRow({
         />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>窗口</span>
+        <span style={{ fontSize: subFontSize, color: color.textPrimary, fontWeight: 500, minWidth: labelMinWidth }}>窗口</span>
         <InputNumber
           min={5}
-          max={100}
+          max={500}
           size="small"
-          style={{ width: 80 }}
+          style={{ width: 90, fontSize: subFontSize }}
           value={proofreadWindowSize}
           disabled={inProgress}
           onChange={(val) => onWindowSizeChange?.(val || 5)}
         />
-        <span style={{ fontSize: 12, color: color.textSecondary }}>
+        <span style={{ fontSize: subFontSize, color: color.textSecondary }}>
           段/窗口
-        </span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 13, color: color.textPrimary, fontWeight: 500, minWidth: 40 }}>并发</span>
-        <InputNumber
-          min={1}
-          max={20}
-          size="small"
-          style={{ width: 80 }}
-          value={batchMaxConcurrent}
-          disabled={inProgress}
-          onChange={(val) => onBatchMaxConcurrentChange?.(val || 1)}
-        />
-        <span style={{ fontSize: 12, color: color.textSecondary }}>
-          窗口（单次并发处理 {(batchMaxConcurrent || 1) * (proofreadWindowSize || 30)} 段）
         </span>
       </div>
     </div>
@@ -153,6 +144,7 @@ export function ActionBar({
   onExport,
   exporting,
   onOpenTools,
+  tbFontSize,
 }) {
   const barStyle = {
     position: 'relative',
@@ -162,7 +154,7 @@ export function ActionBar({
     zIndex: 400,
     background: color.bgPage,
     border: '1px solid var(--color-borderStrong, #d9d9d9)',
-    borderBottomLeftRadius: 0,
+    borderBottomLeftRadius: 10,
     borderBottomRightRadius: 0,
     boxShadow: '0 -2px 8px rgba(0,0,0,0.08)',
     padding: '0 32px',
@@ -210,7 +202,7 @@ export function ActionBar({
                 open={showOptions}
                 onOpenChange={setShowOptions}
                 placement="topLeft"
-                styles={{ body: { padding: '12px 16px', width: 440 } }}
+                styles={{ body: { padding: '14px 18px', width: 'min(460px, 92vw)', maxHeight: '75vh', overflowY: 'auto' } }}
                 content={
                   <ControlsRow
                     showOptions={true}
@@ -220,6 +212,7 @@ export function ActionBar({
                     batchMaxConcurrent={batchMaxConcurrent} onBatchMaxConcurrentChange={onBatchMaxConcurrentChange}
                     proofreadWindowSize={proofreadWindowSize} onWindowSizeChange={onWindowSizeChange}
                     inProgress={inProgress}
+                    tbFontSize={tbFontSize}
                   />
                 }
               >
