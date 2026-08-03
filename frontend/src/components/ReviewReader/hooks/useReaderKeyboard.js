@@ -135,7 +135,10 @@ export function useReaderKeyboard({
       // 3. 点击在段落内问题高亮或手动修改触发标签上，不关闭
       if (e.target?.closest?.('[data-error-id], [data-manual-edit]')) return
 
-      // 4. 点击卡片外部非输入框区域，自动关闭卡片
+      // 4. 点击 ActionBar 操作按钮（采纳/拒绝等），不关闭卡片，让 click 事件正常处理
+      if (e.target?.closest?.('.bar-action-btn, [data-actionbar]')) return
+
+      // 5. 点击卡片外部非输入框区域，自动关闭卡片
       if (selectedIdRef?.current) setSelectedId(null)
       if (selectedManualEditIdxRef?.current) setSelectedManualEditIdx(null)
     }
