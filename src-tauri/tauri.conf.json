@@ -34,12 +34,7 @@
   },
   "plugins": {
     "shell": {
-      "sidecar": [
-        {
-          "name": "watermelon-server",
-          "args": true
-        }
-      ]
+      "open": true
     }
   }
 }
