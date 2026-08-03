@@ -60,3 +60,6 @@ backend/app/data/
 .playwright-mcp/
 bak/
 chat_layout_now.png
+tmp-portable/
+*.zip
+

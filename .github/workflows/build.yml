@@ -17,17 +17,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
 
       - name: Build frontend
+        shell: pwsh
         run: |
           cd frontend
-          npm install
+          npm ci
           npm run build
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
 
       - name: Install Python dependencies
         shell: pwsh
@@ -45,15 +50,21 @@ jobs:
             --paths "backend" `
             --add-data "backend/app/data;backend/app/data" `
             --add-data "backend/static;backend/static" `
-            --collect-all litellm --collect-all tiktoken --collect-all tiktoken_ext `
+            --collect-all litellm --collect-all tiktoken --collect-all tiktoken_ext --collect-all jieba `
             --hidden-import tiktoken_ext.openai_public `
             --hidden-import fastapi --hidden-import starlette --hidden-import pydantic `
             --hidden-import uvicorn --hidden-import python_multipart --hidden-import jinja2.ext `
+            --hidden-import config --hidden-import json_repair --hidden-import docx `
             --hidden-import app --hidden-import app.api --hidden-import app.core --hidden-import app.models --hidden-import app.utils `
             run.py
 
       - name: Setup Rust (for Tauri)
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri'
 
       - name: Copy backend exe to Tauri binaries
         shell: pwsh
@@ -71,12 +82,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path "tmp-portable/binaries"
           Copy-Item "src-tauri/target/release/watermelon-edit.exe" "tmp-portable/"
           Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/binaries/"
+          Compress-Archive -Path "tmp-portable/*" -DestinationPath "西瓜审校-windows-portable.zip" -Force
 
       - name: Upload Tauri portable bundle
         uses: actions/upload-artifact@v4
         with:
           name: 西瓜审校-windows-portable
-          path: tmp-portable/*
+          path: 西瓜审校-windows-portable.zip
           retention-days: 30
-
-
