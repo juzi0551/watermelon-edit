@@ -421,13 +421,29 @@ def _migrate_schema(conn):
         conn.execute("UPDATE settings SET value = ? WHERE key = 'system_prompt_chat'", (DEFAULT_CHAT_SYSTEM_PROMPT,))
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '12')")
 
+    # 物理列缺漏补查（容错自愈：即使早期建表遗漏，启动时也能自动补上列）
+    for table_name, col_def in (
+        ("errors", "paragraph_uuid TEXT DEFAULT NULL"),
+        ("errors", "source TEXT DEFAULT 'llm'"),
+        ("errors", "is_obsolete INTEGER DEFAULT 0"),
+        ("chapters", "title_paragraph_uuid TEXT DEFAULT NULL"),
+        ("chapters", "parent_uuid TEXT DEFAULT NULL"),
+        ("chapters", "start_paragraph_uuid TEXT DEFAULT NULL"),
+        ("chapters", "end_paragraph_uuid TEXT DEFAULT NULL"),
+        ("paragraphs", "uuid TEXT DEFAULT NULL"),
+        ("paragraphs", "edit_note TEXT"),
+        ("documents", "last_error TEXT"),
+    ):
+        try:
+            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
 
 
 def init_db():
     """初始化数据库，创建表结构。"""
     os.makedirs(DB_DIR, exist_ok=True)
     with get_conn() as conn:
-        _migrate_schema(conn)
         conn.executescript("""
             -- 项目表
             CREATE TABLE IF NOT EXISTS projects (
@@ -436,6 +452,11 @@ def init_db():
                 status TEXT DEFAULT 'new',  -- new|uploaded|parsed|proofreading|reviewing|completed
                 current_document_id TEXT,
                 is_locked INTEGER DEFAULT 0,
+                author_name TEXT,
+                author_intro TEXT,
+                background_setting TEXT,
+                theme_mode TEXT DEFAULT 'system',
+                style_config_xml TEXT,
                 created_at TEXT DEFAULT (datetime('now', 'localtime')),
                 updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
@@ -450,6 +471,7 @@ def init_db():
                 is_current INTEGER DEFAULT 1,
                 proofread_upto INTEGER NOT NULL DEFAULT 0,
                 proofread_types TEXT NOT NULL DEFAULT '["typo","grammar","punctuation","format"]',
+                last_error TEXT,
                 created_at TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (project_id) REFERENCES projects(id)
             );
@@ -465,6 +487,7 @@ def init_db():
                 char_count INTEGER,
                 has_page_break_before INTEGER DEFAULT 0,
                 page_break_type TEXT DEFAULT 'none',
+                edit_note TEXT,
                 uuid TEXT DEFAULT NULL,
                 UNIQUE (document_id, idx),
                 FOREIGN KEY (document_id) REFERENCES documents(id)
@@ -483,6 +506,10 @@ def init_db():
                 sort_order INTEGER NOT NULL,
                 detected_by TEXT DEFAULT 'original',
                 confidence REAL DEFAULT 1.0,
+                title_paragraph_uuid TEXT DEFAULT NULL,
+                parent_uuid TEXT DEFAULT NULL,
+                start_paragraph_uuid TEXT DEFAULT NULL,
+                end_paragraph_uuid TEXT DEFAULT NULL,
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
 
@@ -510,21 +537,13 @@ def init_db():
                 description TEXT,
                 user_status TEXT DEFAULT 'pending',  -- pending|accepted|rejected
                 chapter_id TEXT,
+                paragraph_uuid TEXT DEFAULT NULL,
+                source TEXT DEFAULT 'llm',
+                is_obsolete INTEGER DEFAULT 0,
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
         """)
-        try:
-            conn.execute("ALTER TABLE documents ADD COLUMN last_error TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE errors ADD COLUMN source TEXT DEFAULT 'llm'")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE errors ADD COLUMN is_obsolete INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+        _migrate_schema(conn)
 
 
 @contextmanager

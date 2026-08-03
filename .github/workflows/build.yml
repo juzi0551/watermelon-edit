@@ -79,11 +79,9 @@ jobs:
       - name: Package portable bundle
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "tmp-portable/binaries"
+          New-Item -ItemType Directory -Force -Path "tmp-portable"
           Copy-Item "src-tauri/target/release/watermelon-edit.exe" "tmp-portable/"
           Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/"
-          Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/binaries/"
-          Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/watermelon-server.exe"
           Compress-Archive -Path "tmp-portable/*" -DestinationPath "西瓜审校-windows-portable.zip" -Force
 
       - name: Upload Tauri portable bundle
