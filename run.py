@@ -35,7 +35,13 @@ try:
     import starlette  # noqa: F401
     import pydantic  # noqa: F401
     import uvicorn  # noqa: F401
-    import python_multipart  # noqa: F401
+    try:
+        import python_multipart  # noqa: F401
+    except ImportError:
+        try:
+            import multipart  # noqa: F401
+        except ImportError:
+            pass
     import jinja2.ext  # noqa: F401
 except Exception:
     traceback.print_exc()

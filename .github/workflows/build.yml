@@ -53,7 +53,7 @@ jobs:
             --collect-all litellm --collect-all tiktoken --collect-all tiktoken_ext --collect-all jieba `
             --hidden-import tiktoken_ext.openai_public `
             --hidden-import fastapi --hidden-import starlette --hidden-import pydantic `
-            --hidden-import uvicorn --hidden-import python_multipart --hidden-import jinja2.ext `
+            --hidden-import uvicorn --hidden-import python_multipart --hidden-import multipart --hidden-import jinja2.ext `
             --hidden-import config --hidden-import json_repair --hidden-import docx `
             --hidden-import app --hidden-import app.api --hidden-import app.core --hidden-import app.models --hidden-import app.utils `
             run.py
@@ -81,7 +81,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "tmp-portable/binaries"
           Copy-Item "src-tauri/target/release/watermelon-edit.exe" "tmp-portable/"
+          Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/"
           Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/binaries/"
+          Copy-Item "src-tauri/binaries/watermelon-server-x86_64-pc-windows-msvc.exe" "tmp-portable/watermelon-server.exe"
           Compress-Archive -Path "tmp-portable/*" -DestinationPath "西瓜审校-windows-portable.zip" -Force
 
       - name: Upload Tauri portable bundle
