@@ -408,7 +408,7 @@ export default function ChatPanel({
       const isSameRoleAsPrev = prevItem && prevItem.role === item.role
       const isFirstInGroup = !isSameRoleAsPrev
       const userParaIdx = isUser
-        ? (item.context?.paragraph_idx ?? item.context?.paragraphIdx ?? nextItem?.context?.paragraph_idx ?? nextItem?.context?.paragraphIdx ?? nextItem?.replacementCard?.paragraph_idx ?? nextItem?.replacementCard?.paragraphIdx)
+        ? (item.context?.paragraph_idx ?? item.context?.paragraphIdx ?? item.context?.para_idx ?? nextItem?.context?.paragraph_idx ?? nextItem?.context?.paragraphIdx ?? nextItem?.context?.para_idx ?? nextItem?.replacementCard?.paragraph_idx ?? nextItem?.replacementCard?.paragraphIdx)
         : null
       const userSelectedText = isUser
         ? (item.context?.selected_text ?? item.context?.selectedText ?? nextItem?.context?.selected_text ?? nextItem?.replacementCard?.original)
@@ -418,7 +418,7 @@ export default function ChatPanel({
       const userIsExcerpt = isUser
         ? (isExplicitExcerpt !== undefined && isExplicitExcerpt !== null
             ? Boolean(isExplicitExcerpt)
-            : Boolean(item.context?.formatted_context && (item.context.formatted_context.includes('待优化的正文') || item.context.formatted_context.includes('选中正文局部节选'))))
+            : Boolean(item.context?.formatted_context && item.context.formatted_context.includes('选中正文局部节选')))
         : false
       const rawExcerpt = item.context?.formatted_excerpt ?? item.context?.formattedExcerpt ?? userSelectedText
       const userFormattedText = isUser && rawExcerpt

@@ -121,7 +121,7 @@ def build_chat_context(
     if before_str:
         formatted_context_parts.append(f"[前文语境]\n{('...' if has_leading_dots else '')}{before_str}")
 
-    formatted_context_parts.append(f"[待优化的正文]\n{target_text}")
+    formatted_context_parts.append(f"paragraph_idx: {para_idx}\n[待优化的正文]\n{target_text}")
 
     if after_str:
         formatted_context_parts.append(f"[后文语境]\n{after_str}{('...' if has_trailing_dots else '')}")
@@ -129,7 +129,9 @@ def build_chat_context(
     return {
         "selected_text": target_text,
         "para_idx": para_idx,
+        "paragraph_idx": para_idx,
         "para_end_idx": para_end_idx,
+        "paragraph_end_idx": para_end_idx,
         "before_window": before_str,
         "after_window": after_str,
         "formatted_context": "\n\n".join(formatted_context_parts)
@@ -144,6 +146,14 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
+                "paragraph_idx": {
+                    "type": "integer",
+                    "description": "目标段落的整数索引号（必须填入上下文 [待优化的正文] 上方声明的 paragraph_idx 数字）"
+                },
+                "original_text": {
+                    "type": "string",
+                    "description": "准备被修改的目标原文本（即上下文 [待优化的正文] 中的正文内容）"
+                },
                 "replacement_text": {
                     "type": "string",
                     "description": "默认方案或首选方案的纯粹目标替换文本。严禁包含 markdown 代码块包裹、前缀提示词（如'修改后：'）或解释性括号"
@@ -175,7 +185,7 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
                     }
                 }
             },
-            "required": ["replacement_text"]
+            "required": ["paragraph_idx", "original_text", "replacement_text"]
         }
     }
 }
@@ -243,7 +253,12 @@ async def stream_chat(
                 messages.append(m_obj)
             elif role == "user":
                 if content:
-                    messages.append({"role": "user", "content": content})
+                    u_parts = []
+                    if ctx.get("formatted_context"):
+                        u_parts.append(ctx["formatted_context"])
+                        u_parts.append("---")
+                    u_parts.append(f"作者的问题/想法：{content}" if ctx.get("formatted_context") else content)
+                    messages.append({"role": "user", "content": "\n\n".join(u_parts)})
 
     # 当前用户消息 + 上下文窗口引用
     user_content_parts = []

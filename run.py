@@ -156,7 +156,21 @@ def main():
         print("=" * 50)
 
         _restore_console()
-        uvicorn.run(main_mod.app, host='127.0.0.1', port=8000, log_level='info')
+        is_frozen = getattr(sys, 'frozen', False)
+        if is_frozen:
+            uvicorn.run(main_mod.app, host='127.0.0.1', port=8000, log_level='info')
+        else:
+            try:
+                uvicorn.run(
+                    "app.main:app",
+                    host='127.0.0.1',
+                    port=8000,
+                    log_level='info',
+                    reload=True,
+                    reload_dirs=[backend_dir],
+                )
+            except Exception:
+                uvicorn.run(main_mod.app, host='127.0.0.1', port=8000, log_level='info')
 
     except Exception:
         traceback.print_exc(file=_CRASH_LOG if _CRASH_LOG else sys.stderr)

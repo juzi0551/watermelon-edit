@@ -28,6 +28,8 @@ class ChatStreamContextReq(BaseModel):
     paragraph_idx: int | None = None
     paragraph_uuid: str | None = None
     paragraph_end_idx: int | None = None
+    is_excerpt: bool | None = None
+    formatted_excerpt: str | None = None
 
 
 class ChatStreamReq(BaseModel):
@@ -161,6 +163,7 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                     context_info["formatted_excerpt"] = req.context.formatted_excerpt
                 if getattr(req.context, "paragraph_uuid", None):
                     context_info["paragraph_uuid"] = req.context.paragraph_uuid
+                logger.info("Chat context built:\n%s", context_info.get("formatted_context"))
         except Exception as e:
             logger.warning(f"构建对话上下文失败: {e}")
 
@@ -209,19 +212,22 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                             replacement_card = None
                             authoritative_original = (context_info and context_info.get("selected_text")) or ""
 
-                            if formatted_tool_calls and current_para_idx is not None and authoritative_original:
+                            if formatted_tool_calls:
                                 for tc in formatted_tool_calls:
                                     fn = tc.get("function") or {}
                                     args_str = fn.get("arguments") or ""
                                     try:
                                         parsed_args = json.loads(args_str)
-                                        replacement_card = {
-                                            "original": authoritative_original,
-                                            "replacement": parsed_args.get("replacement_text") or parsed_args.get("replacement") or "",
-                                            "note": parsed_args.get("note") or "",
-                                            "options": parsed_args.get("options") or [],
-                                            "paragraph_idx": current_para_idx,
-                                        }
+                                        target_para_idx = current_para_idx if current_para_idx is not None else parsed_args.get("paragraph_idx")
+                                        target_original = authoritative_original or parsed_args.get("original_text") or ""
+                                        if target_para_idx is not None and target_original:
+                                            replacement_card = {
+                                                "original": target_original,
+                                                "replacement": parsed_args.get("replacement_text") or parsed_args.get("replacement") or "",
+                                                "note": parsed_args.get("note") or "",
+                                                "options": parsed_args.get("options") or [],
+                                                "paragraph_idx": target_para_idx,
+                                            }
                                     except Exception:
                                         pass
 

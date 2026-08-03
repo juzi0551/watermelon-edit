@@ -19,10 +19,11 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
 
   if (!text) return null
 
-  // 2. 是否存在真正的手工编辑履历
+  // 2. 是否存在手工修改（有 revised_text 即视为有改动，不依赖备注是否填写）
   const manualNotes = parseEditNotes(editNote)
   const hasManualEditNotes = Boolean(manualNotes.length > 0)
-  const manualLcs = (hasManualEditNotes && origText && text && origText !== text)
+  const hasManualEdit = Boolean(origText && text && origText !== text)
+  const manualLcs = hasManualEdit
     ? computeExactLcsDiff(origText, text)
     : null
 
@@ -176,12 +177,12 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
     }
   })
 
-  if (intervals.length === 0 && !hasManualEditNotes && Object.keys(pureDeletionsByPos).length === 0 && Object.keys(pureAdditionsByPos).length === 0) {
+  if (intervals.length === 0 && !hasManualEdit && Object.keys(pureDeletionsByPos).length === 0 && Object.keys(pureAdditionsByPos).length === 0) {
     return <span>{text}</span>
   }
 
-  // 手工编辑切点注入（仅当存在真实手修履历时）
-  if (hasManualEditNotes) {
+  // 手工编辑切点注入（只要有手工改动就注入，不依赖备注）
+  if (hasManualEdit) {
     for (let k = 0; k <= text.length; k++) {
       bounds.add(k)
     }
@@ -317,8 +318,8 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
       }
     }
 
-    // 手工修改字符下划线（仅当存在真实手修履历且字符未被 AI 覆盖时）
-    if (!isCharDiff && covering.length === 0 && hasManualEditNotes && manualLcs) {
+    // 手工修改字符下划线（只要有手工改动且字符未被 AI 覆盖时显示）
+    if (!isCharDiff && covering.length === 0 && hasManualEdit && manualLcs) {
       const isUserEditedChar = manualLcs.suggMatched[start] === false
       if (isUserEditedChar) {
         borderBottom = '2.5px solid #1890ff'
