@@ -235,22 +235,41 @@ async def stream_chat(
     # 追加历史消息 (严格兼容 tool_calls 与 role=tool 协议，原子化同组进出)
     if history_messages:
         safe_history = sanitize_history_messages(history_messages, max_count=50)
+        last_card_status = None
+
         for msg in safe_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             ctx = msg.get("context") or {}
 
-            if role == "tool":
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": ctx.get("tool_call_id") or msg.get("tool_call_id", ""),
-                    "content": content or '{"status": "ok"}'
-                })
-            elif role == "assistant":
+            if role == "assistant":
                 m_obj = {"role": "assistant", "content": content or ""}
                 if ctx.get("tool_calls"):
                     m_obj["tool_calls"] = ctx["tool_calls"]
                 messages.append(m_obj)
+
+                # 记录该 assistant 消息携带的最新方案卡片状态
+                card_obj = ctx.get("replacement_card")
+                if card_obj and isinstance(card_obj, dict):
+                    last_card_status = card_obj.get("status", "pending")
+                else:
+                    last_card_status = None
+
+            elif role == "tool":
+                if last_card_status == "accepted":
+                    tool_content = json.dumps({"status": "accepted", "user_action": "作者已采纳此修改方案，并已将改写文本嵌回正文。"}, ensure_ascii=False)
+                elif last_card_status == "rejected":
+                    tool_content = json.dumps({"status": "rejected", "user_action": "作者已拒绝/忽略此修改方案，保留了原段落。"}, ensure_ascii=False)
+                else:
+                    tool_content = content or json.dumps({"status": "pending", "user_action": "作者暂未做出选择。"}, ensure_ascii=False)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": ctx.get("tool_call_id") or msg.get("tool_call_id", ""),
+                    "content": tool_content
+                })
+                last_card_status = None
+
             elif role == "user":
                 if content:
                     u_parts = []
