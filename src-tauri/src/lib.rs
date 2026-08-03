@@ -58,28 +58,43 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            // 启动后端 sidecar
-            let cmd = match app.shell().sidecar("watermelon-server") {
-                Ok(c) => c,
-                Err(e) => {
-                    let msg = format!(
-                        "找不到后端程序: {}\n\n\
-                         请检查 binaries/ 目录下是否存在 watermelon-server 文件。",
-                        e
-                    );
-                    log_crash(&msg);
-                    show_error_box("西瓜审校 - 启动失败", &msg);
-                    return Err(Box::new(e));
-                }
-            };
+            // 启动后端 sidecar（增加多路径多别名容错）
+            let mut spawned = None;
 
-            let (mut rx, child) = match cmd.spawn() {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = format!("后端启动失败: {}", e);
+            // 优先 1：Tauri 标准 sidecar 机制
+            if let Ok(cmd) = app.shell().sidecar("watermelon-server") {
+                if let Ok(res) = cmd.spawn() {
+                    spawned = Some(res);
+                }
+            }
+
+            // 容错 2：路径与名称降级搜索
+            if spawned.is_none() {
+                let candidates = [
+                    "watermelon-server-x86_64-pc-windows-msvc",
+                    "watermelon-server-x86_64-pc-windows-msvc.exe",
+                    "binaries/watermelon-server-x86_64-pc-windows-msvc.exe",
+                    "watermelon-server.exe",
+                    "binaries/watermelon-server.exe",
+                ];
+                for name in candidates {
+                    if let Ok(cmd) = app.shell().command(name) {
+                        if let Ok(res) = cmd.spawn() {
+                            spawned = Some(res);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let (mut rx, child) = match spawned {
+                Some(res) => res,
+                None => {
+                    let msg = "后端服务 (watermelon-server) 启动失败：找不到侧载可执行文件。\n\n\
+                               请检查同级目录或 binaries/ 目录下是否存在 watermelon-server 可执行程序。".to_string();
                     log_crash(&msg);
                     show_error_box("西瓜审校 - 启动失败", &msg);
-                    return Err(Box::new(e));
+                    return Err(msg.into());
                 }
             };
 

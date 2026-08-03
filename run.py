@@ -29,6 +29,10 @@ except Exception:
     pass
 
 
+# 禁用 LiteLLM 联网获取模型价格图，提升离线启动速度并避免超时等待
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+
 # PyInstaller 静态依赖锚点（模块级 import → 自动打包）
 try:
     import fastapi  # noqa: F401
