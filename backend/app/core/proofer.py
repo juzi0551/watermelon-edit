@@ -63,6 +63,7 @@ async def proofread_window(
     system_prompt: str | None = None,
     project_id: str | None = None,
     window_first_idx: int | None = None,
+    document_id: str | None = None,
 ) -> tuple[list[dict], list[dict], str | None, dict, bool]:
     """对一个窗口（W 段）调用 LLM 校对，自动注入 Context 并动态解析落库角色演进与剧情关键事件。"""
     if selected_types is None:
@@ -81,18 +82,28 @@ async def proofread_window(
 
     # 动态解析并落库新登场人物、演进关系与剧情关键事件
     if project_id and data:
-        _extract_and_save_character_events(project_id, data, window_first_idx or 0)
+        _extract_and_save_character_events(project_id, data, window_first_idx or 0, document_id)
 
     return errors, chapters, raw, token_info, True
 
 
-def _extract_and_save_character_events(project_id: str, data: dict, paragraph_idx: int):
-    """解析 LLM 响应中的 character_updates、relationship_events 与 plot_events 并自动落库。"""
+def _extract_and_save_character_events(project_id: str, data: dict, paragraph_idx: int, document_id: str | None = None):
+    """解析 LLM 响应中的 character_updates、relationship_events 与 plot_events 并自动落库（带上 paragraph_uuid）。"""
+    from app.core.database import resolve_paragraph_uuid
+
+    def _get_uuid(idx_val: int) -> str | None:
+        if document_id:
+            u = resolve_paragraph_uuid(document_id, idx_val)
+            if u:
+                return u
+        return None
+
     char_updates = data.get("character_updates", [])
     if isinstance(char_updates, list):
         for c in char_updates:
             if isinstance(c, dict) and c.get("name"):
                 c_idx = c.get("first_appear_idx") if isinstance(c.get("first_appear_idx"), int) else paragraph_idx
+                c_uuid = c.get("paragraph_uuid") or _get_uuid(c_idx)
                 upsert_character(
                     project_id=project_id,
                     name=c["name"],
@@ -100,6 +111,7 @@ def _extract_and_save_character_events(project_id: str, data: dict, paragraph_id
                     role=c.get("role", "supporting"),
                     first_appear_idx=c_idx,
                     description=c.get("description", ""),
+                    first_appear_paragraph_uuid=c_uuid,
                 )
 
     rel_events = data.get("relationship_events", [])
@@ -108,8 +120,9 @@ def _extract_and_save_character_events(project_id: str, data: dict, paragraph_id
         for r in rel_events:
             if isinstance(r, dict) and r.get("from") and r.get("to"):
                 r_idx = r.get("paragraph_idx") if isinstance(r.get("paragraph_idx"), int) else paragraph_idx
-                from_id = char_map.get(r["from"]) or upsert_character(project_id, r["from"], first_appear_idx=r_idx)
-                to_id = char_map.get(r["to"]) or upsert_character(project_id, r["to"], first_appear_idx=r_idx)
+                r_uuid = r.get("paragraph_uuid") or _get_uuid(r_idx)
+                from_id = char_map.get(r["from"]) or upsert_character(project_id, r["from"], first_appear_idx=r_idx, first_appear_paragraph_uuid=r_uuid)
+                to_id = char_map.get(r["to"]) or upsert_character(project_id, r["to"], first_appear_idx=r_idx, first_appear_paragraph_uuid=r_uuid)
                 insert_relationship(
                     project_id=project_id,
                     from_char_id=from_id,
@@ -117,6 +130,7 @@ def _extract_and_save_character_events(project_id: str, data: dict, paragraph_id
                     relation_type=r.get("type", "neutral"),
                     description=r.get("description", ""),
                     paragraph_idx=r_idx,
+                    paragraph_uuid=r_uuid,
                 )
 
     plot_events = data.get("plot_events", [])
@@ -124,11 +138,13 @@ def _extract_and_save_character_events(project_id: str, data: dict, paragraph_id
         for pe in plot_events:
             if isinstance(pe, dict) and pe.get("title"):
                 pe_idx = pe.get("paragraph_idx") if isinstance(pe.get("paragraph_idx"), int) else paragraph_idx
+                pe_uuid = pe.get("paragraph_uuid") or _get_uuid(pe_idx)
                 insert_plot_event(
                     project_id=project_id,
                     paragraph_idx=pe_idx,
                     title=pe["title"],
                     description=pe.get("description", ""),
+                    paragraph_uuid=pe_uuid,
                 )
 
 

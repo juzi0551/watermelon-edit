@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Button, Tooltip, Tag } from 'antd'
-import { CheckOutlined, CloseOutlined, DiffOutlined, DownOutlined, UpOutlined } from '@ant-design/icons'
-import { updateCardStatus } from '../../services/api'
+import { Button, Tooltip, Tag, message } from 'antd'
+import { CheckOutlined, CloseOutlined, DiffOutlined, DownOutlined, UpOutlined, UndoOutlined } from '@ant-design/icons'
+import { updateCardStatus, restoreParagraph } from '../../services/api'
+import { useParagraphStatus } from '../../hooks/useParagraphStatus'
 
 export function ReplacementCard({
   cardData,
@@ -19,6 +20,38 @@ export function ReplacementCard({
   const [showAllAcceptedOptions, setShowAllAcceptedOptions] = useState(false)
   const [expandedRejected, setExpandedRejected] = useState(false)
   const [expandedAccepted, setExpandedAccepted] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+
+  const currentUuid = paragraphUuid || cardData?.paragraph_uuid || cardData?.paragraphUuid
+  const { fetchStatus, statuses, invalidateCache } = useParagraphStatus(projectId)
+  const liveStatus = currentUuid ? statuses[currentUuid] : null
+
+  useEffect(() => {
+    if (currentUuid && projectId) {
+      fetchStatus(currentUuid)
+    }
+  }, [currentUuid, projectId, fetchStatus])
+
+  const effectiveIdx = liveStatus?.target_idx ?? (paragraphIdx ?? cardData?.paragraph_idx ?? cardData?.paragraphIdx)
+  const isMergedThenDeleted = liveStatus?.status === 'merged_then_deleted'
+  const isMerged = (liveStatus?.status === 'merged' || Boolean(liveStatus?.target_uuid && liveStatus?.target_uuid !== currentUuid)) && !isMergedThenDeleted
+  const isDeleted = ['deleted', 'merged_then_deleted'].includes(liveStatus?.status)
+  const isStaleVersion = liveStatus?.status === 'stale_version'
+
+  const handleRestore = async () => {
+    if (!currentUuid || !projectId) return
+    setRestoring(true)
+    try {
+      await restoreParagraph(projectId, currentUuid)
+      message.success('已成功恢复该段落')
+      invalidateCache(currentUuid)
+      fetchStatus(currentUuid)
+    } catch (e) {
+      message.error(`恢复段落失败: ${e.message || '未知错误'}`)
+    } finally {
+      setRestoring(false)
+    }
+  }
 
   useEffect(() => {
     if (cardData?.status) {
@@ -59,9 +92,17 @@ export function ReplacementCard({
 
   const handleApply = () => {
     if (status !== 'pending' || isCrossPara || !onApplyText) return
+    if (isDeleted) {
+      message.error(isMergedThenDeleted ? '该段落已被合并且目标已被删除，无法应用修改' : '该段落已被逻辑删除，无法应用修改建议')
+      return
+    }
+    if (isStaleVersion) {
+      message.error('该修改建议属于旧版本的历史段落，无法应用至当前文档')
+      return
+    }
     const textToApply = currentOption.replacement || cardData.replacement
     const noteToApply = currentOption.note || cardData.note
-    onApplyText(textToApply, paragraphIdx, paragraphUuid, noteToApply, cardData.original)
+    onApplyText(textToApply, effectiveIdx, currentUuid, noteToApply, cardData.original)
     setStatus('accepted')
     if (projectId && messageId && !messageId.startsWith('temp_')) {
       updateCardStatus(projectId, messageId, 'accepted').catch(console.error)
@@ -79,8 +120,76 @@ export function ReplacementCard({
   const btnFontSize = `${Math.max(13, bodyFontSize - 2)}px`
   const noteFontSize = `${Math.max(12, bodyFontSize - 3)}px`
 
-  const targetIdx = paragraphIdx ?? cardData?.paragraph_idx ?? cardData?.paragraphIdx
+  const targetIdx = effectiveIdx
   const isDefined = targetIdx !== undefined && targetIdx !== null
+
+  const renderStatusBadge = () => {
+    if (isMergedThenDeleted) {
+      return (
+        <Tag color="volcano" style={{ margin: 0, fontWeight: 600, fontSize: `${Math.max(12, bodyFontSize - 4)}px`, padding: '2px 8px', borderRadius: 4 }}>
+          ⚠️ 段落已被合并，但目标已被删除
+        </Tag>
+      )
+    }
+    if (isMerged) {
+      return (
+        <Tooltip title={`该段落已被合并，点击跳转至目标第 ${targetIdx + 1} 段`}>
+          <Tag
+            color="purple"
+            onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
+            style={{ margin: 0, fontWeight: 600, fontSize: `${Math.max(12, bodyFontSize - 4)}px`, padding: '2px 8px', borderRadius: 4, cursor: 'pointer' }}
+          >
+            ⚡️ 已合并至第 {targetIdx + 1} 段
+          </Tag>
+        </Tooltip>
+      )
+    }
+    if (isDeleted) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Tag color="error" style={{ margin: 0, fontWeight: 600, fontSize: `${Math.max(12, bodyFontSize - 4)}px`, padding: '2px 8px', borderRadius: 4 }}>
+            ⚠️ 段落已被逻辑删除
+          </Tag>
+          <Button
+            type="link"
+            size="small"
+            icon={<UndoOutlined />}
+            loading={restoring}
+            onClick={handleRestore}
+            style={{ padding: 0, fontSize: `${Math.max(12, bodyFontSize - 4)}px`, color: '#ef4444' }}
+          >
+            恢复段落
+          </Button>
+        </div>
+      )
+    }
+    if (isStaleVersion) {
+      return (
+        <Tag color="warning" style={{ margin: 0, fontWeight: 600, fontSize: `${Math.max(12, bodyFontSize - 4)}px`, padding: '2px 8px', borderRadius: 4 }}>
+          旧版本历史段落 (v{liveStatus?.version || 1})
+        </Tag>
+      )
+    }
+    return (
+      <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx + 1} 段并高亮` : '段落未定'}>
+        <Tag
+          color={isDefined ? "blue" : "volcano"}
+          onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
+          style={{
+            margin: 0,
+            fontWeight: 500,
+            fontSize: `${Math.max(12, bodyFontSize - 4)}px`,
+            padding: '2px 8px',
+            borderRadius: 4,
+            cursor: isDefined ? 'pointer' : 'default',
+            userSelect: 'none',
+          }}
+        >
+          段落 #{isDefined ? targetIdx + 1 : 'undefined'}
+        </Tag>
+      </Tooltip>
+    )
+  }
 
   // 1. 已拒绝且未展开时的提示状态卡片（增加卡片大小、字号与方案文字预览，提升清晰度）
   if (status === 'rejected' && !expandedRejected) {
@@ -108,23 +217,7 @@ export function ReplacementCard({
             <Tag color="default" style={{ margin: 0, fontSize: rejectedTagFontSize, padding: '2px 8px', borderRadius: 4, fontWeight: 500 }}>
               ✕ 已忽略修改建议
             </Tag>
-            <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx} 段并高亮` : '段落未定'}>
-              <Tag
-                color={isDefined ? "blue" : "volcano"}
-                onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
-                style={{
-                  margin: 0,
-                  fontWeight: 500,
-                  fontSize: rejectedTagFontSize,
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  cursor: isDefined ? 'pointer' : 'default',
-                  userSelect: 'none',
-                }}
-              >
-                段落 #{isDefined ? targetIdx : 'undefined'}
-              </Tag>
-            </Tooltip>
+            {renderStatusBadge()}
           </div>
           <Button
             type="link"
@@ -182,23 +275,7 @@ export function ReplacementCard({
             <Tag color="green" style={{ margin: 0, fontSize: acceptedTagFontSize, padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
               ✓ 已采纳修改建议
             </Tag>
-            <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx} 段并高亮` : '段落未定'}>
-              <Tag
-                color={isDefined ? "blue" : "volcano"}
-                onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
-                style={{
-                  margin: 0,
-                  fontWeight: 500,
-                  fontSize: acceptedTagFontSize,
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  cursor: isDefined ? 'pointer' : 'default',
-                  userSelect: 'none',
-                }}
-              >
-                段落 #{isDefined ? targetIdx : 'undefined'}
-              </Tag>
-            </Tooltip>
+            {renderStatusBadge()}
           </div>
           <Button
             type="link"
@@ -252,22 +329,7 @@ export function ReplacementCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: btnFontSize, fontWeight: 600, color: '#1e293b' }}>
           <DiffOutlined style={{ color: '#2563eb' }} />
           <span>建议修改方案</span>
-          <Tooltip title={isDefined ? `点击跳转至第 ${targetIdx} 段并高亮` : '段落未定'}>
-            <Tag
-              color={isDefined ? "blue" : "volcano"}
-              onClick={() => isDefined && onScrollToParagraph?.(targetIdx)}
-              style={{
-                marginLeft: 4,
-                fontWeight: 500,
-                fontSize: 11,
-                borderRadius: 4,
-                cursor: isDefined ? 'pointer' : 'default',
-                userSelect: 'none',
-              }}
-            >
-              段落 #{isDefined ? targetIdx : 'undefined'}
-            </Tag>
-          </Tooltip>
+          {renderStatusBadge()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {status === 'accepted' && <Tag color="green" style={{ margin: 0, fontSize: 11 }}>✓ 已采纳</Tag>}

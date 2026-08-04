@@ -117,11 +117,13 @@ def build_chat_context(
     has_trailing_dots = len(full_after) > context_chars
     after_str = full_after[:context_chars] if has_trailing_dots else full_after
 
+    target_uuid = core_paras_sorted[0].get("uuid", "") if core_paras_sorted else ""
+
     formatted_context_parts = []
     if before_str:
         formatted_context_parts.append(f"[前文语境]\n{('...' if has_leading_dots else '')}{before_str}")
 
-    formatted_context_parts.append(f"paragraph_idx: {para_idx}\n[待优化的正文]\n{target_text}")
+    formatted_context_parts.append(f"paragraph_uuid: {target_uuid}\nparagraph_idx: {para_idx}\n[待优化的正文]\n{target_text}")
 
     if after_str:
         formatted_context_parts.append(f"[后文语境]\n{after_str}{('...' if has_trailing_dots else '')}")
@@ -130,6 +132,7 @@ def build_chat_context(
         "selected_text": target_text,
         "para_idx": para_idx,
         "paragraph_idx": para_idx,
+        "paragraph_uuid": target_uuid,
         "para_end_idx": para_end_idx,
         "paragraph_end_idx": para_end_idx,
         "before_window": before_str,
@@ -146,6 +149,10 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
+                "paragraph_uuid": {
+                    "type": "string",
+                    "description": "目标段落的唯一物理主键 UUID（必须填入上下文 paragraph_uuid: xxx 声明的字符串）"
+                },
                 "paragraph_idx": {
                     "type": "integer",
                     "description": "目标段落的整数索引号（必须填入上下文 [待优化的正文] 上方声明的 paragraph_idx 数字）"
@@ -185,7 +192,7 @@ PROPOSE_PARAGRAPH_EDIT_TOOL = {
                     }
                 }
             },
-            "required": ["paragraph_idx", "original_text", "replacement_text"]
+            "required": ["paragraph_uuid", "paragraph_idx", "original_text", "replacement_text"]
         }
     }
 }

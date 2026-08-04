@@ -13,19 +13,8 @@ import { applyThemeVariables, color } from './design-tokens'
 const { Header, Content, Footer } = Layout
 const { Text } = Typography
 
-export const ThemeContext = createContext({
-  themeMode: 'system',
-  setThemeMode: () => {},
-  isDark: false,
-})
-
-export function useTheme() {
-  const ctx = useContext(ThemeContext)
-  return {
-    ...ctx,
-    color,
-  }
-}
+import { ThemeContext, useTheme } from './context/ThemeContext'
+export { ThemeContext, useTheme }
 
 function getSystemTheme() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches

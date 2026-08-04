@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Modal, Form, Input, Button, Space, Alert, message } from 'antd'
 import { SaveOutlined, BookOutlined, UserOutlined } from '@ant-design/icons'
 import { updateProjectProfile } from '../services/api'
-import { useTheme } from '../App'
+import { useTheme } from '../context/ThemeContext'
 
 const { TextArea } = Input
 

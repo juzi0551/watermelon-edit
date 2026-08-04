@@ -15,15 +15,10 @@ import {
 } from '@ant-design/icons'
 import { Bubble, Sender, ThoughtChain, Conversations, Prompts } from '@ant-design/x'
 import ReactMarkdown from 'react-markdown'
-import {
-  listChatSessions,
-  createChatSession,
-  deleteChatSession,
-  listChatMessages,
-  getModels,
-} from '../../services/api'
+import { listChatSessions, createChatSession, deleteChatSession, listChatMessages, getModels } from '../../services/api'
 import { streamChatAdapter } from './ChatProvider'
 import { ReplacementCard } from './ReplacementCard'
+import { useParagraphStatus } from '../../hooks/useParagraphStatus'
 import './ChatPanel.css'
 
 const parseReplacementCard = (rawContent, selectionCtx) => {
@@ -74,6 +69,31 @@ export default function ChatPanel({
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState(null)
   const [conversationsOpen, setConversationsOpen] = useState(false)
+
+  // 3. 流式对话处理
+  const [messages, setMessages] = useState([])
+  const [isRequesting, setIsRequesting] = useState(false)
+
+  const { fetchStatus, fetchStatusBatch, statuses } = useParagraphStatus(projectId)
+  const activeUuid = activeSelection?.paragraphUuid
+  const activeStatus = activeUuid ? statuses[activeUuid] : null
+
+  useEffect(() => {
+    if (!projectId) return
+    const uuids = new Set()
+    if (activeUuid) uuids.add(activeUuid)
+    if (Array.isArray(messages)) {
+      messages.forEach((m) => {
+        const uParaUuid = m.context?.paragraph_uuid ?? m.context?.paragraphUuid ?? m.context?.para_uuid
+        if (uParaUuid) uuids.add(uParaUuid)
+        const cardUuid = m.replacementCard?.paragraph_uuid ?? m.replacementCard?.paragraphUuid
+        if (cardUuid) uuids.add(cardUuid)
+      })
+    }
+    if (uuids.size > 0) {
+      fetchStatusBatch(Array.from(uuids))
+    }
+  }, [messages, activeUuid, projectId, fetchStatusBatch])
 
   // AbortController
   const abortControllerRef = useRef(null)
@@ -129,9 +149,6 @@ export default function ChatPanel({
     }
   }
 
-  // 3. 流式对话处理
-  const [messages, setMessages] = useState([])
-  const [isRequesting, setIsRequesting] = useState(false)
   const [inputValue, setInputValue] = useState('')
 
   const handleSend = useCallback(async (userTextOverride, selectionOverride) => {
@@ -410,6 +427,14 @@ export default function ChatPanel({
       const userParaIdx = isUser
         ? (item.context?.paragraph_idx ?? item.context?.paragraphIdx ?? item.context?.para_idx)
         : null
+      const userParaUuid = isUser
+        ? (item.context?.paragraph_uuid ?? item.context?.paragraphUuid ?? item.context?.para_uuid)
+        : null
+
+      const stUser = userParaUuid ? statuses[userParaUuid] : null
+      const targetUser = stUser?.target_uuid || userParaUuid || (stUser?.target_idx ?? userParaIdx)
+      const displayIdxUser = stUser?.target_idx !== undefined ? stUser.target_idx + 1 : (userParaIdx !== null && userParaIdx !== undefined ? userParaIdx + 1 : '未定')
+
       const userSelectedText = isUser
         ? (item.context?.selected_text ?? item.context?.selectedText)
         : null
@@ -464,12 +489,14 @@ export default function ChatPanel({
         content: (
           <div>
             {/* 用户引用段落与原文展示区：格式：段落#xx 节选 | …段落文字… */}
-            {isUser && userParaIdx && (
-              <Tooltip title={`点击跳转至第 ${userParaIdx} 段并高亮`}>
+            {isUser && (userParaIdx !== null || userParaUuid) && (
+              <Tooltip title={`点击跳转至第 ${displayIdxUser} 段并高亮`}>
                 <div
                   onClick={(e) => {
                     e.stopPropagation()
-                    onScrollToParagraph?.(userParaIdx)
+                    if (targetUser !== undefined && targetUser !== null) {
+                      onScrollToParagraph?.(targetUser)
+                    }
                   }}
                   style={{
                     marginBottom: 8,
@@ -490,8 +517,18 @@ export default function ChatPanel({
                   }}
                 >
                   <span style={{ fontWeight: 600, flexShrink: 0, opacity: 0.95, whiteSpace: 'nowrap' }}>
-                    段落#{userParaIdx}{userIsExcerpt ? ' 节选' : ''}
+                    段落#{displayIdxUser}{userIsExcerpt ? ' 节选' : ''}
                   </span>
+                  {stUser?.status === 'merged' && (
+                    <Tag color="purple" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
+                      ⚡️已合并
+                    </Tag>
+                  )}
+                  {(stUser?.status === 'deleted' || stUser?.status === 'merged_then_deleted') && (
+                    <Tag color="error" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
+                      ⚠️已废弃
+                    </Tag>
+                  )}
                   {userFormattedText && (
                     <>
                       <span style={{ opacity: 0.75, flexShrink: 0 }}>|</span>
@@ -707,8 +744,18 @@ export default function ChatPanel({
               }}
             >
               <span style={{ fontWeight: 600, color: '#1e293b', marginRight: 6 }}>
-                段落 #{activeSelection.paragraphIdx}{activeSelection.isExcerpt ? ' 节选' : ''}
+                段落 #{activeStatus?.target_idx !== undefined ? activeStatus.target_idx + 1 : (activeSelection.paragraphIdx !== undefined && activeSelection.paragraphIdx !== null ? activeSelection.paragraphIdx + 1 : '未定')}{activeSelection.isExcerpt ? ' 节选' : ''}
               </span>
+              {activeStatus?.status === 'merged' && (
+                <Tag color="purple" style={{ margin: '0 4px', fontSize: 11 }}>
+                  ⚡️ 已合并至第 {activeStatus.target_idx + 1} 段
+                </Tag>
+              )}
+              {(activeStatus?.status === 'deleted' || activeStatus?.status === 'merged_then_deleted') && (
+                <Tag color="error" style={{ margin: '0 4px', fontSize: 11 }}>
+                  ⚠️ 已废弃/被删段落
+                </Tag>
+              )}
               <span style={{ color: '#94a3b8', marginRight: 6 }}>|</span>
               <span>
                 {activeSelection.formattedExcerpt || activeSelection.selectedText || ''}

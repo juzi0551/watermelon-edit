@@ -43,7 +43,7 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
       >
         <Space size={spacing.xs} style={{ marginBottom: 4 }}>
           <Tag style={{ fontSize: tagFontSize, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
-            第{e.paragraph_index}段
+            第{e.paragraph_index + 1}段
           </Tag>
           {noLoc && <Tag color="warning" style={{ fontSize: tagFontSize, margin: 0 }}>位置异常</Tag>}
           <Tag style={{ fontSize: tagFontSize, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
@@ -51,8 +51,8 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
             {SEVERITY_LABEL[e.severity]}
           </Tag>
           {e.is_obsolete === 1 ? (
-            <Tag color="default" style={{ fontSize: tagFontSize, margin: 0 }}>
-              历史存档 (已覆盖)
+            <Tag color="error" style={{ fontSize: tagFontSize, margin: 0 }}>
+              ⚠️ (已作废)
             </Tag>
           ) : (
             e.source === 'rule' && <Tag color="blue" style={{ fontSize: tagFontSize, margin: 0 }}>规范检测</Tag>

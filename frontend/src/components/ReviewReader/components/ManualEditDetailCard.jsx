@@ -65,7 +65,7 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
           <Tag color="blue" style={{ fontSize: Math.round(12 * scale), margin: 0, fontWeight: 600 }}>
             📝 手工修改记录
           </Tag>
-          <Tag style={{ fontSize: Math.round(12 * scale), margin: 0 }}>第{para.idx}段</Tag>
+          <Tag style={{ fontSize: Math.round(12 * scale), margin: 0 }}>第{para.idx + 1}段</Tag>
         </Space>
         <Button type="text" size="small" icon={<CloseOutlined style={{ fontSize: Math.round(12 * scale) }} />} onClick={onClose} />
       </div>

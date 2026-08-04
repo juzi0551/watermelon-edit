@@ -103,7 +103,7 @@ export default function ProjectDetail() {
   )
 
   const handleApplyChatText = async (revisedText, paragraphIdx, paragraphUuid, noteText = '', originalText = null) => {
-    if (paragraphIdx === undefined || paragraphIdx === null) {
+    if ((paragraphIdx === undefined || paragraphIdx === null) && !paragraphUuid) {
       message.warning('请先在左侧编辑区选中或指定目标段落')
       return
     }
@@ -112,6 +112,8 @@ export default function ProjectDetail() {
     const targetPara = allParas.find(
       (p) => String(p.uuid) === String(paragraphUuid) || String(p.idx) === String(paragraphIdx)
     )
+
+    const resolvedIdx = targetPara ? targetPara.idx : paragraphIdx
 
     const currentParaText = targetPara ? (targetPara.revised_text || targetPara.text || '') : ''
     let textToApply = revisedText
@@ -148,23 +150,28 @@ export default function ProjectDetail() {
     setResults((prev) => {
       if (!prev || !prev.paragraphs) return prev
       const newParas = prev.paragraphs.map((p) =>
-        String(p.uuid) === String(paragraphUuid) || String(p.idx) === String(paragraphIdx)
+        (paragraphUuid && String(p.uuid) === String(paragraphUuid)) || (paragraphIdx != null && String(p.idx) === String(paragraphIdx))
           ? { ...p, revised_text: textToApply, edit_note: updatedNotesJson }
           : p
       )
       return { ...prev, paragraphs: newParas }
     })
 
-    message.success(`已应用 AI 润色结果至第 ${paragraphIdx} 段`)
+    if (resolvedIdx !== null && resolvedIdx !== undefined) {
+      message.success(`已应用 AI 润色结果至第 ${resolvedIdx + 1} 段`)
+    } else {
+      message.success(`已应用 AI 润色结果`)
+    }
 
     // 触发正文滚动与闪烁高亮动画
-    if (readerRef.current && readerRef.current.scrollToParagraph && paragraphIdx) {
-      readerRef.current.scrollToParagraph(paragraphIdx)
+    if (readerRef.current && readerRef.current.scrollToParagraph && resolvedIdx !== null && resolvedIdx !== undefined) {
+      readerRef.current.scrollToParagraph(resolvedIdx)
     }
 
     try {
-      // 2. 数据库权威更新
-      await updateParagraph(projectId, paragraphIdx, textToApply, updatedNotesJson, paragraphUuid)
+      // 2. 数据库权威更新 (支持纯 uuid 命中)
+      const targetIdentifier = paragraphUuid || resolvedIdx
+      await updateParagraph(projectId, targetIdentifier, textToApply, updatedNotesJson, paragraphUuid)
       // 3. 后台静默权威同步
       loadProject()
     } catch (e) {
@@ -267,7 +274,11 @@ export default function ProjectDetail() {
   const loadResults = async () => {
     try {
       const data = await getResults(projectId)
-      if (!data.error) setResults(data)
+      if (!data.error) {
+        setResults(data)
+        // 段落数据刷新（删除/合并/插入/恢复等变更后）时，全局失效段落状态缓存
+        window.dispatchEvent(new CustomEvent('paragraph-status-invalidated'))
+      }
     } catch { }
   }
 

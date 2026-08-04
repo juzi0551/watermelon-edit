@@ -73,7 +73,12 @@ export function ReaderHeader({
                       flex: 1,
                     }}
                   >
-                    {ch.title || `第 ${ch.title_paragraph_idx} 段`}
+                    {(() => {
+                      const isLegacyTitle = /^第 \d+ 段$/.test(ch.title || '') && 
+                                            parseInt((ch.title || '').slice(2)) === ch.title_paragraph_idx
+                      if (ch.title && !isLegacyTitle) return ch.title
+                      return `第 ${(ch.title_paragraph_idx ?? 0) + 1} 段`
+                    })()}
                   </Text>
                   {ch.detected_by === 'manual' ? (
                     <Tag color="green" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px', flexShrink: 0 }}>人工</Tag>

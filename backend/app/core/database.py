@@ -141,11 +141,6 @@ def _migrate_schema(conn):
         if r:
             version = int(r["value"])
     if version < 2:
-        conn.executescript(
-            "DROP TABLE IF EXISTS chapters; "
-            "DROP TABLE IF EXISTS proofread_results; "
-            "DROP TABLE IF EXISTS errors; "
-        )
         conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '2')")
     for col in (
@@ -419,12 +414,97 @@ def _migrate_schema(conn):
         conn.execute("UPDATE settings SET value = '200' WHERE key = 'chat_context_chars'")
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '11')")
 
-    if version < 12:
-        from app.core.chat import DEFAULT_CHAT_SYSTEM_PROMPT
-        conn.execute("UPDATE settings SET value = ? WHERE key = 'system_prompt_chat'", (DEFAULT_CHAT_SYSTEM_PROMPT,))
-        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '12')")
+    if version < 13:
+        # 放行存量 paragraphs.idx NOT NULL 限制
+        try:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS paragraphs_dg_tmp (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    idx INTEGER,
+                    text TEXT NOT NULL,
+                    revised_text TEXT,
+                    style_name TEXT,
+                    char_count INTEGER,
+                    has_page_break_before INTEGER DEFAULT 0,
+                    page_break_type TEXT DEFAULT 'none',
+                    edit_note TEXT,
+                    uuid TEXT DEFAULT NULL,
+                    is_deleted INTEGER DEFAULT 0,
+                    merged_into_uuid TEXT DEFAULT NULL,
+                    source TEXT DEFAULT 'original',
+                    UNIQUE (document_id, idx),
+                    FOREIGN KEY (document_id) REFERENCES documents(id)
+                );
+            """)
+            has_old = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paragraphs'").fetchone()
+            if has_old:
+                cols = [r["name"] for r in conn.execute("PRAGMA table_info(paragraphs)").fetchall()]
+                col_str = ", ".join(cols)
+                conn.execute(f"INSERT OR IGNORE INTO paragraphs_dg_tmp ({col_str}) SELECT {col_str} FROM paragraphs")
+                conn.execute("DROP TABLE paragraphs")
+                conn.execute("ALTER TABLE paragraphs_dg_tmp RENAME TO paragraphs")
+        except Exception:
+            pass
 
-    # 物理列缺漏补查（容错自愈：即使早期建表遗漏，启动时也能自动补上列）
+        # 1. 增列
+        for stmt in (
+            "ALTER TABLE paragraphs ADD COLUMN is_deleted INTEGER DEFAULT 0",
+            "ALTER TABLE paragraphs ADD COLUMN merged_into_uuid TEXT DEFAULT NULL",
+            "ALTER TABLE paragraphs ADD COLUMN source TEXT DEFAULT 'original'",
+        ):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+
+        # 2. 段落 UUID 补发 (Python generate_id 一致性格式)
+        para_rows = conn.execute("SELECT id FROM paragraphs WHERE uuid IS NULL OR uuid = ''").fetchall()
+        if para_rows:
+            conn.executemany(
+                "UPDATE paragraphs SET uuid = ? WHERE id = ?",
+                [(generate_id(), r["id"]) for r in para_rows]
+            )
+
+        # 3. 图谱三表 UUID 关联回填
+        try:
+            conn.execute("""
+                UPDATE characters SET first_appear_paragraph_uuid = (
+                    SELECT p.uuid FROM paragraphs p
+                    JOIN documents d ON p.document_id = d.id
+                    WHERE d.project_id = characters.project_id AND d.is_current = 1 AND p.idx = characters.first_appear_idx
+                    LIMIT 1
+                ) WHERE first_appear_paragraph_uuid IS NULL
+            """)
+            conn.execute("""
+                UPDATE character_relationships SET paragraph_uuid = (
+                    SELECT p.uuid FROM paragraphs p
+                    JOIN documents d ON p.document_id = d.id
+                    WHERE d.project_id = character_relationships.project_id AND d.is_current = 1 AND p.idx = character_relationships.paragraph_idx
+                    LIMIT 1
+                ) WHERE paragraph_uuid IS NULL
+            """)
+            conn.execute("""
+                UPDATE plot_events SET paragraph_uuid = (
+                    SELECT p.uuid FROM paragraphs p
+                    JOIN documents d ON p.document_id = d.id
+                    WHERE d.project_id = plot_events.project_id AND d.is_current = 1 AND p.idx = plot_events.paragraph_idx
+                    LIMIT 1
+                ) WHERE paragraph_uuid IS NULL
+            """)
+        except Exception:
+            pass
+
+        # 4. 性能索引（表重建后补回 uuid 唯一索引，保证 uuid 物理唯一语义）
+        try:
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_para_uuid ON paragraphs(uuid) WHERE uuid IS NOT NULL")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_errors_para_uuid ON errors(paragraph_uuid)")
+        except Exception:
+            pass
+
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '13')")
+
+    # 物理列缺漏补查（容错自愈）
     for table_name, col_def in (
         ("errors", "paragraph_uuid TEXT DEFAULT NULL"),
         ("errors", "source TEXT DEFAULT 'llm'"),
@@ -435,6 +515,9 @@ def _migrate_schema(conn):
         ("chapters", "end_paragraph_uuid TEXT DEFAULT NULL"),
         ("paragraphs", "uuid TEXT DEFAULT NULL"),
         ("paragraphs", "edit_note TEXT"),
+        ("paragraphs", "is_deleted INTEGER DEFAULT 0"),
+        ("paragraphs", "merged_into_uuid TEXT DEFAULT NULL"),
+        ("paragraphs", "source TEXT DEFAULT 'original'"),
         ("documents", "last_error TEXT"),
     ):
         try:
@@ -442,17 +525,63 @@ def _migrate_schema(conn):
         except sqlite3.OperationalError:
             pass
 
+    # 检查并解除 paragraphs.idx 的 NOT NULL 物理限制（容错自愈，支持旧 DB 平滑升级）
+    try:
+        info = conn.execute("PRAGMA table_info(paragraphs)").fetchall()
+        idx_not_null = any(c["name"] == "idx" and c["notnull"] == 1 for c in info)
+        if idx_not_null:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS paragraphs_dg_tmp (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    idx INTEGER,
+                    text TEXT NOT NULL,
+                    revised_text TEXT,
+                    style_name TEXT,
+                    char_count INTEGER,
+                    has_page_break_before INTEGER DEFAULT 0,
+                    page_break_type TEXT DEFAULT 'none',
+                    edit_note TEXT,
+                    uuid TEXT DEFAULT NULL,
+                    is_deleted INTEGER DEFAULT 0,
+                    merged_into_uuid TEXT DEFAULT NULL,
+                    source TEXT DEFAULT 'original',
+                    UNIQUE (document_id, idx),
+                    FOREIGN KEY (document_id) REFERENCES documents(id)
+                );
+            """)
+            cols = [r["name"] for r in info]
+            col_str = ", ".join(cols)
+            conn.execute(f"INSERT OR IGNORE INTO paragraphs_dg_tmp ({col_str}) SELECT {col_str} FROM paragraphs")
+            conn.execute("DROP TABLE paragraphs")
+            conn.execute("ALTER TABLE paragraphs_dg_tmp RENAME TO paragraphs")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_para_uuid ON paragraphs(uuid) WHERE uuid IS NOT NULL")
+    except Exception as e:
+        logger.warning("paragraphs.idx NOT NULL 自愈改造跳过: %s", e)
+
 
 def init_db():
     """初始化数据库，创建表结构。"""
     os.makedirs(DB_DIR, exist_ok=True)
     with get_conn() as conn:
         conn.executescript("""
+            -- 元信息表（存储 schema_version 等）
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+
+            -- 设置表
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+
             -- 项目表
             CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                status TEXT DEFAULT 'new',  -- new|uploaded|parsed|proofreading|reviewing|completed
+                status TEXT DEFAULT 'new',
                 current_document_id TEXT,
                 is_locked INTEGER DEFAULT 0,
                 author_name TEXT,
@@ -464,7 +593,7 @@ def init_db():
                 updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
-            -- 文档版本表（每个项目可有多个版本）
+            -- 文档版本表
             CREATE TABLE IF NOT EXISTS documents (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
@@ -479,11 +608,11 @@ def init_db():
                 FOREIGN KEY (project_id) REFERENCES projects(id)
             );
 
-            -- 原始段落表（docx 解析后的唯一真相源，不拆分章节）
+            -- 原始段落表
             CREATE TABLE IF NOT EXISTS paragraphs (
                 id TEXT PRIMARY KEY,
                 document_id TEXT NOT NULL,
-                idx INTEGER NOT NULL,
+                idx INTEGER,
                 text TEXT NOT NULL,
                 revised_text TEXT,
                 style_name TEXT,
@@ -492,18 +621,21 @@ def init_db():
                 page_break_type TEXT DEFAULT 'none',
                 edit_note TEXT,
                 uuid TEXT DEFAULT NULL,
+                is_deleted INTEGER DEFAULT 0,
+                merged_into_uuid TEXT DEFAULT NULL,
+                source TEXT DEFAULT 'original',
                 UNIQUE (document_id, idx),
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
 
-            -- 章节表（支持原文/LLM识别/人工设定的来源区分与主副标题层级）
+            -- 章节表
             CREATE TABLE IF NOT EXISTS chapters (
                 id TEXT PRIMARY KEY,
                 document_id TEXT NOT NULL,
                 title TEXT,
                 title_paragraph_idx INTEGER,
-                level INTEGER NOT NULL DEFAULT 1,  -- 1=主(章/卷) 2=副(节)
-                parent_idx INTEGER,                 -- 副标题指向所属主标题的 title_paragraph_idx
+                level INTEGER NOT NULL DEFAULT 1,
+                parent_idx INTEGER,
                 start_idx INTEGER NOT NULL,
                 end_idx INTEGER NOT NULL,
                 sort_order INTEGER NOT NULL,
@@ -514,6 +646,66 @@ def init_db():
                 start_paragraph_uuid TEXT DEFAULT NULL,
                 end_paragraph_uuid TEXT DEFAULT NULL,
                 FOREIGN KEY (document_id) REFERENCES documents(id)
+            );
+
+            -- 错误表
+            CREATE TABLE IF NOT EXISTS errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id TEXT NOT NULL,
+                paragraph_index INTEGER DEFAULT 0,
+                type TEXT NOT NULL,
+                original_text TEXT,
+                suggested_text TEXT,
+                severity TEXT DEFAULT 'medium',
+                description TEXT,
+                user_status TEXT DEFAULT 'pending',
+                chapter_id TEXT,
+                paragraph_uuid TEXT DEFAULT NULL,
+                source TEXT DEFAULT 'llm',
+                is_obsolete INTEGER DEFAULT 0,
+                FOREIGN KEY (document_id) REFERENCES documents(id)
+            );
+
+            -- 登场角色表
+            CREATE TABLE IF NOT EXISTS characters (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                role TEXT,
+                aliases TEXT,
+                description TEXT,
+                first_appear_idx INTEGER,
+                first_appear_paragraph_uuid TEXT DEFAULT NULL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+
+            -- 角色关系网
+            CREATE TABLE IF NOT EXISTS character_relationships (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                from_char_id TEXT,
+                to_char_id TEXT,
+                from_character TEXT,
+                to_character TEXT,
+                relation_type TEXT NOT NULL,
+                description TEXT,
+                paragraph_idx INTEGER,
+                paragraph_uuid TEXT DEFAULT NULL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+
+            -- 关键剧情事件
+            CREATE TABLE IF NOT EXISTS plot_events (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                paragraph_idx INTEGER,
+                paragraph_uuid TEXT DEFAULT NULL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
             );
 
             -- 校对窗口结果（内部按 W=30 段落切片，不暴露给用户）
@@ -528,22 +720,12 @@ def init_db():
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
 
-            -- 错误表（按 document_id 聚合，含用户确认状态）
-            CREATE TABLE IF NOT EXISTS errors (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                document_id TEXT NOT NULL,
-                paragraph_index INTEGER DEFAULT 0,
-                type TEXT NOT NULL,
-                original_text TEXT,
-                suggested_text TEXT,
-                severity TEXT DEFAULT 'medium',
-                description TEXT,
-                user_status TEXT DEFAULT 'pending',  -- pending|accepted|rejected
-                chapter_id TEXT,
-                paragraph_uuid TEXT DEFAULT NULL,
-                source TEXT DEFAULT 'llm',
-                is_obsolete INTEGER DEFAULT 0,
-                FOREIGN KEY (document_id) REFERENCES documents(id)
+            -- 方案卡片决策状态表
+            CREATE TABLE IF NOT EXISTS chat_cards (
+                message_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
         """)
         _migrate_schema(conn)
@@ -970,25 +1152,34 @@ def toggle_paragraph_page_break(document_id: str, idx: int, pb_val: str | bool):
 
 
 def delete_paragraph_and_reorder(document_id: str, idx: int):
-    """删除指定段落，平移后续段落 idx（全减 1），并同步重排章节范围边界。
+    """逻辑删除指定段落，重写主键为 document_id:deleted:uuid，平移后续有效段落 idx（全减 1），并同步重排章节范围边界。
 
     同步更新所有关联表：
     - errors: 被删段落的 pending errors 软标记 obsolete；后续段落 paragraph_index -= 1
     - character_relationships / plot_events: 后续段落 paragraph_idx -= 1
     """
     with get_conn() as conn:
-        # 0. 查出 project_id（character_relationships / plot_events 按 project_id 存储）
         doc_row = conn.execute(
             "SELECT project_id FROM documents WHERE id = ?", (document_id,)
         ).fetchone()
         project_id = doc_row["project_id"] if doc_row else None
 
-        # 1. 删除指定段落
-        conn.execute("DELETE FROM paragraphs WHERE document_id = ? AND idx = ?", (document_id, idx))
+        # 1. 逻辑删除指定段落，物理主键改写为 doc:deleted:uuid
+        row = conn.execute(
+            "SELECT uuid FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) AND idx = ?",
+            (document_id, idx)
+        ).fetchone()
+        if row:
+            u = row["uuid"] or generate_id()
+            deleted_id = f"{document_id}:deleted:{u}"
+            conn.execute(
+                "UPDATE paragraphs SET is_deleted = 1, idx = NULL, id = ?, merged_into_uuid = NULL WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) AND idx = ?",
+                (deleted_id, document_id, idx)
+            )
 
-        # 2. 对大于被删 idx 的所有段落进行 idx 减 1 和 id 重构（携带 uuid，不丢失）
+        # 2. 对大于被删 idx 的所有物理有效段落进行 idx 减 1 和 id 重构
         rows_to_update = conn.execute(
-            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note FROM paragraphs WHERE document_id = ? AND idx > ? ORDER BY idx ASC",
+            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, source FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) AND idx > ? ORDER BY idx ASC",
             (document_id, idx)
         ).fetchall()
 
@@ -1000,10 +1191,10 @@ def delete_paragraph_and_reorder(document_id: str, idx: int):
             conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
             conn.execute(
                 """INSERT INTO paragraphs
-                   (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, is_deleted, merged_into_uuid, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)""",
                 (new_id, r["uuid"], document_id, new_idx, r["text"], r["revised_text"],
-                 r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"], r["edit_note"])
+                 r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"], r["edit_note"], (r["source"] if r["source"] else "original"))
             )
 
         # 3. 更新章节表中的 title_paragraph_idx, start_idx, end_idx
@@ -1321,8 +1512,31 @@ def merge_paragraphs(
                 (keep_uuid, keep_idx, project_id, remove_uuid, remove_idx),
             )
 
-    # 6. 删除 p_remove 所在行并平移后续段落索引
-    delete_paragraph_and_reorder(document_id, remove_idx)
+        # 6. 单事务内对 p_remove 标记逻辑合并与重定向指针，并重新排列后续有效段落
+        del_id = f"{document_id}:deleted:{remove_uuid}"
+        conn.execute(
+            "UPDATE paragraphs SET is_deleted = 1, idx = NULL, id = ?, merged_into_uuid = ?, source = 'merge' WHERE document_id = ? AND uuid = ?",
+            (del_id, keep_uuid, document_id, remove_uuid)
+        )
+
+        remaining = conn.execute(
+            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, source FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY idx ASC",
+            (document_id,)
+        ).fetchall()
+
+        for new_idx, r in enumerate(remaining):
+            old_idx = r["idx"]
+            old_id = f"{document_id}:{old_idx}"
+            new_id = f"{document_id}:{new_idx}"
+            if old_idx != new_idx:
+                conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
+                conn.execute(
+                    """INSERT INTO paragraphs
+                       (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, is_deleted, merged_into_uuid, source)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)""",
+                    (new_id, r["uuid"], document_id, new_idx, r["text"], r["revised_text"],
+                     r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"], r["edit_note"], (r["source"] if r["source"] else "original"))
+                )
 
     return {"uuid": keep_uuid, "idx": keep_idx, "text": merged_text}
 
@@ -1479,16 +1693,40 @@ def merge_multiple_paragraphs(
                 (keep_uuid, keep_idx, project_id, *remove_idxs),
             )
 
-    # 6. 从后向前删除多余段落行并整体平移后续段落
-    for r_idx in reversed(remove_idxs):
-        delete_paragraph_and_reorder(document_id, r_idx)
+        # 6. 单事务内对所有 p_removes 批量标记逻辑删除与合并指针，并平移剩余段落
+        for p_rem in p_removes:
+            r_uuid = p_rem["uuid"] or generate_id()
+            del_id = f"{document_id}:deleted:{r_uuid}"
+            conn.execute(
+                "UPDATE paragraphs SET is_deleted = 1, idx = NULL, id = ?, merged_into_uuid = ?, source = 'merge' WHERE document_id = ? AND uuid = ?",
+                (del_id, keep_uuid, document_id, r_uuid)
+            )
+
+        # 重新重排当前所有物理有效段落 (is_deleted = 0) 的 idx 与 id
+        remaining = conn.execute(
+            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, source FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY idx ASC",
+            (document_id,)
+        ).fetchall()
+
+        for new_idx, r in enumerate(remaining):
+            old_idx = r["idx"]
+            old_id = f"{document_id}:{old_idx}"
+            new_id = f"{document_id}:{new_idx}"
+            if old_idx != new_idx:
+                conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
+                conn.execute(
+                    """INSERT INTO paragraphs
+                       (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, is_deleted, merged_into_uuid, source)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)""",
+                    (new_id, r["uuid"], document_id, new_idx, r["text"], r["revised_text"],
+                     r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"], r["edit_note"], (r["source"] if r["source"] else "original"))
+                )
 
     return {"uuid": keep_uuid, "idx": keep_idx, "text": merged_text}
 
 
-
 def clean_empty_paragraphs(document_id: str) -> int:
-    """清理所有空白段落，从 0 重新连续编排所有剩余段落 idx，并重算章节、错误索引与总数。"""
+    """清理所有双空段落（逻辑删除），对剩余有效段落从 0 重新连续编排 idx，并同步重映射关联表索引。"""
     with get_conn() as conn:
         proj = conn.execute(
             "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
@@ -1499,53 +1737,59 @@ def clean_empty_paragraphs(document_id: str) -> int:
         project_id = proj["project_id"] if proj else None
 
         all_paras = conn.execute(
-            "SELECT * FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
+            "SELECT * FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY idx ASC",
             (document_id,)
         ).fetchall()
 
-        non_empty = [p for p in all_paras if p["text"] and p["text"].strip()]
-        deleted_count = len(all_paras) - len(non_empty)
-        if deleted_count == 0:
+        empty_paras = [p for p in all_paras if not (p["text"] and p["text"].strip()) and not (p["revised_text"] and p["revised_text"].strip())]
+        if not empty_paras:
             return 0
 
-        # 被删空段落的 pending errors 软标记为 obsolete
-        empty_idxs = {p["idx"] for p in all_paras if not (p["text"] and p["text"].strip())}
-        if empty_idxs:
-            placeholders = ",".join("?" for _ in empty_idxs)
+        empty_idxs = {p["idx"] for p in empty_paras}
+        old_to_new = {p["idx"]: new_i for new_i, p in enumerate(all_paras) if p["idx"] not in empty_idxs}
+
+        # 批量将空段落进行逻辑删除，改写主键
+        for emp in empty_paras:
+            u = emp["uuid"] or generate_id()
+            del_id = f"{document_id}:deleted:{u}"
             conn.execute(
-                f"""UPDATE errors
-                    SET is_obsolete = 1
-                    WHERE document_id = ? AND paragraph_index IN ({placeholders}) AND user_status = 'pending'""",
-                (document_id, *empty_idxs),
+                "UPDATE paragraphs SET is_deleted = 1, idx = NULL, id = ? WHERE document_id = ? AND id = ?",
+                (del_id, document_id, emp["id"])
             )
 
-        old_to_new = {}
-        for new_i, p in enumerate(non_empty):
-            old_to_new[p["idx"]] = new_i
+        # 重新重排当前所有物理有效段落的 idx
+        remaining = conn.execute(
+            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, source FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY idx ASC",
+            (document_id,)
+        ).fetchall()
 
-        conn.execute("DELETE FROM paragraphs WHERE document_id = ?", (document_id,))
+        for new_idx, r in enumerate(remaining):
+            old_idx = r["idx"]
+            old_id = f"{document_id}:{old_idx}"
+            new_id = f"{document_id}:{new_idx}"
+            if old_idx != new_idx:
+                conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
+                conn.execute(
+                    """INSERT INTO paragraphs
+                       (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, is_deleted, merged_into_uuid, source)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)""",
+                    (new_id, r["uuid"], document_id, new_idx, r["text"], r["revised_text"],
+                     r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"], r["edit_note"], (r["source"] if r["source"] else "original"))
+                )
 
-        for new_i, p in enumerate(non_empty):
-            new_id = f"{document_id}:{new_i}"
-            conn.execute(
-                """INSERT INTO paragraphs
-                   (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (new_id, p["uuid"], document_id, new_i, p["text"], p["revised_text"], p["style_name"], p["char_count"], p["has_page_break_before"], p["page_break_type"], p["edit_note"])
-            )
-
+        # 同步重映射关联表索引（chapters / errors / character_relationships / plot_events）
         chapters = conn.execute("SELECT * FROM chapters WHERE document_id = ?", (document_id,)).fetchall()
         for ch in chapters:
             old_t = ch["title_paragraph_idx"]
             old_s = ch["start_idx"]
             old_e = ch["end_idx"]
 
-            new_t = old_to_new.get(old_t)
-            new_s = old_to_new.get(old_s, 0)
-            new_e = old_to_new.get(old_e, len(non_empty) - 1)
+            new_t = old_to_new.get(old_t) if old_t is not None else None
+            new_s = old_to_new.get(old_s, 0) if old_s is not None else 0
+            new_e = old_to_new.get(old_e, len(remaining) - 1) if old_e is not None else (len(remaining) - 1)
 
             conn.execute(
-                """UPDATE chapters SET title_paragraph_idx = ?, start_idx = ?, end_idx = ? WHERE id = ?""",
+                "UPDATE chapters SET title_paragraph_idx = ?, start_idx = ?, end_idx = ? WHERE id = ?",
                 (new_t, new_s, new_e, ch["id"])
             )
 
@@ -1553,8 +1797,7 @@ def clean_empty_paragraphs(document_id: str) -> int:
         for e in errs:
             old_pi = e["paragraph_index"]
             if old_pi in old_to_new:
-                new_pi = old_to_new[old_pi]
-                conn.execute("UPDATE errors SET paragraph_index = ? WHERE id = ?", (new_pi, e["id"]))
+                conn.execute("UPDATE errors SET paragraph_index = ? WHERE id = ?", (old_to_new[old_pi], e["id"]))
 
         if project_id:
             rels = conn.execute("SELECT id, paragraph_idx FROM character_relationships WHERE project_id = ?", (project_id,)).fetchall()
@@ -1567,7 +1810,7 @@ def clean_empty_paragraphs(document_id: str) -> int:
                 if ev["paragraph_idx"] in old_to_new:
                     conn.execute("UPDATE plot_events SET paragraph_idx = ? WHERE id = ?", (old_to_new[ev["paragraph_idx"]], ev["id"]))
 
-        return deleted_count
+        return len(empty_paras)
 
 
 def set_paragraph_as_chapter(document_id: str, idx: int, level: int = 1, title: str | None = None) -> str:
@@ -1639,6 +1882,140 @@ def unset_chapter(document_id: str, chapter_id_or_idx: str | int):
     recompute_chapter_sort_orders(document_id)
 
 
+def get_visible_paragraphs(document_id: str) -> list[dict]:
+    """获取阅读器正文视口中的有效段落 (WHERE is_deleted IS NULL OR is_deleted = 0 ORDER BY idx)"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY idx",
+            (document_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def resolve_paragraph_target(document_id: str, uuid: str) -> dict:
+    """段落追溯定位算法 (包含防死锁与状态决策矩阵，含跨版本与项目边界识别)"""
+    if not uuid:
+        return {"status": "not_found", "uuid": uuid}
+
+    with get_conn() as conn:
+        curr_doc = conn.execute("SELECT project_id FROM documents WHERE id = ?", (document_id,)).fetchone()
+        target_project_id = curr_doc["project_id"] if curr_doc else None
+
+        visited = set()
+        curr_uuid = uuid
+        depth = 0
+
+        while curr_uuid and depth < 5:
+            if curr_uuid in visited:
+                break
+            visited.add(curr_uuid)
+
+            row = conn.execute(
+                "SELECT * FROM paragraphs WHERE uuid = ?", (curr_uuid,)
+            ).fetchone()
+
+            if not row:
+                return {"status": "not_found", "uuid": uuid}
+
+            p = dict(row)
+            p_doc_id = p.get("document_id")
+
+            # 跨版本与项目边界处理
+            if p_doc_id != document_id:
+                p_doc = conn.execute("SELECT version, project_id FROM documents WHERE id = ?", (p_doc_id,)).fetchone()
+                if not p_doc or (target_project_id and p_doc["project_id"] != target_project_id):
+                    return {"status": "not_found", "uuid": uuid}
+                return {
+                    "status": "stale_version",
+                    "uuid": curr_uuid,
+                    "version": p_doc["version"],
+                    "target_idx": p.get("idx"),
+                    "display_text": get_paragraph_content(p),
+                    "original_text": p.get("text") or "",
+                    "has_revised": bool(p.get("revised_text")),
+                    "was_merged": depth > 0,
+                }
+
+            is_deleted = p.get("is_deleted", 0)
+            merged_into = p.get("merged_into_uuid")
+
+            if (is_deleted == 0 or is_deleted is None) and not merged_into:
+                st = "merged" if depth > 0 else "normal"
+                return {
+                    "status": st,
+                    "uuid": uuid,
+                    "target_idx": p.get("idx"),
+                    "target_uuid": curr_uuid,
+                    "display_text": get_paragraph_content(p),
+                    "original_text": p.get("text") or "",
+                    "has_revised": bool(p.get("revised_text")),
+                    "was_merged": depth > 0,
+                }
+
+            if merged_into:
+                curr_uuid = merged_into
+                depth += 1
+                continue
+
+            if is_deleted == 1:
+                st = "merged_then_deleted" if depth > 0 else "deleted"
+                return {
+                    "status": st,
+                    "uuid": curr_uuid,
+                    "display_text": get_paragraph_content(p),
+                    "original_text": p.get("text") or "",
+                    "has_revised": bool(p.get("revised_text")),
+                    "was_merged": depth > 0,
+                }
+
+            break
+
+        return {"status": "not_found", "uuid": uuid}
+
+
+def restore_paragraph(document_id: str, uuid: str, target_idx: int | None = None) -> dict | None:
+    """恢复逻辑删除的段落（拒绝恢复被合并段落）"""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM paragraphs WHERE uuid = ? AND is_deleted = 1 AND (merged_into_uuid IS NULL OR merged_into_uuid = '')",
+            (uuid,)
+        ).fetchone()
+        if not row:
+            return None
+
+        if target_idx is None:
+            target_idx = get_paragraph_count(document_id)
+
+        # 从大到小倒序平移，防止 UNIQUE (document_id, idx) 碰撞
+        to_shift = conn.execute(
+            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, source FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) AND idx >= ? ORDER BY idx DESC",
+            (document_id, target_idx)
+        ).fetchall()
+
+        for r in to_shift:
+            old_idx = r["idx"]
+            new_idx = old_idx + 1
+            old_id = f"{document_id}:{old_idx}"
+            new_id = f"{document_id}:{new_idx}"
+            conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
+            conn.execute(
+                """INSERT INTO paragraphs
+                   (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note, is_deleted, merged_into_uuid, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)""",
+                (new_id, r["uuid"], document_id, new_idx, r["text"], r["revised_text"],
+                 r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"], r["edit_note"], (r["source"] if r["source"] else "original"))
+            )
+
+        # 恢复被删段落物理主键与状态
+        restored_id = f"{document_id}:{target_idx}"
+        conn.execute(
+            "UPDATE paragraphs SET is_deleted = 0, idx = ?, id = ?, merged_into_uuid = NULL WHERE uuid = ?",
+            (target_idx, restored_id, uuid)
+        )
+
+        return {"idx": target_idx, "uuid": uuid, "status": "restored"}
+
+
 def get_paragraphs(document_id: str) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -1652,7 +2029,7 @@ def get_paragraphs_in_range(document_id: str, start_idx: int, end_idx: int) -> l
     """只读取 [start_idx, end_idx) 范围内的段落，避免大文档全量读取。"""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM paragraphs WHERE document_id = ? AND idx >= ? AND idx < ? ORDER BY idx",
+            "SELECT * FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) AND idx >= ? AND idx < ? ORDER BY idx",
             (document_id, start_idx, end_idx),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1665,7 +2042,7 @@ def get_paragraphs_by_indices(document_id: str, indices: list[int]) -> list[dict
     placeholders = ",".join("?" for _ in indices)
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT * FROM paragraphs WHERE document_id = ? AND idx IN ({placeholders}) ORDER BY idx",
+            f"SELECT * FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) AND idx IN ({placeholders}) ORDER BY idx",
             (document_id, *indices),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1674,7 +2051,7 @@ def get_paragraphs_by_indices(document_id: str, indices: list[int]) -> list[dict
 def get_paragraph_count(document_id: str) -> int:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) AS c FROM paragraphs WHERE document_id = ?",
+            "SELECT COUNT(*) AS c FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0)",
             (document_id,),
         ).fetchone()
         return int(row["c"]) if row else 0
@@ -1742,10 +2119,10 @@ def update_paragraph_revised(paragraph_id: str, revised_text: str):
 
 
 def get_revised_paragraphs(document_id: str) -> list[dict]:
-    """导出：返回所有段落，revised_text ?? text。"""
+    """导出：返回所有有效段落（过滤已逻辑删除的段落），revised_text ?? text。"""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT idx, COALESCE(revised_text, text) AS text, revised_text IS NOT NULL AS has_rev, has_page_break_before, page_break_type, style_name FROM paragraphs WHERE document_id = ? ORDER BY idx",
+            "SELECT idx, COALESCE(revised_text, text) AS text, revised_text IS NOT NULL AS has_rev, has_page_break_before, page_break_type, style_name FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY idx ASC",
             (document_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -2011,7 +2388,7 @@ def get_result(document_id: str) -> dict:
         "document_id": document_id,
         "windows": get_window_results(document_id),
         "errors": get_errors(document_id),
-        "paragraphs": get_paragraphs(document_id),
+        "paragraphs": get_visible_paragraphs(document_id),
         **get_document_progress(document_id),
         "chapters": get_chapters(document_id),
     }
@@ -2402,7 +2779,7 @@ def merge_and_save_chapters(document_id: str, new_chapters: list[dict]) -> tuple
                 # 场景 C: 全新段落章节，标记 detected_by='llm' 增量插入
                 max_sort += 1
                 ch_id = generate_id()
-                title = c.get("title") or (f"第 {tip} 段" if tip is not None else "新章节")
+                title = c.get("title") or (f"第 {tip + 1} 段" if tip is not None else "新章节")
                 conn.execute(
                     """INSERT INTO chapters
                        (id, document_id, title, title_paragraph_idx, title_paragraph_uuid, level, parent_idx, parent_uuid,

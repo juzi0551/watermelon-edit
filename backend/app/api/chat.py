@@ -219,6 +219,11 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                                     try:
                                         parsed_args = json.loads(args_str)
                                         target_para_idx = current_para_idx if current_para_idx is not None else parsed_args.get("paragraph_idx")
+                                        target_para_uuid = parsed_args.get("paragraph_uuid") or (context_info and context_info.get("paragraph_uuid"))
+                                        if not target_para_uuid and target_para_idx is not None and doc:
+                                            from app.core.database import resolve_paragraph_uuid
+                                            target_para_uuid = resolve_paragraph_uuid(doc["id"], target_para_idx)
+
                                         target_original = authoritative_original or parsed_args.get("original_text") or ""
                                         if target_para_idx is not None and target_original:
                                             replacement_card = {
@@ -227,6 +232,7 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                                                 "note": parsed_args.get("note") or "",
                                                 "options": parsed_args.get("options") or [],
                                                 "paragraph_idx": target_para_idx,
+                                                "paragraph_uuid": target_para_uuid,
                                             }
                                     except Exception:
                                         pass

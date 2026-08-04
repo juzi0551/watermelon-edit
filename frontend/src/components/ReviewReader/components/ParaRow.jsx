@@ -223,7 +223,7 @@ export const ParaRow = React.memo(function ParaRow({
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary, #13c2c2)' }}
           onMouseLeave={(e) => { e.currentTarget.style.color = para?.revised_text ? color.success : color.textTertiary }}
         >
-          {para.idx}
+          {para.idx + 1}
         </span>
 
         <div style={{

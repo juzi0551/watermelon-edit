@@ -484,7 +484,7 @@ export function useReaderLogic({
     Modal.confirm({
       title: `确认合并选中的 ${selectedParasArr.length} 个段落？`,
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
-      content: `将依次合并第 ${selectedParasArr[0].idx} 段 至 第 ${selectedParasArr[selectedParasArr.length - 1].idx} 段。合并后文本无缝连结，标注与履历完整保留。`,
+      content: `将依次合并第 ${selectedParasArr[0].idx + 1} 段 至 第 ${selectedParasArr[selectedParasArr.length - 1].idx + 1} 段。合并后文本无缝连结，标注与履历完整保留。`,
       okText: `确认合并 (${selectedParasArr.length} 段)`,
       cancelText: '取消',
       onOk: async () => {

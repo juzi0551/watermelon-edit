@@ -175,7 +175,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 logger.info("预处理完成 doc=%s window=%s-%s 耗时=%.1fs，等待LLM首token",
                             doc_id, ws, we, time.time() - _job_t0)
                 _last_t0 = time.time()
-                errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt, project_id=project_id, window_first_idx=ws)
+                errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt, project_id=project_id, window_first_idx=ws, document_id=doc_id)
                 duration = int((time.time() - _last_t0) * 1000)
                 insert_llm_log(
                     generate_id(), project_id, doc_id,
@@ -234,7 +234,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     selected_types=json.dumps(types, ensure_ascii=False),
                 )
                 _last_t0 = time.time()
-                errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt, project_id=project_id, window_first_idx=min(batch))
+                errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt, project_id=project_id, window_first_idx=min(batch), document_id=doc_id)
                 duration = int((time.time() - _last_t0) * 1000)
                 insert_llm_log(
                     generate_id(), project_id, doc_id,
@@ -290,7 +290,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     selected_types=json.dumps(types, ensure_ascii=False),
                 )
                 _last_t0 = time.time()
-                errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt, project_id=project_id, window_first_idx=ws)
+                errs, chs, raw, token_info, parse_ok = await proofread_window(user_text, req.model, types, req.mode, system_prompt=system_prompt, project_id=project_id, window_first_idx=ws, document_id=doc_id)
                 duration = int((time.time() - _last_t0) * 1000)
                 insert_llm_log(
                     generate_id(), project_id, doc_id,
@@ -372,7 +372,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     )
                     t0 = time.time()
                     errs, chs, raw, token_info, parse_ok = await proofread_window(
-                        user_text, req.model, types, "batch", system_prompt=system_prompt, project_id=project_id, window_first_idx=ws
+                        user_text, req.model, types, "batch", system_prompt=system_prompt, project_id=project_id, window_first_idx=ws, document_id=doc_id
                     )
                     duration = int((time.time() - t0) * 1000)
                     insert_llm_log(
@@ -565,7 +565,7 @@ async def retry_window(project_id: str, req: RetryWindowRequest):
 
         t0 = time.time()
         errs, chs, raw, token_info, parse_ok = await proofread_window(
-            user_text, req.model, types, "batch", system_prompt=system_prompt, project_id=project_id, window_first_idx=ws
+            user_text, req.model, types, "batch", system_prompt=system_prompt, project_id=project_id, window_first_idx=ws, document_id=doc_id
         )
         duration = int((time.time() - t0) * 1000)
         insert_llm_log(

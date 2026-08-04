@@ -1,6 +1,6 @@
 import os
 import logging
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
 from app.utils.helpers import generate_id
@@ -181,19 +181,71 @@ class ParagraphNotesBody(BaseModel):
 
 
 def _resolve_para(doc_id: str, idx_or_uuid: str | int, body_uuid: str | None = None) -> dict | None:
-    if body_uuid:
-        para = get_paragraph_by_uuid(doc_id, body_uuid)
-        if para:
-            return para
-    target = str(idx_or_uuid)
-    if target.isdigit():
-        return get_paragraph_by_idx(doc_id, int(target))
-    return get_paragraph_by_uuid(doc_id, target)
+    from app.core.database import resolve_paragraph_target, get_paragraph_by_idx, get_paragraph_by_uuid
+
+    target_uuid = body_uuid or (str(idx_or_uuid) if not str(idx_or_uuid).isdigit() else None)
+    if target_uuid:
+        resolved = resolve_paragraph_target(doc_id, target_uuid)
+        if resolved.get("status") in ("normal", "merged") and resolved.get("target_idx") is not None:
+            return get_paragraph_by_idx(doc_id, resolved["target_idx"])
+        elif resolved.get("status") in ("deleted", "merged_then_deleted"):
+            raise HTTPException(status_code=400, detail="目标段落已被逻辑删除，无法直接修改")
+
+    target_str = str(idx_or_uuid)
+    if target_str.isdigit():
+        return get_paragraph_by_idx(doc_id, int(target_str))
+    return get_paragraph_by_uuid(doc_id, target_str)
+
+
+@router.get("/projects/{project_id}/paragraphs/{uuid}/status")
+async def api_get_paragraph_status(project_id: str, uuid: str):
+    """获取单个段落的追溯决策状态"""
+    doc = get_current_document(project_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="项目无文档")
+    from app.core.database import resolve_paragraph_target
+    return resolve_paragraph_target(doc["id"], uuid)
+
+
+class StatusBatchReq(BaseModel):
+    uuids: list[str]
+
+
+@router.post("/projects/{project_id}/paragraphs/status_batch")
+async def api_get_paragraph_status_batch(project_id: str, req: StatusBatchReq):
+    """批量获取段落的追溯决策状态"""
+    doc = get_current_document(project_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="项目无文档")
+    from app.core.database import resolve_paragraph_target
+    res = {}
+    for u in req.uuids:
+        if u:
+            res[u] = resolve_paragraph_target(doc["id"], u)
+    return res
+
+
+class RestoreReq(BaseModel):
+    target_idx: int | None = None
+
+
+@router.post("/projects/{project_id}/paragraphs/{uuid}/restore")
+async def api_restore_paragraph(project_id: str, uuid: str, body: RestoreReq | None = None):
+    """恢复被逻辑删除的段落"""
+    doc = get_current_document(project_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="项目无文档")
+    from app.core.database import restore_paragraph
+    target_idx = body.target_idx if body else None
+    result = restore_paragraph(doc["id"], uuid, target_idx)
+    if not result:
+        raise HTTPException(status_code=404, detail="无法恢复段落，段落不存在或未被删除")
+    return result
 
 
 @router.patch("/projects/{project_id}/paragraphs/{idx}")
 async def api_update_paragraph(project_id: str, idx: str, body: ParagraphUpdateBody):
-    """人工修改段落文本与修改备注（支持 idx 或 uuid）。"""
+    """人工修改段落文本与修改备注（支持 idx 或 uuid，自动透传已合并段落重定向）。"""
     doc = get_current_document(project_id)
     if not doc:
         raise HTTPException(status_code=404, detail="项目无文档")
@@ -229,6 +281,14 @@ async def api_delete_paragraph(project_id: str, idx: str, paragraph_uuid: str | 
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
+
+    # 幂等：对已逻辑删除的段落再次删除，直接返回 already_deleted（_resolve_para 对已删段抛 400，此处先行拦截）
+    target_uuid = paragraph_uuid or (idx if not str(idx).isdigit() else None)
+    if target_uuid:
+        existing = get_paragraph_by_uuid(doc["id"], target_uuid)
+        if existing and existing.get("is_deleted") == 1:
+            return {"status": "already_deleted", "deleted_uuid": existing.get("uuid")}
+
     para = _resolve_para(doc["id"], idx, paragraph_uuid)
     if not para:
         return {"error": "段落不存在"}
@@ -349,7 +409,7 @@ async def api_format_indent(project_id: str):
     count = 0
     with get_conn() as conn:
         paras = conn.execute(
-            "SELECT id, idx, text, revised_text FROM paragraphs WHERE document_id = ? ORDER BY idx ASC",
+            "SELECT id, idx, text, revised_text FROM paragraphs WHERE document_id = ? AND (is_deleted IS NULL OR is_deleted = 0) ORDER BY idx ASC",
             (doc_id,),
         ).fetchall()
         for p in paras:

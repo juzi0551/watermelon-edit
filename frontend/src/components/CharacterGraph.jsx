@@ -2,22 +2,25 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Modal, Card, Tag, Slider, Empty, Spin, Space, Tooltip, Badge } from 'antd'
 import { TeamOutlined, HistoryOutlined } from '@ant-design/icons'
 import { getCharacterGraph } from '../services/api'
-import { useTheme } from '../App'
+import { useTheme } from '../context/ThemeContext'
+import { useParagraphStatus } from '../hooks/useParagraphStatus'
 
 const ROLE_COLORS = {
   protagonist: 'gold',
-  antagonist: 'red',
   supporting: 'blue',
+  antagonist: 'red',
+  minor: 'default',
 }
 
 const ROLE_LABELS = {
   protagonist: '主角',
-  antagonist: '反派',
   supporting: '配角',
+  antagonist: '反派',
+  minor: '次要角色',
 }
 
 const RELATION_TAG_COLORS = {
-  ally: 'green',
+  friend: 'green',
   enemy: 'volcano',
   lover: 'magenta',
   family: 'purple',
@@ -25,8 +28,8 @@ const RELATION_TAG_COLORS = {
 }
 
 const RELATION_TAG_LABELS = {
-  ally: '结盟合作',
-  enemy: '敌对交恶',
+  friend: '友好盟友',
+  enemy: '敌对阵营',
   lover: '倾慕情侣',
   family: '亲情家族',
   neutral: '中立接触',
@@ -41,13 +44,19 @@ export default function CharacterGraph({
 }) {
   const { color } = useTheme()
   const [loading, setLoading] = useState(false)
-  const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
+  const [graphData, setGraphData] = useState({ nodes: [], edges: [], events: [] })
   const [currentParaIdx, setCurrentParaIdx] = useState(totalParagraphs)
 
-  const handleJumpToPara = (paragraphIdx) => {
-    if (typeof onScrollToParagraph === 'function' && paragraphIdx !== undefined && paragraphIdx !== null) {
-      onScrollToParagraph(paragraphIdx)
-      onClose?.()
+  const { fetchStatusBatch, statuses } = useParagraphStatus(projectId)
+
+  const handleJumpToPara = (paragraphIdx, paragraphUuid) => {
+    if (typeof onScrollToParagraph === 'function') {
+      const st = paragraphUuid ? statuses[paragraphUuid] : null
+      const target = st?.target_uuid || paragraphUuid || (st?.target_idx ?? paragraphIdx)
+      if (target !== undefined && target !== null) {
+        onScrollToParagraph(target)
+        onClose?.()
+      }
     }
   }
 
@@ -62,7 +71,15 @@ export default function CharacterGraph({
     setLoading(true)
     try {
       const data = await getCharacterGraph(projectId, currentParaIdx)
-      setGraphData(data || { nodes: [], edges: [] })
+      setGraphData(data || { nodes: [], edges: [], events: [] })
+      
+      const uuids = []
+      data?.nodes?.forEach(n => n.first_appear_paragraph_uuid && uuids.push(n.first_appear_paragraph_uuid))
+      data?.edges?.forEach(e => e.paragraph_uuid && uuids.push(e.paragraph_uuid))
+      data?.events?.forEach(ev => ev.paragraph_uuid && uuids.push(ev.paragraph_uuid))
+      if (uuids.length > 0) {
+        fetchStatusBatch(uuids)
+      }
     } catch (e) {
       // ignore
     } finally {
@@ -71,10 +88,27 @@ export default function CharacterGraph({
   }
 
   useEffect(() => {
-    if (open) {
+    if (open && projectId) {
       loadGraph()
     }
   }, [open, projectId, currentParaIdx])
+
+  const renderParaStatusBadge = (uuid, fallbackIdx) => {
+    const st = uuid ? statuses[uuid] : null
+    if (!st) {
+      return fallbackIdx !== undefined && fallbackIdx !== null ? `第 ${fallbackIdx + 1} 段` : '未定位'
+    }
+    if (st.status === 'merged') {
+      return `⚡️ 已合并至第 ${st.target_idx + 1} 段`
+    }
+    if (st.status === 'deleted' || st.status === 'merged_then_deleted') {
+      return `⚠️ 引用段落已被删除`
+    }
+    if (st.status === 'stale_version') {
+      return `旧版本段落 (v${st.version})`
+    }
+    return `第 ${(st.target_idx ?? fallbackIdx) + 1} 段`
+  }
 
   const activeEdges = useMemo(() => {
     return graphData.edges || []
@@ -124,7 +158,7 @@ export default function CharacterGraph({
             剧情推进时间轴（按段落）
           </span>
           <Tag color="blue" style={{ margin: 0 }}>
-            截止第 {currentParaIdx} 段
+            截止第 {Math.min(currentParaIdx + 1, totalParagraphs)} 段
           </Tag>
         </div>
         <Slider
@@ -132,10 +166,10 @@ export default function CharacterGraph({
           max={Math.max(totalParagraphs, 1)}
           value={currentParaIdx}
           onChange={(val) => setCurrentParaIdx(val)}
-          tooltip={{ formatter: (val) => `第 ${val} 段` }}
+          tooltip={{ formatter: (val) => val >= totalParagraphs ? `全书终 (第 ${totalParagraphs} 段)` : `第 ${val + 1} 段` }}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: color.textTertiary }}>
-          <span>开头 (第 0 段)</span>
+          <span>开头 (第 1 段)</span>
           <span>全书终 (第 {totalParagraphs} 段)</span>
         </div>
       </Card>
@@ -160,7 +194,7 @@ export default function CharacterGraph({
                   key={node.id}
                   size="small"
                   hoverable
-                  onClick={() => handleJumpToPara(node.first_appear_idx)}
+                  onClick={() => handleJumpToPara(node.first_appear_idx, node.first_appear_paragraph_uuid)}
                   style={{
                     background: color.bgCard,
                     borderColor: color.border,
@@ -180,7 +214,7 @@ export default function CharacterGraph({
                   </div>
                   <div style={{ marginBottom: 6 }}>
                     <Tag color="purple" style={{ fontSize: 11, margin: 0 }}>
-                      首次登场：第 {node.first_appear_idx} 段 🎯
+                      首次登场：{renderParaStatusBadge(node.first_appear_paragraph_uuid, node.first_appear_idx)} 🎯
                     </Tag>
                   </div>
                   {node.aliases && node.aliases.length > 0 && (
@@ -216,7 +250,7 @@ export default function CharacterGraph({
                       key={edge.id}
                       size="small"
                       hoverable
-                      onClick={() => handleJumpToPara(edge.paragraph_idx)}
+                      onClick={() => handleJumpToPara(edge.paragraph_idx, edge.paragraph_uuid)}
                       style={{
                         background: color.bgCard,
                         borderColor: color.borderBar,
@@ -226,7 +260,7 @@ export default function CharacterGraph({
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
-                          第 {edge.paragraph_idx} 段 🎯
+                          {renderParaStatusBadge(edge.paragraph_uuid, edge.paragraph_idx)} 🎯
                         </Tag>
                         <span style={{ fontWeight: 600, color: color.textPrimary }}>
                           {edge.from_name}
@@ -266,7 +300,7 @@ export default function CharacterGraph({
                       key={pe.id}
                       size="small"
                       hoverable
-                      onClick={() => handleJumpToPara(pe.paragraph_idx)}
+                      onClick={() => handleJumpToPara(pe.paragraph_idx, pe.paragraph_uuid)}
                       style={{
                         background: color.bgCard,
                         borderColor: color.borderBar,
@@ -274,14 +308,14 @@ export default function CharacterGraph({
                         cursor: 'pointer',
                       }}
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>
-                            第 {pe.paragraph_idx} 段 🎯
-                          </Tag>
-                          <span style={{ fontWeight: 600, color: color.textPrimary, fontSize: 13 }}>
-                            {pe.title}
-                          </span>
-                        </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <Tag color="gold" style={{ margin: 0, fontSize: 11 }}>
+                          {renderParaStatusBadge(pe.paragraph_uuid, pe.paragraph_idx)} 🎯
+                        </Tag>
+                        <span style={{ fontWeight: 600, color: color.textPrimary }}>
+                          {pe.title}
+                        </span>
+                      </div>
                         {pe.description && (
                           <div style={{ fontSize: 12, color: color.textSecondary, lineHeight: 1.4 }}>
                             {pe.description}

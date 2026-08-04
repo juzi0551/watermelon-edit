@@ -25,7 +25,9 @@ class TestChatCore(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.tmp_dir.name, "test_novel.db")
         self.orig_db_path = db_mod.DB_PATH
+        self.orig_db_dir = db_mod.DB_DIR
         db_mod.DB_PATH = self.test_db_path
+        db_mod.DB_DIR = self.tmp_dir.name
         
         # 初始化表结构并开启外键强校验
         init_db()
@@ -34,6 +36,7 @@ class TestChatCore(unittest.TestCase):
 
     def tearDown(self):
         db_mod.DB_PATH = self.orig_db_path
+        db_mod.DB_DIR = self.orig_db_dir
         self.tmp_dir.cleanup()
 
     def test_build_chat_context_boundaries(self):

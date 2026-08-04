@@ -46,8 +46,13 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose, currentBodyF
           }}
         />
         <div style={{ marginBottom: 6, paddingRight: 20 }}>
-          <div style={{ fontSize: Math.round(12 * scale), color: color.textSecondary, marginBottom: 2 }}>
-            第 {error.paragraph_index} 段
+          <div style={{ fontSize: Math.round(12 * scale), color: color.textSecondary, marginBottom: 2, display: 'flex', alignItems: 'center' }}>
+            <span>第 {error.paragraph_index + 1} 段</span>
+            {Boolean(error.is_obsolete) && (
+              <Tag color="error" style={{ marginLeft: 6, fontSize: 10, padding: '0 4px' }}>
+                ⚠️ (已作废)
+              </Tag>
+            )}
           </div>
           <div style={{ marginBottom: 6 }}>
             <DiffView original={error.original_text} suggested={error.suggested_text} fontSize={Math.round(14 * scale)} />

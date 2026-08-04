@@ -275,6 +275,21 @@ export async function mergeMultipleParagraphs(projectId, paragraphUuids, separat
   return data
 }
 
+export async function getParagraphStatus(projectId, uuid) {
+  const { data } = await api.get(`/projects/${projectId}/paragraphs/${uuid}/status`)
+  return data
+}
+
+export async function getParagraphStatusBatch(projectId, uuids) {
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/status_batch`, { uuids })
+  return data
+}
+
+export async function restoreParagraph(projectId, uuid, targetIdx = null) {
+  const { data } = await api.post(`/projects/${projectId}/paragraphs/${uuid}/restore`, { target_idx: targetIdx })
+  return data
+}
+
 // ==================== Project Profile & Character Graph ====================
 
 export async function updateProjectProfile(projectId, profileData) {
