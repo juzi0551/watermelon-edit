@@ -133,29 +133,93 @@ class TestChatCore(unittest.TestCase):
         self.assertIsNone(get_chat_session(session_id))
         self.assertEqual(len(list_chat_messages(session_id)), 0)
 
-    def test_no_context_guard_no_replacement_card(self):
-        """测试 B1 守护规则：当无选区 (context_info 为空) 时，即使 LLM 误触发 tool_call 也不产生 replacement_card。"""
-        formatted_tool_calls = [{"id": "call_123", "function": {"name": "propose_paragraph_edit", "arguments": '{"replacement_text":"测试"}'}}]
+    def test_build_replacement_card_uuid_authoritative(self):
+        """测试对话卡片构建逻辑：UUID 为唯一契约主键，paragraph_idx 由服务端动态派生。"""
+        from app.api.chat import _build_replacement_card
 
-        # 场景 A: context_info 为 None
-        context_info_none = None
-        current_para_idx_none = None
-        authoritative_original_none = (context_info_none and context_info_none.get("selected_text")) or ""
+        # 1. 场景 A: 模型只回传 paragraph_uuid (无 paragraph_idx)，服务端成功派生 paragraph_idx
+        parsed_args_a = {
+            "paragraph_uuid": "real_uuid_100",
+            "original_text": "原文内容",
+            "replacement_text": "替换内容",
+            "note": "润色说明"
+        }
+        context_info_a = {"paragraph_uuid": "real_uuid_100", "selected_text": "原文内容"}
+        # 模拟没有数据库连接时，fallback 为 current_para_idx
+        card_a = _build_replacement_card(parsed_args_a, context_info_a, current_para_idx=5, doc_id=None, authoritative_original="原文内容")
+        self.assertIsNotNone(card_a)
+        self.assertEqual(card_a["paragraph_uuid"], "real_uuid_100")
+        self.assertEqual(card_a["paragraph_idx"], 5)
 
-        replacement_card_a = None
-        if formatted_tool_calls and current_para_idx_none is not None and authoritative_original_none:
-            replacement_card_a = {"original": authoritative_original_none}
-        self.assertIsNone(replacement_card_a)
+        # 2. 场景 B: 模型回显错误/非法 paragraph_uuid，权威优先采纳请求侧 context_info 中的 paragraph_uuid
+        parsed_args_b = {
+            "paragraph_uuid": "wrong_hallucinated_uuid",
+            "original_text": "原文",
+            "replacement_text": "修改"
+        }
+        context_info_b = {"paragraph_uuid": "correct_req_uuid", "selected_text": "原文"}
+        card_b = _build_replacement_card(parsed_args_b, context_info_b, current_para_idx=3, doc_id=None, authoritative_original="原文")
+        self.assertIsNotNone(card_b)
+        self.assertEqual(card_b["paragraph_uuid"], "correct_req_uuid")
 
-        # 场景 B: context_info 存在但 selected_text 为空
-        context_info_empty = {"selected_text": ""}
-        current_para_idx_b = 2
-        authoritative_original_b = (context_info_empty and context_info_empty.get("selected_text")) or ""
+        # 3. 场景 C: 模型未回传 UUID，且缺少 context_info 与 current_para_idx -> 无法锁定 UUID，不产卡片
+        parsed_args_c = {
+            "original_text": "原文",
+            "replacement_text": "修改"
+        }
+        card_c = _build_replacement_card(parsed_args_c, None, current_para_idx=None, doc_id=None, authoritative_original="")
+        self.assertIsNone(card_c)
 
-        replacement_card_b = None
-        if formatted_tool_calls and current_para_idx_b is not None and authoritative_original_b:
-            replacement_card_b = {"original": authoritative_original_b}
-        self.assertIsNone(replacement_card_b)
+        # 4. 场景 D: 缺少原文 (original_text 为空) -> 不产卡片
+        parsed_args_d = {
+            "paragraph_uuid": "some_uuid",
+            "replacement_text": "修改"
+        }
+        card_d = _build_replacement_card(parsed_args_d, None, current_para_idx=1, doc_id=None, authoritative_original="")
+        self.assertIsNone(card_d)
+
+    def test_build_replacement_card_real_db_derivation_and_merge_redirect(self):
+        """测试对话卡片在真实 DB 场景下的派生逻辑：包含活性段落派生、被合并段落自动重定向目标 idx 以及已删除段落不产卡。"""
+        from app.api.chat import _build_replacement_card
+        from app.core.database import merge_multiple_paragraphs, delete_paragraph_and_reorder, get_conn
+
+        proj_id = "test_card_proj"
+        doc_id = "test_card_doc"
+        create_project(proj_id, "Card Test Proj")
+        create_document(doc_id, proj_id, "test.docx", "test.docx", 1)
+
+        # 插入 3 段测试数据
+        rows = [
+            (0, "第一段：初始正文内容A", "Normal"),
+            (1, "第二段：将被合并的内容B", "Normal"),
+            (2, "第三段：独立正文内容C", "Normal"),
+        ]
+        insert_paragraphs(doc_id, rows)
+
+        with get_conn() as conn:
+            p_rows = conn.execute("SELECT idx, uuid FROM paragraphs WHERE document_id = ? ORDER BY idx ASC", (doc_id,)).fetchall()
+            uuid_0, uuid_1, uuid_2 = p_rows[0]["uuid"], p_rows[1]["uuid"], p_rows[2]["uuid"]
+
+        # 1. 活性段落：模型回传 uuid_2，服务端自动从真实 DB 解析出 idx=2
+        parsed_active = {"paragraph_uuid": uuid_2, "original_text": "第三段：独立正文内容C", "replacement_text": "修改C"}
+        card_active = _build_replacement_card(parsed_active, context_info=None, current_para_idx=None, doc_id=doc_id)
+        self.assertIsNotNone(card_active)
+        self.assertEqual(card_active["paragraph_uuid"], uuid_2)
+        self.assertEqual(card_active["paragraph_idx"], 2)
+
+        # 2. 合并段落重定向：将 idx=1 合并至 idx=0，然后针对 uuid_1 生成卡片
+        merge_multiple_paragraphs(doc_id, [uuid_0, uuid_1])
+        parsed_merged = {"paragraph_uuid": uuid_1, "original_text": "第二段：将被合并的内容B", "replacement_text": "修改B"}
+        card_merged = _build_replacement_card(parsed_merged, context_info=None, current_para_idx=None, doc_id=doc_id)
+        self.assertIsNotNone(card_merged)
+        self.assertEqual(card_merged["paragraph_uuid"], uuid_1)
+        self.assertEqual(card_merged["paragraph_idx"], 0)  # 成功重定向到合并目标段落 idx=0！
+
+        # 3. 已删除段落：合并后 uuid_2 索引平移至 1，删除 idx=1，验证硬加固逻辑生效（不产出卡片）
+        delete_paragraph_and_reorder(doc_id, 1)
+        parsed_deleted = {"paragraph_uuid": uuid_2, "original_text": "第三段", "replacement_text": "修改"}
+        card_deleted = _build_replacement_card(parsed_deleted, context_info=None, current_para_idx=1, doc_id=doc_id)
+        self.assertIsNone(card_deleted)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,46 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _build_replacement_card(
+    parsed_args: dict,
+    context_info: dict | None,
+    current_para_idx: int | None,
+    doc_id: str | None,
+    authoritative_original: str = ""
+) -> dict | None:
+    if not isinstance(parsed_args, dict):
+        return None
+
+    target_para_uuid = (context_info and context_info.get("paragraph_uuid")) or parsed_args.get("paragraph_uuid")
+    if not target_para_uuid and current_para_idx is not None and doc_id:
+        from app.core.database import resolve_paragraph_uuid
+        target_para_uuid = resolve_paragraph_uuid(doc_id, current_para_idx)
+
+    if not target_para_uuid:
+        return None
+
+    target_para_idx = current_para_idx
+    if target_para_uuid and doc_id:
+        from app.core.database import resolve_paragraph_target
+        resolved = resolve_paragraph_target(doc_id, target_para_uuid)
+        if resolved and resolved.get("status") in ("deleted", "merged_then_deleted", "not_found"):
+            return None
+        if resolved and resolved.get("target_idx") is not None:
+            target_para_idx = resolved["target_idx"]
+
+    target_original = authoritative_original or parsed_args.get("original_text") or ""
+    if target_para_uuid and target_original:
+        return {
+            "original": target_original,
+            "replacement": parsed_args.get("replacement_text") or parsed_args.get("replacement") or "",
+            "note": parsed_args.get("note") or "",
+            "options": parsed_args.get("options") or [],
+            "paragraph_idx": target_para_idx,
+            "paragraph_uuid": target_para_uuid,
+        }
+    return None
+
+
 class CreateSessionReq(BaseModel):
     title: str | None = "新对话"
     model: str | None = None
@@ -218,22 +258,9 @@ async def api_chat_stream(project_id: str, req: ChatStreamReq):
                                     args_str = fn.get("arguments") or ""
                                     try:
                                         parsed_args = json.loads(args_str)
-                                        target_para_idx = current_para_idx if current_para_idx is not None else parsed_args.get("paragraph_idx")
-                                        target_para_uuid = parsed_args.get("paragraph_uuid") or (context_info and context_info.get("paragraph_uuid"))
-                                        if not target_para_uuid and target_para_idx is not None and doc:
-                                            from app.core.database import resolve_paragraph_uuid
-                                            target_para_uuid = resolve_paragraph_uuid(doc["id"], target_para_idx)
-
-                                        target_original = authoritative_original or parsed_args.get("original_text") or ""
-                                        if target_para_idx is not None and target_original:
-                                            replacement_card = {
-                                                "original": target_original,
-                                                "replacement": parsed_args.get("replacement_text") or parsed_args.get("replacement") or "",
-                                                "note": parsed_args.get("note") or "",
-                                                "options": parsed_args.get("options") or [],
-                                                "paragraph_idx": target_para_idx,
-                                                "paragraph_uuid": target_para_uuid,
-                                            }
+                                        card = _build_replacement_card(parsed_args, context_info, current_para_idx, doc_id, authoritative_original)
+                                        if card:
+                                            replacement_card = card
                                     except Exception:
                                         pass
 

@@ -424,11 +424,11 @@ export default function ChatPanel({
       const nextItem = index < messages.length - 1 ? messages[index + 1] : null
       const isSameRoleAsPrev = prevItem && prevItem.role === item.role
       const isFirstInGroup = !isSameRoleAsPrev
-      const userParaIdx = isUser
-        ? (item.context?.paragraph_idx ?? item.context?.paragraphIdx ?? item.context?.para_idx)
+      const userParaIdx = isUser && item.context
+        ? (item.context.paragraph_idx ?? item.context.paragraphIdx ?? item.context.para_idx ?? null)
         : null
-      const userParaUuid = isUser
-        ? (item.context?.paragraph_uuid ?? item.context?.paragraphUuid ?? item.context?.para_uuid)
+      const userParaUuid = isUser && item.context
+        ? (item.context.paragraph_uuid ?? item.context.paragraphUuid ?? item.context.para_uuid ?? null)
         : null
 
       const stUser = userParaUuid ? statuses[userParaUuid] : null
@@ -449,6 +449,12 @@ export default function ChatPanel({
       const userFormattedText = isUser && rawExcerpt
         ? (userIsExcerpt && !rawExcerpt.startsWith('…') ? `…${rawExcerpt}…` : rawExcerpt)
         : null
+
+      const hasUserQuote = isUser && (
+        (userParaIdx !== null && userParaIdx !== undefined) ||
+        Boolean(userParaUuid) ||
+        Boolean(userSelectedText)
+      )
 
       return {
         key: item.id || item.key,
@@ -488,13 +494,12 @@ export default function ChatPanel({
         ) : undefined,
         content: (
           <div>
-            {/* 用户引用段落与原文展示区：格式：段落#xx 节选 | …段落文字… */}
-            {isUser && (userParaIdx !== null || userParaUuid) && (
-              <Tooltip title={`点击跳转至第 ${displayIdxUser} 段并高亮`}>
+            {hasUserQuote && (
+              <Tooltip title={targetUser != null ? `点击跳转至第 ${displayIdxUser} 段并高亮` : ''}>
                 <div
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (targetUser !== undefined && targetUser !== null) {
+                    if (targetUser != null) {
                       onScrollToParagraph?.(targetUser)
                     }
                   }}
@@ -507,7 +512,7 @@ export default function ChatPanel({
                     color: '#ffffff',
                     fontSize: `${Math.max(12, bodyFontSize - 3)}px`,
                     lineHeight: 1.5,
-                    cursor: 'pointer',
+                    cursor: targetUser != null ? 'pointer' : 'default',
                     userSelect: 'none',
                     display: 'flex',
                     alignItems: 'center',
@@ -517,7 +522,7 @@ export default function ChatPanel({
                   }}
                 >
                   <span style={{ fontWeight: 600, flexShrink: 0, opacity: 0.95, whiteSpace: 'nowrap' }}>
-                    段落#{displayIdxUser}{userIsExcerpt ? ' 节选' : ''}
+                    {targetUser != null ? `段落#${displayIdxUser}${userIsExcerpt ? ' 节选' : ''}` : '选中引文'}
                   </span>
                   {stUser?.status === 'merged' && (
                     <Tag color="purple" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
