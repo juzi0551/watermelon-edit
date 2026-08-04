@@ -727,7 +727,7 @@ export default function ChatPanel({
           <div
             style={{
               marginBottom: 8,
-              padding: '8px 12px',
+              padding: '6px 12px',
               borderRadius: 8,
               background: '#f1f5f9',
               border: '1px solid #e2e8f0',
@@ -735,7 +735,7 @@ export default function ChatPanel({
               fontSize: `${Math.max(12, bodyFontSize - 2)}px`,
               lineHeight: 1.5,
               display: 'flex',
-              alignItems: 'flex-start',
+              alignItems: 'center',
               justifyContent: 'space-between',
               gap: 8,
             }}
@@ -743,26 +743,38 @@ export default function ChatPanel({
             <div
               style={{
                 flex: 1,
-                maxHeight: 72,
-                overflowY: 'auto',
-                wordBreak: 'break-word',
+                minWidth: 0,
+                display: 'flex',
+                alignItems: 'center',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
               }}
             >
-              <span style={{ fontWeight: 600, color: '#1e293b', marginRight: 6 }}>
-                段落 #{activeStatus?.target_idx !== undefined ? activeStatus.target_idx + 1 : (activeSelection.paragraphIdx !== undefined && activeSelection.paragraphIdx !== null ? activeSelection.paragraphIdx + 1 : '未定')}{activeSelection.isExcerpt ? ' 节选' : ''}
+              <span style={{ fontWeight: 600, color: '#1e293b', marginRight: 6, flexShrink: 0 }}>
+                {activeSelection.paragraphIdx != null
+                  ? `段落 #${activeStatus?.target_idx !== undefined ? activeStatus.target_idx + 1 : activeSelection.paragraphIdx + 1}${activeSelection.isExcerpt ? ' 节选' : ''}`
+                  : '选中引文'}
               </span>
               {activeStatus?.status === 'merged' && (
-                <Tag color="purple" style={{ margin: '0 4px', fontSize: 11 }}>
+                <Tag color="purple" style={{ margin: '0 4px', fontSize: 11, flexShrink: 0 }}>
                   ⚡️ 已合并至第 {activeStatus.target_idx + 1} 段
                 </Tag>
               )}
               {(activeStatus?.status === 'deleted' || activeStatus?.status === 'merged_then_deleted') && (
-                <Tag color="error" style={{ margin: '0 4px', fontSize: 11 }}>
+                <Tag color="error" style={{ margin: '0 4px', fontSize: 11, flexShrink: 0 }}>
                   ⚠️ 已废弃/被删段落
                 </Tag>
               )}
-              <span style={{ color: '#94a3b8', marginRight: 6 }}>|</span>
-              <span>
+              <span style={{ color: '#94a3b8', marginRight: 6, flexShrink: 0 }}>|</span>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {activeSelection.formattedExcerpt || activeSelection.selectedText || ''}
               </span>
             </div>
@@ -771,7 +783,7 @@ export default function ChatPanel({
               size="small"
               icon={<CloseOutlined style={{ fontSize: 11, color: '#64748b' }} />}
               onClick={onClearSelection}
-              style={{ width: 22, height: 22, minWidth: 22, padding: 0, marginTop: 1 }}
+              style={{ width: 22, height: 22, minWidth: 22, padding: 0, flexShrink: 0 }}
             />
           </div>
         )}
