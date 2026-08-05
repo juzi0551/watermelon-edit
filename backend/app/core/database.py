@@ -72,12 +72,13 @@ DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与�
 
 73: ### 【人物与剧情关键事件萃取规则】
 74: 在校对段落文本的同时，分析段落中登场的人物与发生的事件：
-75: 1. **角色信息与更新**：若有新登场或重要的角色，在 `character_updates` 数组中输出 `character_id`（若角色在【已登记人物画像】中，必须输出其 `[character_id: ...]` 对应的字符串，逐字复制；若是【本段怀疑新出现角色】或未登记新角色，则填空字符串 `""`）、`name`（姓名，必须使用角色标准主姓名）、`aliases`（别名数组）、`role`（protagonist/antagonist/supporting/minor 四者之一）、`first_appear_idx`（在当前段落切片中首次登场的段落索引）、`description`（角色全局弧光画像，引导字数 ≤100 字。定位为贯穿首尾的身份、性格底色、核心里程碑与立场演变。合成逻辑为“旧全局画像 + 本段新转折 → 新全局画像”，需适度压缩早期细节与中间过程、纳入新转折、优先保留首尾身份与最新状态，严禁写成单段近况或局部事件）与 `delta_summary`（在本段/近期发生的重点变化总结，15-30字，聚焦特定身份、性格、阵营与关键关系的特定转折履历）。**约束：仅允许更新【已登记人物画像】中列出的角色，以及【本段怀疑新出现角色】；未列出的已登记角色严禁输出。**
+75: 1. **角色信息与更新**：若有新登场或重要的角色，在 `character_updates` 数组中输出 `character_id`（若角色在【已登记人物画像】中，必须输出其 `[character_id: ...]` 对应的字符串，逐字复制；若是【本段怀疑新出现角色】或未登记新角色，则填空字符串 `""`）、`name`（姓名，必须使用角色标准主姓名）、`aliases`（别名数组）、`role`（protagonist/antagonist/supporting/minor 四者之一）、`first_appear_idx`（在当前段落切片中首次登场的段落索引）、`delta_paragraph_idx`（本段中该重点变化最清晰发生的具体段落索引，必须是当前切片中真实存在的索引；若无明显单一段落则填 `first_appear_idx`）、`description`（角色全局弧光画像，引导字数 ≤100 字。定位为贯穿首尾的身份、性格底色、核心里程碑与立场演变。合成逻辑为“旧全局画像 + 本段新转折 → 新全局画像”，需适度压缩早期细节与中间过程、纳入新转折、优先保留首尾身份与最新状态，严禁写成单段近况或局部事件）与 `delta_summary`（在本段/近期发生的重点变化总结，15-30字，聚焦特定身份、性格、阵营与关键关系的特定转折履历）。**约束：仅允许更新【已登记人物画像】中列出的角色，以及【本段怀疑新出现角色】；未列出的已登记角色严禁输出。**
 76: 2. **角色关系演进与状态声明**：对本段出现且存在明确关系的每对角色，在 `relationship_events` 数组中声明截至本段的关系状态。
 77:    - **类型放宽**：允许输出自然的中文关系类型（如父子/兄弟/兄妹/姐妹/母子/结拜/师徒/同门/敌人/逼婚/恋人/朋友等），内部会自动映射归一化。
 78:    - **群体展开规则**：当文本明确 N 人同属某个群体（如“三人形影不离的好伙伴”、“三兄弟”、“一家人”、“同门”），必须为群体内**每一对**声明关系状态，生成 C(N,2) 条边，不得只输出主角相关对。
 79:    - **负面规则**：师兄弟/同门≠师徒；结拜≠血缘；泛称（如群X/众X/X等/王大爷）不得当作角色。
-80:    - **证据与置信度**：输出 `evidence`（原文 1-2 句摘录，≤50字）与 `confidence`（high/medium/low；high 必填 evidence，medium 可选，low 可缺）。
+80:    - **称谓角度判断**：角色之间若以亲属称谓互称（如一方称对方“妈/爸/哥/姐/弟/妹/爷爷/奶奶/儿子/女儿”），或叙述中明确“X是Y的某亲属”，必须据此为该对角色声明对应的 `family` 关系，不得因对方并非主角而遗漏（如“哈呼妈妈”与“哈呼”是母子关系）。
+   - **证据与置信度**：输出 `evidence`（原文 1-2 句摘录，≤50字）与 `confidence`（high/medium/low；high 必填 evidence，medium 可选，low 可缺）。
 81:    - **强制约束**：凡在 `description` 或 `delta_summary` 中揭示了与既有角色的明确持久关系，必须同时在 `relationship_events` 中输出对应状态声明，不得只落一处。
 82:    - 输出字段：`from`（角色A标准主姓名）、`from_character_id`、`to`（角色B标准主姓名）、`to_character_id`、`type`、`description`（关系状态简述）、`paragraph_idx`、`evidence`（原文证据）与 `confidence`（置信度）。
 83: 3. **剧情关键事件**：若文中发生重大的剧情节点或非人物关系关键事件，在 `plot_events` 数组中输出 `title`（事件标题）、`description`（事件简述）与发生的具体段落索引 `paragraph_idx`。
@@ -98,7 +99,7 @@ DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与�
 98:     {"type": "style", "paragraph_index": 4, "locator": "他的心里感到极为非常地悲伤", "replacement": "他心中极为悲怆", "severity": "low", "description": "符合作者指定冷硬文风的润色建议"}
 99:   ],
 100:   "character_updates": [
-101:     {"character_id": "a1b2c3d4e5f6", "name": "智星", "aliases": ["老大"], "role": "protagonist", "first_appear_idx": 0, "description": "沿河村少年，聪明机敏，三人中排行老大。后在天山拜剑圣为师，现为蜀山记名弟子，性格沉稳兼具果敢。", "delta_summary": "在本段中揭示其拥有蜀山记名弟子身份，并展现出御剑术突破"}
+101:     {"character_id": "a1b2c3d4e5f6", "name": "智星", "aliases": ["老大"], "role": "protagonist", "first_appear_idx": 0, "delta_paragraph_idx": 3, "description": "沿河村少年，聪明机敏，三人中排行老大。后在天山拜剑圣为师，现为蜀山记名弟子，性格沉稳兼具果敢。", "delta_summary": "在本段中揭示其拥有蜀山记名弟子身份，并展现出御剑术突破"}
 102:   ],
 103:   "relationship_events": [
 104:     {"from": "智星", "from_character_id": "a1b2c3d4e5f6", "to": "铜锁", "to_character_id": "b2c3d4e5f6a1", "type": "结拜兄弟", "description": "三人形影不离的好伙伴，结为金兰", "paragraph_idx": 2, "evidence": "智星与铜锁歃血为盟，结为生死兄弟", "confidence": "high"},
@@ -838,6 +839,22 @@ def _safe_invalidate_cache(project_id: str | None):
             invalidate_graph_cache(project_id)
         except Exception:
             pass
+
+
+def _sync_first_appear_idx(conn, project_id: str):
+    """段落重排后，将 characters.first_appear_idx 同步为 first_appear_paragraph_uuid 当前的实际位置。"""
+    if not project_id:
+        return
+    conn.execute(
+        """UPDATE characters
+           SET first_appear_idx = COALESCE(
+               (SELECT p.idx FROM paragraphs p
+                 JOIN documents d ON p.document_id = d.id
+                WHERE d.project_id = ? AND d.is_current = 1 AND p.uuid = characters.first_appear_paragraph_uuid),
+               first_appear_idx)
+           WHERE project_id = ? AND first_appear_paragraph_uuid IS NOT NULL""",
+        (project_id, project_id),
+    )
 
 
 
@@ -3055,7 +3072,8 @@ def upsert_character(
             aliases_json = json.dumps(curr_aliases, ensure_ascii=False)
             conn.execute(
                 """UPDATE characters
-                   SET aliases = ?, role = ?, description = COALESCE(NULLIF(?, ''), description), first_appear_paragraph_uuid = COALESCE(?, first_appear_paragraph_uuid)
+                   SET aliases = ?, role = ?, description = COALESCE(NULLIF(?, ''), description),
+                       first_appear_paragraph_uuid = COALESCE(first_appear_paragraph_uuid, ?)
                    WHERE id = ?""",
                 (aliases_json, role, description, first_appear_paragraph_uuid, char_id),
             )

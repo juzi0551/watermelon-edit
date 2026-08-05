@@ -293,5 +293,80 @@ def validate_fact(from_name: str, to_name: str, rel_type: str, white_list: Optio
         
     norm_type = normalize_relation_type(rel_type)
     category = classify_relation_category(rel_type)
-    
+
     return True, norm_type, category
+
+
+# ── description 血亲边补全 ─────────────────────────────────────────
+# 亲属称谓（客观、不变，可由画像中的「X的称谓」模式确定性推断）
+_KINSHIP_TERMS = (
+    "母亲", "妈妈", "娘亲", "娘", "老妈",
+    "父亲", "爸爸", "爹爹", "爹", "老爸",
+    "儿子", "女儿", "长子", "长女",
+    "弟弟", "哥哥", "姐姐", "妹妹",
+    "爷爷", "奶奶", "祖父", "祖母", "外公", "外婆",
+)
+_KINSHIP_PATTERN = re.compile(
+    r"([\u4e00-\u9fa5]{2,4})的(" + "|".join(_KINSHIP_TERMS) + ")"
+)
+
+
+def complete_family_edges_from_descriptions(project_id: str) -> int:
+    """
+    确定性血亲边补全：扫描已登记角色 description 中的「X的称谓」模式
+    （如「哈呼的母亲」），当 X 为另一已登记角色时，若该点对尚无 family 边，
+    自动补建一条 family 关系。
+
+    幂等：仅当点对缺 family 边时才补。返回本次补建边数。
+    """
+    from app.core.database import get_conn, get_characters, insert_relationship
+
+    chars = get_characters(project_id)
+    name_to_id: Dict[str, str] = {}
+    for c in chars:
+        name_to_id[c["name"]] = c["id"]
+        for a in (c.get("aliases") or []):
+            if a and a not in name_to_id:
+                name_to_id[a] = c["id"]
+
+    # 已存在的 family 点对（去重）
+    existing: Set[Tuple[str, str]] = set()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT from_char_id, to_char_id FROM character_relationships
+               WHERE project_id = ? AND relation_type = 'family'""",
+            (project_id,),
+        ).fetchall()
+        for r in rows:
+            existing.add(tuple(sorted([r["from_char_id"], r["to_char_id"]])))
+
+    to_add: List[Tuple[str, str]] = []
+    for c in chars:
+        desc = c.get("description") or ""
+        for m in _KINSHIP_PATTERN.finditer(desc):
+            other_name = m.group(1)
+            other_id = name_to_id.get(other_name)
+            if not other_id or other_id == c["id"]:
+                continue
+            pair = tuple(sorted([c["id"], other_id]))
+            if pair in existing:
+                continue
+            existing.add(pair)
+            to_add.append((c["id"], other_id))
+
+    added = 0
+    for a, b in to_add:
+        # 锚点：以两人中较晚的首次登场为准，确保边在双方都登场后生效
+        anchor_idx = max(
+            (ch.get("first_appear_idx") or 0) for ch in chars if ch["id"] in (a, b)
+        )
+        insert_relationship(
+            project_id=project_id,
+            from_char_id=a,
+            to_char_id=b,
+            relation_type="family",
+            description="由角色画像中亲属称谓推断",
+            paragraph_idx=anchor_idx,
+        )
+        added += 1
+    return added

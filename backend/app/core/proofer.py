@@ -1,5 +1,6 @@
 import json
 import time
+import logging
 from json_repair import repair_json
 from app.core.database import (
     get_setting, get_project, get_character_graph,
@@ -9,6 +10,8 @@ from app.core.database import (
 )
 from app.core.context import build_project_context_parts
 from app.core.llm import call_llm
+
+logger = logging.getLogger(__name__)
 
 
 TYPE_LABELS = {
@@ -93,18 +96,25 @@ async def proofread_window(
     # 动态解析并落库新登场人物、演进关系与剧情关键事件
     if project_id and data:
         _extract_and_save_character_events(project_id, data, window_first_idx or 0, document_id)
+        # 血亲边补全：从已登记角色画像中的亲属称谓，补齐缺失的 family 边
+        try:
+            from app.core.quality_rules import complete_family_edges_from_descriptions
+            complete_family_edges_from_descriptions(project_id)
+        except Exception:
+            logger.warning("complete_family_edges_from_descriptions failed", exc_info=True)
 
     return errors, chapters, raw, token_info, True
 
 
-IDENTIFIER_SYSTEM_PROMPT = """你是一名中文小说角色识别器。给定【已登记角色表】与【待校对窗口文本】，识别窗口中登场或被提及的角色。
+IDENTIFIER_SYSTEM_PROMPT = """你是一名中文小说角色识别器。给定【已登记角色表】（含每个角色的完整全局画像描述）与【待校对窗口文本】，识别窗口中登场或被提及的角色。
 
 规则：
 1. 严格基于文本。角色直接出场、被称呼、以代词/回忆/间接方式提及，均视为登场。
-2. 仅输出确实出现于文本中的角色；未出现的一律不得列入。
-3. 若文中出现角色表中不存在的人名，记入 suspected_new_characters，必须给出 aliases（文中出现的其他称呼）与 first_appear_idx（首次出现段落索引）。
-4. 识别为登场的已登记角色，输出其 [character_id: ...] 前缀中的 character_id，character_id 必须逐字复制自角色表。
-5. 严禁输出任何解释、Markdown 代码块标记，只返回纯 JSON：
+2. 综合【已登记角色表】中的全局画像辅助判断：文中以别名、称谓或非标准称呼提及某角色时，应结合画像识别其对应已登记角色。
+3. 仅输出确实出现于文本中的角色；未出现的一律不得列入。
+4. 若文中出现角色表中不存在的人名，记入 suspected_new_characters，必须给出 aliases（文中出现的其他称呼）与 first_appear_idx（首次出现段落索引）。
+5. 识别为登场的已登记角色，输出其 [character_id: ...] 前缀中的 character_id，character_id 必须逐字复制自角色表。
+6. 严禁输出任何解释、Markdown 代码块标记，只返回纯 JSON：
 {
   "appearing_character_ids": ["a1b2c3d4e5f6", "..."],
   "suspected_new_characters": [{"name": "...", "aliases": ["..."], "first_appear_idx": 3}]
@@ -122,18 +132,24 @@ async def identify_window_characters(
         if not nodes:
             return None, None
 
-        omit_aliases = len(nodes) > 200
-        compact_lines = ["【已登记角色表】"]
+        # 完整角色信息（含全局画像 description），供识别时结合上下文判断相关性
+        omit_detail = len(nodes) > 200  # 超长列表才省略别名与画像，控制 token
+        compact_lines = ["【已登记角色表】（完整画像）"]
         for n in nodes:
             cid = n.get("id", "")
             name = n.get("name", "")
             role = n.get("role", "角色")
             aliases = n.get("aliases", [])
-            if not omit_aliases and aliases and isinstance(aliases, list):
+            if not omit_detail and aliases and isinstance(aliases, list):
                 alias_str = f"（别名：{'/'.join(aliases)}）"
             else:
                 alias_str = ""
-            compact_lines.append(f"[character_id: {cid}] {name}{alias_str}[{role}]")
+            if not omit_detail:
+                desc = (n.get("description") or "").strip()
+                desc_str = f" 全局画像：{desc}" if desc else ""
+            else:
+                desc_str = ""
+            compact_lines.append(f"[character_id: {cid}] {name}{alias_str}[{role}]{desc_str}")
 
         compact_table = "\n".join(compact_lines)
         user_text = build_proofread_user_text(window_paragraphs)
@@ -295,12 +311,19 @@ def _extract_and_save_character_events(project_id: str, data: dict, paragraph_id
                     )
                 delta_summary = c.get("delta_summary")
                 if delta_summary:
+                    # 锚点优先取「该变化实际发生的段落」，无则回退首次登场段
+                    delta_idx = (
+                        c.get("delta_paragraph_idx")
+                        if isinstance(c.get("delta_paragraph_idx"), int)
+                        else c_idx
+                    )
+                    delta_uuid = c.get("delta_paragraph_uuid") or _get_uuid(delta_idx)
                     upsert_character_history_summary(
                         project_id=project_id,
                         character_id=cid,
-                        paragraph_idx=c_idx,
+                        paragraph_idx=delta_idx,
                         delta_summary=delta_summary,
-                        paragraph_uuid=c_uuid,
+                        paragraph_uuid=delta_uuid,
                     )
 
     rel_events = data.get("relationship_events", [])
