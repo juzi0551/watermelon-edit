@@ -24,9 +24,9 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
           padding: '10px 14px',
           borderRadius: radius.md,
           marginBottom: 6,
-          borderTop: `1px solid ${noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)}`,
-          borderRight: `1px solid ${noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)}`,
-          borderBottom: `1px solid ${noLoc ? '#faad14' : (e.id === selectedId ? color.borderSelected : color.border)}`,
+          borderTop: `1px solid ${noLoc ? color.warning : (e.id === selectedId ? color.borderSelected : color.border)}`,
+          borderRight: `1px solid ${noLoc ? color.warning : (e.id === selectedId ? color.borderSelected : color.border)}`,
+          borderBottom: `1px solid ${noLoc ? color.warning : (e.id === selectedId ? color.borderSelected : color.border)}`,
           borderLeft: `3px solid ${statusColor}`,
           transition: 'background 0.15s, box-shadow 0.15s',
         }}
@@ -42,11 +42,11 @@ export const ErrorList = memo(function ErrorList({ errors, selectedId, onSelect,
         }}
       >
         <Space size={spacing.xs} style={{ marginBottom: 4 }}>
-          <Tag style={{ fontSize: tagFontSize, margin: 0, border: 'none', background: color.border, color: color.textSecondary }}>
+          <Tag style={{ fontSize: tagFontSize, margin: 0, border: 'none', background: color.bgChapterSelected, color: color.textSecondary }}>
             第{e.paragraph_index + 1}段
           </Tag>
           {noLoc && <Tag color="warning" style={{ fontSize: tagFontSize, margin: 0 }}>位置异常</Tag>}
-          <Tag style={{ fontSize: tagFontSize, margin: 0 }}>{TYPE_LABEL[e.type] || e.type}</Tag>
+          <Tag style={{ fontSize: tagFontSize, margin: 0, background: color.bgChapterSelected, color: color.textPrimary, border: `1px solid ${color.border}` }}>{TYPE_LABEL[e.type] || e.type}</Tag>
           <Tag style={{ fontSize: tagFontSize, margin: 0 }} color={SEVERITY_COLOR[e.severity]}>
             {SEVERITY_LABEL[e.severity]}
           </Tag>
@@ -115,7 +115,7 @@ export function ErrorSidebar({
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '14px 16px 0',
         }}>
-          <span style={{ fontWeight: 600, fontSize: subFontSize + 2 }}>问题列表</span>
+          <span style={{ fontWeight: 600, fontSize: subFontSize + 2, color: color.textPrimary }}>问题列表</span>
           <Button type="text" size="small" icon={<MenuFoldOutlined style={{ transform: 'scaleX(-1)' }} />} onClick={onTogglePanel} />
         </div>
 
@@ -123,7 +123,9 @@ export function ErrorSidebar({
           .right-panel-tabs .ant-tabs-content-holder { overflow: hidden; }
           .right-panel-tabs .ant-tabs-content { height: 100%; }
           .right-panel-tabs .ant-tabs-tabpane-active { height: 100%; overflow-y: auto; padding-bottom: 72px; }
-          .right-panel-tabs .ant-tabs-tab-btn { font-size: ${subFontSize + 1}px !important; }
+          .right-panel-tabs .ant-tabs-tab-btn { font-size: ${subFontSize + 1}px !important; color: var(--color-textSecondary) !important; }
+          .right-panel-tabs .ant-tabs-tab-active .ant-tabs-tab-btn { color: var(--color-primary) !important; font-weight: 600; }
+          [data-theme='dark'] .right-panel-tabs .ant-tabs-tab-active .ant-tabs-tab-btn { color: var(--color-primary) !important; }
         `}</style>
         <Tabs
           activeKey={panelTab}

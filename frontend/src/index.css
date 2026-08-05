@@ -194,6 +194,12 @@ a:hover, .ant-btn-link:hover, .ant-typography a:hover {
 [data-theme='dark'] .ant-progress-bg {
   background-color: var(--color-primary, #d4a359) !important;
 }
+[data-theme='dark'] .ant-progress-inner {
+  background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
+}
+[data-theme='dark'] .ant-progress-text {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
 
 /* 确保深色模式下所有文本、标题、按钮、表格、列表卡片无障碍高对比度渲染 */
 [data-theme='dark'] .ant-typography,

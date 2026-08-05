@@ -28,12 +28,11 @@ const ROLE_COLORS = {
   minor: 'default',
 }
 
-// 节点填充色（角色主导，柔和可读；替代单调的社区同色）
 const ROLE_FILLS = {
-  protagonist: '#f5b50a',  // 金
-  supporting: '#4a8fe0',   // 蓝
-  antagonist: '#e05252',   // 红
-  minor: '#9aa5b1',        // 灰蓝
+  protagonist: '#f5b50a',
+  supporting: '#4a8fe0',
+  antagonist: '#e05252',
+  minor: '#9aa5b1',
 }
 
 const ROLE_STROKES = {
@@ -51,14 +50,14 @@ const ROLE_LABELS = {
 }
 
 const COMMUNITY_COLORS = [
-  '#1890ff', // 蓝色
-  '#52c41a', // 绿色
-  '#fa8c16', // 橙色
-  '#722ed1', // 紫色
-  '#eb2f96', // 品红
-  '#13c2c2', // 青色
-  '#faad14', // 黄色
-  '#2f54eb', // 蓝靛
+  '#1890ff',
+  '#52c41a',
+  '#fa8c16',
+  '#722ed1',
+  '#eb2f96',
+  '#13c2c2',
+  '#faad14',
+  '#2f54eb',
 ]
 
 const CATEGORY_COLORS = {
@@ -88,10 +87,6 @@ const CATEGORY_EDGE_COLORS = {
   hierarchical: '#faad14',
 }
 
-// 确定性初始位置种子：
-// ① 核心节点(度>1)按度数环绕中心铺圆；
-// ② 叶子节点(度≤1)放在其父节点「远离其他邻居」的空旷方向，避免压在别的边上。
-// 力导向在其基础上做温和精调，保证叶子落在父节点空旷侧。
 function computeSmartSeed(nodes, edges) {
   const pos = {}
   const adj = {}
@@ -103,9 +98,8 @@ function computeSmartSeed(nodes, edges) {
     ;(adj[t] = adj[t] || new Set()).add(s)
   })
   const degreeOf = (id) => (adj[id] ? adj[id].size : 0)
-  const R = 170
+  const R = 200
 
-  // Pass 1: 核心节点绕圆（按度数降序铺开）
   const core = nodes.filter((n) => degreeOf(n.id) > 1)
   core.sort((a, b) => degreeOf(b.id) - degreeOf(a.id))
   core.forEach((n, i) => {
@@ -113,13 +107,11 @@ function computeSmartSeed(nodes, edges) {
     pos[n.id] = { x: Math.cos(angle) * R, y: Math.sin(angle) * R }
   })
 
-  // Pass 2: 叶子节点放父节点空旷侧
   const leaves = nodes.filter((n) => degreeOf(n.id) <= 1)
   leaves.forEach((n) => {
     const parentId = adj[n.id] && [...adj[n.id]][0]
     const parent = parentId ? pos[parentId] : null
     if (!parent) return
-    // 父节点其他邻居的重心方向
     let cx = 0, cy = 0, cnt = 0
     ;(adj[parentId] || []).forEach((nb) => {
       if (nb === n.id) return
@@ -127,16 +119,14 @@ function computeSmartSeed(nodes, edges) {
       if (p) { cx += p.x; cy += p.y; cnt++ }
     })
     if (cnt) { cx /= cnt; cy /= cnt }
-    // 空旷方向 = 父节点 - 邻居重心（远离拥挤侧）
     let dx = parent.x - cx, dy = parent.y - cy
     let len = Math.hypot(dx, dy)
     if (len < 1e-6) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dy = Math.sin(a); len = 1 }
-    pos[n.id] = { x: parent.x + (dx / len) * 75, y: parent.y + (dy / len) * 75 }
+    pos[n.id] = { x: parent.x + (dx / len) * 85, y: parent.y + (dy / len) * 85 }
   })
 
-  // Pass 3: 剩余未定位（孤立）节点
   nodes.forEach((n) => {
-    if (!pos[n.id]) pos[n.id] = { x: (Math.random() - 0.5) * 300, y: (Math.random() - 0.5) * 300 }
+    if (!pos[n.id]) pos[n.id] = { x: (Math.random() - 0.5) * 400, y: (Math.random() - 0.5) * 300 }
   })
   return pos
 }
@@ -148,39 +138,35 @@ export default function CharacterGraph({
   totalParagraphs = 100,
   onScrollToParagraph,
 }) {
-  const { color, isDark } = useTheme()
-  // G6 Canvas 无法解析 CSS 变量，需用真实色值（按主题选择）
+  const { isDark } = useTheme()
   const gc = isDark ? darkColors : lightColors
+
   const [loading, setLoading] = useState(false)
   const [graphData, setGraphData] = useState({ nodes: [], edges: [], plot_events: [] })
   const [currentParaIdx, setCurrentParaIdx] = useState(totalParagraphs)
 
-  // 词典过期感知与重扫
   const [dictExpired, setDictExpired] = useState(false)
   const [rescanning, setRescanning] = useState(false)
-  const [charSearch, setCharSearch] = useState('')
 
-  // 分类过滤与强度滑块
   const [selectedCategories, setSelectedCategories] = useState(['family', 'intimate', 'hostile', 'social', 'neutral', 'hierarchical'])
   const [minStrength, setMinStrength] = useState(1)
 
-  // Dijkstra 最短路径交互状态 (后端 API 计算)
   const [sourceId, setSourceId] = useState(null)
   const [targetId, setTargetId] = useState(null)
   const [pathLoading, setPathLoading] = useState(false)
   const [highlightedPath, setHighlightedPath] = useState(null)
-  // ref 同步值：避免 highlightedPath 变化导致图 effect 重建而抹掉高亮
-  const highlightedPathRef = useRef(null)
-  highlightedPathRef.current = highlightedPath
 
-  // 侧边栏选中的角色节点 ID
   const [selectedNodeId, setSelectedNodeId] = useState(null)
-  
-  // 选中的边详情 (用于查看原文证据与阶段演进)
   const [selectedEdge, setSelectedEdge] = useState(null)
+
+  const [charSearch, setCharSearch] = useState('')
 
   const containerRef = useRef(null)
   const graphInstanceRef = useRef(null)
+  const highlightedPathRef = useRef(null)
+  useEffect(() => {
+    highlightedPathRef.current = highlightedPath
+  }, [highlightedPath])
 
   const { fetchStatusBatch, statuses } = useParagraphStatus(projectId)
 
@@ -267,24 +253,13 @@ export default function CharacterGraph({
     return graphData.nodes.find((n) => n.id === selectedNodeId) || graphData.nodes[0]
   }, [graphData.nodes, selectedNodeId])
 
-  // 角色列表排序（中心度降序，其次登场序）+ 搜索过滤
-  const listNodes = useMemo(() => {
-    const kw = charSearch.trim()
-    const filtered = (graphData.nodes || []).filter(
-      (n) => !kw || n.name.includes(kw) || (n.aliases || []).some((a) => a.includes(kw))
-    )
-    return [...filtered].sort((a, b) => (b.centrality || 0) - (a.centrality || 0) || (a.first_appear_idx || 0) - (b.first_appear_idx || 0))
-  }, [graphData.nodes, charSearch])
-
-  // 焦点角色的直接关系清单（从当前快照投影边中取）
   const selectedNodeEdges = useMemo(() => {
-    if (!selectedNodeId) return []
-    return (graphData.edges || []).filter(
+    if (!selectedNodeId || !graphData.edges) return []
+    return graphData.edges.filter(
       (e) => e.from_char_id === selectedNodeId || e.to_char_id === selectedNodeId
     )
   }, [graphData.edges, selectedNodeId])
 
-  // 按分类与强度条件过滤后的图数据
   const filteredEdges = useMemo(() => {
     const rawEdges = graphData.edges || []
     return rawEdges.filter((e) => {
@@ -295,53 +270,86 @@ export default function CharacterGraph({
     })
   }, [graphData.edges, selectedCategories, minStrength])
 
-  // 格式化 AntV G6 (v5) 输入数据
+  const listNodes = useMemo(() => {
+    const rawNodes = graphData.nodes || []
+    if (!charSearch.trim()) return rawNodes
+    const q = charSearch.trim().toLowerCase()
+    return rawNodes.filter((n) => {
+      const matchName = n.name && n.name.toLowerCase().includes(q)
+      const matchAlias = n.aliases && n.aliases.some((a) => a && a.toLowerCase().includes(q))
+      return matchName || matchAlias
+    })
+  }, [graphData.nodes, charSearch])
+
+  // 将当前焦点角色及其所有的变化履历链与剧情关键事件，按段落索引转为横向时间线节点数组
+  const timelineData = useMemo(() => {
+    const paraMap = new Map()
+
+    // 1. 焦点角色的历史变化履历 (delta_summary)
+    if (selectedNode && selectedNode.history && selectedNode.history.length > 0) {
+      selectedNode.history.forEach((h) => {
+        const pIdx = h.paragraph_idx ?? 0
+        if (!paraMap.has(pIdx)) {
+          paraMap.set(pIdx, { paragraph_idx: pIdx, paragraph_uuid: h.paragraph_uuid, deltas: [], plot_events: [] })
+        }
+        paraMap.get(pIdx).deltas.push(h.delta_summary)
+      })
+    }
+
+    // 2. 剧情关键事件 (plot_events)
+    if (graphData.plot_events && graphData.plot_events.length > 0) {
+      graphData.plot_events.forEach((pe) => {
+        const pIdx = pe.paragraph_idx ?? 0
+        if (!paraMap.has(pIdx)) {
+          paraMap.set(pIdx, { paragraph_idx: pIdx, paragraph_uuid: pe.paragraph_uuid, deltas: [], plot_events: [] })
+        }
+        paraMap.get(pIdx).plot_events.push(pe)
+      })
+    }
+
+    const sortedParas = Array.from(paraMap.values()).sort((a, b) => a.paragraph_idx - b.paragraph_idx)
+    return sortedParas
+  }, [selectedNode, graphData.plot_events])
+
   const formattedG6Data = useMemo(() => {
-    // 先计算确定性初始位置（叶子在父节点空旷侧）
-    const seedPos = computeSmartSeed(graphData.nodes || [], filteredEdges)
     const nodes = (graphData.nodes || []).map((n) => {
       const centrality = n.centrality || 0
       const degree = n.degree || 0
-      const nodeSize = Math.min(56, Math.max(28, Math.round(28 + centrality * 36 + Math.min(degree, 10) * 1.5)))
-      const commId = n.community_id !== undefined ? n.community_id : 0
-      const communityColor = COMMUNITY_COLORS[commId % COMMUNITY_COLORS.length]
-      const roleFill = ROLE_FILLS[n.role] || ROLE_FILLS.minor
-      const strokeColor = ROLE_STROKES[n.role] || ROLE_STROKES.minor
+      const nodeSize = Math.min(52, Math.max(26, Math.round(26 + centrality * 30 + Math.min(degree, 10) * 1.2)))
       const isUngrounded = !!n.ungrounded
-      const seed = seedPos[n.id]
 
       return {
         id: n.id,
         name: n.name,
         role: n.role,
         centrality: n.centrality,
+        degree: n.degree,
         community_id: n.community_id,
         description: n.description,
         aliases: n.aliases,
         history: n.history || [],
         ungrounded: isUngrounded,
-        degree: n.degree || 0,
         first_appear_idx: n.first_appear_idx,
         first_appear_paragraph_uuid: n.first_appear_paragraph_uuid,
         style: {
           size: nodeSize,
-          x: seed ? seed.x : undefined,
-          y: seed ? seed.y : undefined,
-          fill: isUngrounded ? '#e0e0e0' : roleFill,
-          stroke: isUngrounded ? '#999999' : strokeColor,
+          fill: isUngrounded ? '#e2e8f0' : ROLE_FILLS[n.role] || ROLE_FILLS.minor,
+          stroke: isUngrounded ? '#94a3b8' : ROLE_STROKES[n.role] || ROLE_STROKES.minor,
           lineDash: isUngrounded ? [4, 4] : undefined,
-          lineWidth: 2,
-          labelText: n.name,
-          labelFill: gc.textPrimary,
+          lineWidth: 2.5,
+          labelText: n.name + (isUngrounded ? ' (未检索)' : ''),
+          labelFill: isUngrounded ? '#64748b' : gc.textPrimary,
           labelFontSize: 12,
-          labelFontWeight: 500,
-          labelPlacement: 'center',
-          labelBackground: true,
-          labelBackgroundFill: gc.bgCard,
-          labelBackgroundOpacity: 0.92,
-          labelBackgroundPadding: [2, 5],
-          labelBackgroundRadius: 3,
+          labelPlacement: 'bottom',
         },
+      }
+    })
+
+    const seedPos = computeSmartSeed(nodes, filteredEdges)
+    nodes.forEach((n) => {
+      if (seedPos[n.id]) {
+        n.x = seedPos[n.id].x
+        n.y = seedPos[n.id].y
       }
     })
 
@@ -365,8 +373,8 @@ export default function CharacterGraph({
         suspicious: e.suspicious,
         style: {
           stroke: edgeColor,
-          lineWidth: Math.min(7, Math.max(2, Math.round(1.5 + Math.log2(e.strength || 1)))),
-          endArrow: false, // 去除 endArrow，更符合无向关系视觉
+          lineWidth: Math.min(6, Math.max(1.5, Math.round(1.5 + Math.log2(e.strength || 1)))),
+          endArrow: false,
           labelText: (e.suspicious ? '⚠️ ' : '') + labelText,
           labelFill: gc.textSecondary,
           labelFontSize: 11,
@@ -379,50 +387,55 @@ export default function CharacterGraph({
     })
 
     return { nodes, edges }
-  }, [graphData.nodes, filteredEdges, color])
+  }, [graphData.nodes, filteredEdges, gc])
 
-  // 对指定角色执行 ego-network 高亮（焦点 + 一跳边，不隐藏其他节点）
   const applyFocusHighlight = useCallback(
-    (clickedId) => {
-      if (!graphInstanceRef.current || highlightedPathRef.current) return
-      const neighborNodeIds = new Set([clickedId])
+    (focusId) => {
+      const graph = graphInstanceRef.current
+      if (!graph || !formattedG6Data.nodes.length) return
+
       const connectedEdgeIds = new Set()
+      const neighborNodeIds = new Set([focusId])
+
       formattedG6Data.edges.forEach((edge) => {
-        if (edge.source === clickedId || edge.target === clickedId) {
+        if (edge.source === focusId || edge.target === focusId) {
           connectedEdgeIds.add(edge.id)
           neighborNodeIds.add(edge.source)
           neighborNodeIds.add(edge.target)
         }
       })
+
       const stateUpdates = {}
       formattedG6Data.nodes.forEach((n) => {
-        if (n.id === clickedId) stateUpdates[n.id] = ['selected']
-        else if (neighborNodeIds.has(n.id)) stateUpdates[n.id] = ['neighbor']
-        else stateUpdates[n.id] = []
+        if (n.id === focusId) {
+          stateUpdates[n.id] = 'selected'
+        } else if (neighborNodeIds.has(n.id)) {
+          stateUpdates[n.id] = 'neighbor'
+        } else {
+          stateUpdates[n.id] = []
+        }
       })
       formattedG6Data.edges.forEach((ed) => {
-        stateUpdates[ed.id] = connectedEdgeIds.has(ed.id) ? ['highlight'] : []
+        stateUpdates[ed.id] = connectedEdgeIds.has(ed.id) ? 'highlight' : []
       })
-      graphInstanceRef.current.setElementState(stateUpdates)
+
+      graph.setElementState(stateUpdates)
     },
     [formattedG6Data]
   )
 
-  // 角色列表点击：设焦点 + ego 高亮
-  const handleFocusCharacter = useCallback(
-    (id) => {
-      setSelectedNodeId(id)
-      applyFocusHighlight(id)
-    },
-    [applyFocusHighlight]
-  )
+  const handleFocusCharacter = (nodeId) => {
+    setSelectedNodeId(nodeId)
+    if (!highlightedPathRef.current) {
+      applyFocusHighlight(nodeId)
+    }
+  }
 
-  // 初始化与重绘 G6 (v5) Canvas 画布
   useEffect(() => {
     if (!open || loading || !containerRef.current || formattedG6Data.nodes.length === 0) return
 
-    const width = containerRef.current.clientWidth || 660
-    const height = containerRef.current.clientHeight || 460
+    const width = containerRef.current.clientWidth || 1000
+    const height = containerRef.current.clientHeight || 480
 
     if (graphInstanceRef.current) {
       try {
@@ -434,24 +447,8 @@ export default function CharacterGraph({
     }
 
     const nodeCount = formattedG6Data.nodes.length
-    // 温和基准排斥力（避免小图被吹散，叶子节点远离父节点）
-    const baseCharge = Math.max(-120, -50 - nodeCount * 4)
-    const linkDist = Math.min(200, Math.max(90, 110 + nodeCount * 2))
-    // 节点度数映射表（供布局回调按度数调节，防叶子节点被挤到其他边旁）
-    const degreeById = {}
-    formattedG6Data.nodes.forEach((n) => { degreeById[n.id] = n.degree || 0 })
-    // 每条边按「标签宽度 + 两端节点半径」预算最小长度，实现线随标签自适应变长
-    const nodeSizeById = {}
-    formattedG6Data.nodes.forEach((n) => { nodeSizeById[n.id] = n.style?.size || 32 })
-    const edgeMinLen = {}
-    formattedG6Data.edges.forEach((ed) => {
-      const labelText = ed.style?.labelText || ''
-      let w = 0
-      for (const ch of labelText) w += /[\u4e00-\u9fa5]/.test(ch) ? 11 : 7 // 中文按字号、其他按 0.6 字号
-      const sR = (nodeSizeById[ed.source] || 30) / 2
-      const tR = (nodeSizeById[ed.target] || 30) / 2
-      edgeMinLen[ed.id] = w + sR + tR + 20
-    })
+    const chargeStrength = Math.max(-300, -120 - nodeCount * 5)
+    const linkDist = Math.min(180, Math.max(90, 100 + nodeCount * 1.5))
 
     const graph = new Graph({
       container: containerRef.current,
@@ -462,58 +459,34 @@ export default function CharacterGraph({
       layout: {
         type: 'd3-force',
         preventOverlap: true,
-        linkDistance: (edge) => {
-          const sid = typeof edge.source === 'object' ? edge.source.id : edge.source
-          const tid = typeof edge.target === 'object' ? edge.target.id : edge.target
-          const minDeg = Math.min(degreeById[sid] ?? 0, degreeById[tid] ?? 0)
-          // 含叶子节点(低度)的边更短，让叶子紧贴父节点；但需满足标签可读的最小长度
-          const base = minDeg <= 1 ? linkDist * 0.6 : linkDist
-          const minLen = edgeMinLen[edge.id] || 0
-          return Math.max(base, Math.min(minLen, linkDist * 1.3))
-        },
-        // 按节点度数分配排斥力：叶子节点(关联少)排斥弱→紧贴父节点；中心节点排斥强→撑开布局
-        nodeStrength: (node) => {
-          const deg = node?.degree || 0
-          if (deg <= 1) return baseCharge * 0.5
-          return baseCharge - (deg - 1) * 4
-        },
-        // 防重叠按真实节点尺寸（含标签）
-        nodeSize: (node) => (node?.style?.size || 32) / 2 + 10,
+        linkDistance: linkDist,
+        nodeStrength: chargeStrength,
       },
       node: {
         style: {
           size: (d) => d.style?.size || 32,
-          fill: (d) => d.style?.fill || '#4a8fe0',
-          stroke: (d) => d.style?.stroke || '#2f6fc0',
+          fill: (d) => d.style?.fill || '#1890ff',
+          stroke: (d) => d.style?.stroke || '#1890ff',
           lineDash: (d) => d.style?.lineDash,
-          lineWidth: 2,
+          lineWidth: 2.5,
           labelText: (d) => d.style?.labelText || d.name || d.id,
           labelFill: (d) => d.style?.labelFill || gc.textPrimary,
           labelFontSize: 12,
-          labelFontWeight: 500,
-          labelPlacement: 'center',
-          labelBackground: true,
-          labelBackgroundFill: gc.bgCard,
-          labelBackgroundOpacity: 0.92,
-          labelBackgroundPadding: [2, 5],
-          labelBackgroundRadius: 3,
+          labelPlacement: 'bottom',
         },
         state: {
-          // 最短路径高亮（金色描边 + 淡金填充，醒目）
           highlight: {
             lineWidth: 6,
             stroke: '#faad14',
             fill: '#fffbe6',
             opacity: 1,
           },
-          // 点击选中的焦点节点
           selected: {
             lineWidth: 5,
             stroke: '#faad14',
             fill: '#fff1c0',
             opacity: 1,
           },
-          // 焦点一跳邻居（仅轻微强调，不隐藏其他节点）
           neighbor: {
             stroke: '#faad14',
             lineWidth: 3,
@@ -554,14 +527,12 @@ export default function CharacterGraph({
     graph.render()
     graphInstanceRef.current = graph
 
-    // 节点点击事件：选中与聚焦（仅高亮焦点及一跳邻居，不隐藏其他节点）
     graph.on(NodeEvent.CLICK, (e) => {
       const clickedId = e.target?.id || e.target?.data?.id
       if (clickedId) {
         setSelectedNodeId(clickedId)
         applyFocusHighlight(clickedId)
 
-        // Dijkstra 起终点填充
         setSourceId((prevSource) => {
           if (!prevSource) return clickedId
           if (prevSource !== clickedId && !targetId) {
@@ -573,7 +544,6 @@ export default function CharacterGraph({
       }
     })
 
-    // 边点击事件：查看详细证据与演变
     graph.on('edge:click', (e) => {
       const clickedEdgeId = e.target?.id || e.target?.data?.id
       const foundEdge = filteredEdges.find((ed) => ed.id === clickedEdgeId)
@@ -582,7 +552,6 @@ export default function CharacterGraph({
       }
     })
 
-    // 画布重置
     graph.on(CanvasEvent.CLICK, () => {
       if (!highlightedPathRef.current) {
         const resetStates = {}
@@ -604,7 +573,6 @@ export default function CharacterGraph({
     }
   }, [open, loading, formattedG6Data])
 
-  // 执行最短关系路径求解 (调用后端 Dijkstra API)
   const handleFindShortestPath = async () => {
     if (!sourceId || !targetId) {
       message.warning('请选择起点角色和终点角色')
@@ -672,7 +640,6 @@ export default function CharacterGraph({
     }
   }
 
-  // 清除高亮并恢复焦点
   const handleClearHighlight = () => {
     setHighlightedPath(null)
     if (graphInstanceRef.current && formattedG6Data.nodes.length > 0) {
@@ -716,40 +683,40 @@ export default function CharacterGraph({
     <Modal
       title={
         <Space>
-          <TeamOutlined style={{ color: color.primary }} />
+          <TeamOutlined style={{ color: gc.primary }} />
           <span>全书角色关系图谱 & 物理拓扑演进网络</span>
         </Space>
       }
       open={open}
       onCancel={onClose}
-      width={1440}
+      width={1600}
       zIndex={1100}
       footer={null}
       destroyOnHidden
       styles={{
         content: {
-          background: color.bgPage,
-          color: color.textPrimary,
+          background: gc.bgPage,
+          color: gc.textPrimary,
           padding: 20,
           borderRadius: 12,
         },
         header: {
           background: 'transparent',
-          color: color.textPrimary,
+          color: gc.textPrimary,
           marginBottom: 10,
         },
       }}
     >
-      {/* 实体词典过期轻量提示（不打扰） */}
+      {/* 词典过期提示 */}
       {dictExpired && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            marginBottom: 12,
+            marginBottom: 10,
             fontSize: 12,
-            color: color.textSecondary,
+            color: gc.textSecondary,
             flexWrap: 'wrap',
           }}
         >
@@ -770,19 +737,19 @@ export default function CharacterGraph({
         </div>
       )}
 
-      {/* 顶部时间轴拉条控制 */}
+      {/* 1. 顶部时间轴拉条控制 */}
       <Card
         size="small"
         style={{
-          background: color.bgCard,
-          borderColor: color.borderBar,
+          background: gc.bgCard,
+          borderColor: gc.borderBar,
           marginBottom: 12,
           borderRadius: 8,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: color.textPrimary }}>
-            <HistoryOutlined style={{ marginRight: 6, color: color.primary }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: gc.textPrimary }}>
+            <HistoryOutlined style={{ marginRight: 6, color: gc.primary }} />
             剧情推进时间轴（按段落演进快照 G_t）
           </span>
           <Tag color="blue" style={{ margin: 0 }}>
@@ -801,110 +768,7 @@ export default function CharacterGraph({
         />
       </Card>
 
-      {/* 分类过滤与强度降噪工具栏 */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: color.textSecondary, marginRight: 4 }}>
-            <FilterOutlined /> 关系分类过滤:
-          </span>
-          {Object.keys(CATEGORY_LABELS).map((cat) => {
-            const isChecked = selectedCategories.includes(cat)
-            const count = graphData.category_counts?.[cat] || 0
-            return (
-              <Tag
-                key={cat}
-                color={isChecked ? CATEGORY_COLORS[cat] : 'default'}
-                style={{ cursor: 'pointer', opacity: isChecked ? 1 : 0.45, borderRadius: 12, padding: '2px 8px' }}
-                onClick={() => toggleCategory(cat)}
-              >
-                {CATEGORY_LABELS[cat]} ({count})
-              </Tag>
-            )
-          })}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: color.textSecondary }}>最小关联强度:</span>
-          <Slider
-            min={1}
-            max={graphData.max_strength || 10}
-            value={minStrength}
-            onChange={setMinStrength}
-            style={{ width: 100, margin: 0 }}
-          />
-          <Tag color="cyan" style={{ margin: 0 }}>≥ {minStrength}</Tag>
-        </div>
-      </div>
-
-      {/* Dijkstra 最短路径工具栏 */}
-      <Card
-        size="small"
-        style={{
-          background: color.bgCard,
-          borderColor: color.borderBar,
-          marginBottom: 12,
-          borderRadius: 8,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <NodeIndexOutlined style={{ color: color.primary, fontSize: 16 }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: color.textPrimary }}>最短关系链求解 (后端 Dijkstra):</span>
-          <Select size="small" placeholder="选择起点角色" value={sourceId} onChange={setSourceId} style={{ width: 130 }} allowClear>
-            {graphData.nodes.map((n) => (
-              <Select.Option key={n.id} value={n.id}>{n.name}</Select.Option>
-            ))}
-          </Select>
-          <ArrowRightOutlined style={{ color: color.textTertiary, fontSize: 12 }} />
-          <Select size="small" placeholder="选择终点角色" value={targetId} onChange={setTargetId} style={{ width: 130 }} allowClear>
-            {graphData.nodes.map((n) => (
-              <Select.Option key={n.id} value={n.id}>{n.name}</Select.Option>
-            ))}
-          </Select>
-          <Button type="primary" size="small" icon={<SearchOutlined />} loading={pathLoading} onClick={handleFindShortestPath}>
-            高亮最短路径
-          </Button>
-          {highlightedPath && (
-            <Button size="small" icon={<ClearOutlined />} onClick={handleClearHighlight}>
-              重置高亮
-            </Button>
-          )}
-        </div>
-
-        {/* 最短路径逐跳步骤面板 */}
-        {highlightedPath && highlightedPath.path_nodes && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: '8px 12px',
-              background: color.bgPage,
-              borderRadius: 6,
-              border: `1px solid ${color.borderBar}`,
-              fontSize: 12,
-            }}
-          >
-            <div style={{ fontWeight: 600, color: color.primary, marginBottom: 4 }}>
-              🛣️ 路径步骤面板 (共 {highlightedPath.path_nodes.length - 1} 跳 · 加权总距离: {highlightedPath.total_distance}):
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              {highlightedPath.path_nodes.map((pn, idx) => {
-                const nextEdge = highlightedPath.path_edges?.[idx]
-                const cat = nextEdge?.category || 'neutral'
-                return (
-                  <React.Fragment key={pn.id}>
-                    <Tag color="blue" style={{ margin: 0 }}>{pn.name}</Tag>
-                    {nextEdge && (
-                      <span style={{ fontSize: 11, color: color.textSecondary }}>
-                        —<Tag color={CATEGORY_COLORS[cat]} style={{ margin: '0 2px', fontSize: 10 }}>{CATEGORY_LABELS[cat] || nextEdge.relation_type}</Tag>→
-                      </span>
-                    )}
-                  </React.Fragment>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </Card>
-
+      {/* 2. 中部：左侧角色列表 + 右侧(上方对半 Profile&关系 + 下方横向时间线) */}
       {loading ? (
         <Spin size="large" style={{ display: 'block', margin: '60px auto' }} />
       ) : graphData.nodes.length === 0 ? (
@@ -913,9 +777,9 @@ export default function CharacterGraph({
           style={{ margin: '60px 0' }}
         />
       ) : (
-        <div style={{ display: 'flex', gap: 14 }}>
-          {/* 左侧：角色列表（主入口） */}
-          <div style={{ width: 200, display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+          {/* 左侧：角色列表 */}
+          <div style={{ width: 220, display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
             <Input
               size="small"
               prefix={<SearchOutlined />}
@@ -926,17 +790,16 @@ export default function CharacterGraph({
             />
             <div
               style={{
-                flex: 1,
-                maxHeight: 600,
+                height: 480,
                 overflowY: 'auto',
-                background: color.bgCard,
-                border: `1px solid ${color.borderBar}`,
+                background: gc.bgCard,
+                border: `1px solid ${gc.borderBar}`,
                 borderRadius: 8,
                 padding: 4,
               }}
             >
               {listNodes.length === 0 ? (
-                <div style={{ fontSize: 12, color: color.textTertiary, padding: '16px 8px', textAlign: 'center' }}>
+                <div style={{ fontSize: 12, color: gc.textTertiary, padding: '16px 8px', textAlign: 'center' }}>
                   无匹配角色
                 </div>
               ) : (
@@ -953,9 +816,10 @@ export default function CharacterGraph({
                         padding: '6px 8px',
                         borderRadius: 6,
                         cursor: 'pointer',
-                        background: isSelected ? color.bgHighlight : 'transparent',
+                        background: isSelected ? gc.bgHighlight : 'transparent',
                         fontWeight: isSelected ? 600 : 400,
-                        color: color.textPrimary,
+                        color: gc.textPrimary,
+                        marginBottom: 2,
                       }}
                       title={n.role ? ROLE_LABELS[n.role] : ''}
                     >
@@ -972,7 +836,7 @@ export default function CharacterGraph({
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
                         {n.name}
                       </span>
-                      <span style={{ fontSize: 11, color: color.textTertiary, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: gc.textTertiary, flexShrink: 0 }}>
                         {n.degree || 0}
                       </span>
                     </div>
@@ -980,176 +844,349 @@ export default function CharacterGraph({
                 })
               )}
             </div>
-            <div style={{ fontSize: 11, color: color.textTertiary, textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: gc.textTertiary, textAlign: 'center' }}>
               共 {graphData.nodes.length} 个角色 · 数字为关联边数
             </div>
           </div>
 
-          {/* 中间：AntV G6 大画布 */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              ref={containerRef}
-              style={{
-                width: '100%',
-                height: 600,
-                background: color.bgCard,
-                borderRadius: 8,
-                border: `1px solid ${color.borderBar}`,
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* 底部：焦点角色详情面板（四栏） */}
-      {!loading && graphData.nodes.length > 0 && (
-        <div style={{ marginTop: 12 }}>
-          {selectedNode ? (
-            <div style={{ display: 'flex', gap: 12 }}>
-              {/* 栏 1：全局画像 */}
-              <Card
-                size="small"
-                title={
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontWeight: 600, fontSize: 14, color: color.textPrimary }}>
-                      <UserOutlined style={{ marginRight: 6, color: color.primary }} />
-                      {selectedNode.name}
-                    </span>
-                    <Tag color={ROLE_COLORS[selectedNode.role] || 'default'} style={{ margin: 0 }}>
-                      {ROLE_LABELS[selectedNode.role] || '角色'}
+          {/* 列表右侧大区域：上方 50%/50% 详情与关系 + 下方横向演进时间线 */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* 上方：50% 角色详情 Profile | 50% 角色关系与原文证据 */}
+            <div style={{ display: 'flex', gap: 12, height: 260 }}>
+              {/* 左半 50%：角色详情 Profile */}
+              {selectedNode ? (
+                <Card
+                  size="small"
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 600, fontSize: 14, color: gc.textPrimary }}>
+                        <UserOutlined style={{ marginRight: 6, color: gc.primary }} />
+                        {selectedNode.name}
+                      </span>
+                      <Tag color={ROLE_COLORS[selectedNode.role] || 'default'} style={{ margin: 0 }}>
+                        {ROLE_LABELS[selectedNode.role] || '角色'}
+                      </Tag>
+                    </div>
+                  }
+                  style={{ flex: 1, background: gc.bgCard, borderColor: gc.borderBar, borderRadius: 8 }}
+                  bodyStyle={{ height: 215, overflowY: 'auto', padding: 10 }}
+                >
+                  {selectedNode.ungrounded && (
+                    <Alert type="info" showIcon message="原文未检索到该角色" description="主名与别名均未在正文检索到，可能为模型推理补全。" style={{ marginBottom: 8, padding: '4px 8px' }} />
+                  )}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <Tag color={COMMUNITY_COLORS[(selectedNode.community_id !== undefined ? selectedNode.community_id : 0) % COMMUNITY_COLORS.length]} style={{ fontSize: 11, margin: 0 }}>
+                      阵营/社区 #{selectedNode.community_id ?? 0}
+                    </Tag>
+                    <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>介数中心度: {selectedNode.centrality || 0}</Tag>
+                    <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>关联度: {selectedNode.degree || 0} 边</Tag>
+                  </div>
+                  {selectedNode.aliases && selectedNode.aliases.length > 0 && (
+                    <div style={{ fontSize: 12, color: gc.textTertiary, marginBottom: 6 }}>别名：{selectedNode.aliases.join(' / ')}</div>
+                  )}
+                  <div style={{ marginBottom: 8 }}>
+                    <Tag color="purple" style={{ fontSize: 11, margin: 0, cursor: 'pointer' }} onClick={() => handleJumpToPara(selectedNode.first_appear_idx, selectedNode.first_appear_paragraph_uuid)}>
+                      首次登场：{renderParaStatusBadge(selectedNode.first_appear_paragraph_uuid, selectedNode.first_appear_idx)} 🎯
                     </Tag>
                   </div>
-                }
-                style={{ flex: 1.3, background: color.bgCard, borderColor: color.borderBar, borderRadius: 8 }}
-                bodyStyle={{ maxHeight: 260, overflowY: 'auto', padding: 10 }}
-              >
-                {selectedNode.ungrounded && (
-                  <Alert type="info" showIcon message="原文未检索到该角色" description="该角色主名与别名均未在正文中直接检索到，可能为模型推理关联补全。" style={{ marginBottom: 8, padding: '4px 8px' }} />
-                )}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                  <Tag color={COMMUNITY_COLORS[(selectedNode.community_id !== undefined ? selectedNode.community_id : 0) % COMMUNITY_COLORS.length]} style={{ fontSize: 11, margin: 0 }}>
-                    阵营/社区 #{selectedNode.community_id ?? 0}
-                  </Tag>
-                  <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>介数中心度: {selectedNode.centrality || 0}</Tag>
-                  <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>关联度: {selectedNode.degree || 0} 边</Tag>
-                </div>
-                {selectedNode.aliases && selectedNode.aliases.length > 0 && (
-                  <div style={{ fontSize: 12, color: color.textTertiary, marginBottom: 6 }}>别名：{selectedNode.aliases.join(' / ')}</div>
-                )}
-                <div style={{ marginBottom: 8 }}>
-                  <Tag color="purple" style={{ fontSize: 11, margin: 0, cursor: 'pointer' }} onClick={() => handleJumpToPara(selectedNode.first_appear_idx, selectedNode.first_appear_paragraph_uuid)}>
-                    首次登场：{renderParaStatusBadge(selectedNode.first_appear_paragraph_uuid, selectedNode.first_appear_idx)} 🎯
-                  </Tag>
-                </div>
-                <Divider style={{ margin: '6px 0', borderColor: color.borderBar }} />
-                <div style={{ fontSize: 12, fontWeight: 600, color: color.textSecondary, marginBottom: 4 }}>🌐 全局精炼 Profile (上限 100 字):</div>
-                <div style={{ fontSize: 13, color: color.textPrimary, lineHeight: 1.5, background: color.bgPage, padding: '8px 10px', borderRadius: 6, border: `1px dashed ${color.borderBar}` }}>
-                  {selectedNode.description || '暂无精炼 Profile 概括。'}
-                </div>
-              </Card>
+                  <Divider style={{ margin: '6px 0', borderColor: gc.borderBar }} />
+                  <div style={{ fontSize: 12, fontWeight: 600, color: gc.textSecondary, marginBottom: 4 }}>🌐 全局精炼 Profile (核心定位):</div>
+                  <div style={{ fontSize: 13, color: gc.textPrimary, lineHeight: 1.5, background: gc.bgPage, padding: '8px 10px', borderRadius: 6, border: `1px dashed ${gc.borderBar}` }}>
+                    {selectedNode.description || '暂无精炼 Profile 概括。'}
+                  </div>
+                </Card>
+              ) : (
+                <Card size="small" style={{ flex: 1, background: gc.bgCard, borderColor: gc.borderBar, borderRadius: 8 }}>
+                  <Empty description="请在左侧选中角色" style={{ margin: '40px 0' }} />
+                </Card>
+              )}
 
-              {/* 栏 2：关系清单 */}
+              {/* 右半 50%：角色关系与原文证据 */}
               <Card
                 size="small"
                 title={
-                  <span style={{ fontSize: 13, fontWeight: 600, color: color.textPrimary }}>
-                    <TeamOutlined style={{ marginRight: 6, color: color.primary }} />
-                    关系清单 ({selectedNodeEdges.length})
+                  <span style={{ fontSize: 13, fontWeight: 600, color: gc.textPrimary }}>
+                    <TeamOutlined style={{ marginRight: 6, color: gc.primary }} />
+                    角色关系网与原文证据清单 ({selectedNodeEdges.length})
                   </span>
                 }
-                style={{ flex: 1, background: color.bgCard, borderColor: color.borderBar, borderRadius: 8 }}
-                bodyStyle={{ maxHeight: 260, overflowY: 'auto', padding: 10 }}
+                style={{ flex: 1, background: gc.bgCard, borderColor: gc.borderBar, borderRadius: 8 }}
+                bodyStyle={{ height: 215, overflowY: 'auto', padding: 10 }}
               >
                 {selectedNodeEdges.length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无直接关系" style={{ margin: '8px 0' }} />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无直接关系" style={{ margin: '24px 0' }} />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {selectedNodeEdges.map((e) => {
                       const otherName = e.from_char_id === selectedNodeId ? e.to_name : e.from_name
                       const cat = e.category || 'neutral'
                       return (
-                        <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, background: color.bgPage, border: `1px solid ${color.borderBar}`, borderRadius: 6, padding: '5px 8px' }}>
-                          <span style={{ cursor: 'pointer', color: color.textPrimary, fontWeight: 500 }} onClick={() => handleFocusCharacter(e.from_char_id === selectedNodeId ? e.to_char_id : e.from_char_id)}>
-                            {otherName || '?'}
-                          </span>
-                          <Tag color={CATEGORY_COLORS[cat]} style={{ margin: '0 auto', fontSize: 10 }}>{CATEGORY_LABELS[cat] || e.relation_type}</Tag>
-                          <Tag color="default" style={{ margin: 0, fontSize: 10, cursor: 'pointer' }} onClick={() => handleJumpToPara(e.paragraph_idx, e.paragraph_uuid)}>
-                            {renderParaStatusBadge(e.paragraph_uuid, e.paragraph_idx)} 🎯
-                          </Tag>
+                        <div
+                          key={e.id}
+                          onClick={() => setSelectedEdge(e)}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4,
+                            fontSize: 12,
+                            background: gc.bgPage,
+                            border: `1px solid ${gc.borderBar}`,
+                            borderRadius: 6,
+                            padding: '6px 10px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ color: gc.textPrimary, fontWeight: 600 }}>
+                              与【{otherName || '?'}】
+                            </span>
+                            <Space size={4}>
+                              <Tag color={CATEGORY_COLORS[cat]} style={{ margin: 0, fontSize: 10 }}>
+                                {CATEGORY_LABELS[cat] || e.relation_type}
+                              </Tag>
+                              {e.suspicious && <Tag color="error" style={{ margin: 0, fontSize: 10 }}>⚠️ 突变</Tag>}
+                            </Space>
+                          </div>
+                          {e.evidence && (
+                            <div style={{ fontSize: 11, color: gc.textSecondary, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              “{e.evidence}”
+                            </div>
+                          )}
                         </div>
                       )
                     })}
                   </div>
                 )}
               </Card>
-
-              {/* 栏 3：角色变化记录 */}
-              <Card
-                size="small"
-                title={
-                  <span style={{ fontSize: 13, fontWeight: 600, color: color.textPrimary }}>
-                    <ClockCircleOutlined style={{ marginRight: 6, color: color.primary }} />
-                    角色变化记录 ({selectedNode.history ? selectedNode.history.length : 0})
-                  </span>
-                }
-                style={{ flex: 1, background: color.bgCard, borderColor: color.borderBar, borderRadius: 8 }}
-                bodyStyle={{ maxHeight: 260, overflowY: 'auto', padding: 10 }}
-              >
-                {!selectedNode.history || selectedNode.history.length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前进度下尚无角色变化记录" style={{ margin: '8px 0' }} />
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {selectedNode.history.map((h, idx) => (
-                      <div key={h.id || idx} style={{ background: color.bgPage, border: `1px solid ${color.borderBar}`, borderRadius: 6, padding: '8px 10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <Tag color="blue" style={{ margin: 0, fontSize: 11, cursor: 'pointer' }} onClick={() => handleJumpToPara(h.paragraph_idx, h.paragraph_uuid)}>
-                            {renderParaStatusBadge(h.paragraph_uuid, h.paragraph_idx)} 🎯
-                          </Tag>
-                        </div>
-                        <div style={{ fontSize: 12, color: color.textPrimary, lineHeight: 1.4 }}>{h.delta_summary}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-
-              {/* 栏 4：剧情关键事件 */}
-              <Card
-                size="small"
-                title={
-                  <span style={{ fontSize: 13, fontWeight: 600, color: color.textPrimary }}>
-                    📌 剧情核心关键事件 ({(graphData.plot_events || []).length})
-                  </span>
-                }
-                style={{ flex: 1, background: color.bgCard, borderColor: color.borderBar, borderRadius: 8 }}
-                bodyStyle={{ maxHeight: 260, overflowY: 'auto', padding: 10 }}
-              >
-                {(graphData.plot_events || []).length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前进度下无剧情关键事件" style={{ margin: '8px 0' }} />
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(graphData.plot_events || []).map((pe) => (
-                      <div key={pe.id} onClick={() => handleJumpToPara(pe.paragraph_idx, pe.paragraph_uuid)} style={{ background: color.bgPage, border: `1px solid ${color.borderBar}`, borderRadius: 6, padding: '8px 10px', cursor: 'pointer' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                          <Tag color="gold" style={{ margin: 0, fontSize: 11 }}>{renderParaStatusBadge(pe.paragraph_uuid, pe.paragraph_idx)} 🎯</Tag>
-                          <span style={{ fontWeight: 600, color: color.textPrimary, fontSize: 13 }}>{pe.title}</span>
-                        </div>
-                        {pe.description && <div style={{ fontSize: 12, color: color.textSecondary, lineHeight: 1.4 }}>{pe.description}</div>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
             </div>
-          ) : (
-            <Empty description="请在左侧选中角色" style={{ margin: '24px 0' }} />
-          )}
+
+            {/* 下方：角色变化与剧情事件演进（按段落比例定位的横向时间线） */}
+            <Card
+              size="small"
+              title={
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: gc.textPrimary }}>
+                    <ClockCircleOutlined style={{ marginRight: 6, color: gc.primary }} />
+                    角色变化与剧情事件演进时间线 (按段落比例)
+                  </span>
+                  <span style={{ fontSize: 11, color: gc.textTertiary }}>
+                    位置 = 段落实际比例 · 悬停看详情 · 点击跳转 ➔
+                  </span>
+                </div>
+              }
+              style={{ background: gc.bgCard, borderColor: gc.borderBar, borderRadius: 8 }}
+              bodyStyle={{ padding: 12 }}
+            >
+              {timelineData.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前进度下尚无该角色的状态变化或关键剧情事件" style={{ margin: '16px 0' }} />
+              ) : (
+                (() => {
+                  const minP = timelineData[0].paragraph_idx
+                  const maxP = timelineData[timelineData.length - 1].paragraph_idx
+                  const hasDelta = timelineData.some((n) => n.deltas && n.deltas.length)
+                  const hasPlot = timelineData.some((n) => n.plot_events && n.plot_events.length)
+
+                  return (
+                    <div>
+                      {/* 图例 + 时间范围 */}
+                      <div style={{ display: 'flex', gap: 16, marginBottom: 8, fontSize: 12, color: gc.textSecondary, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 600, color: gc.textPrimary }}>📌 {minP + 1} → {maxP + 1} 段</span>
+                        {hasDelta && (
+                          <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#1890ff', marginRight: 4 }} />角色变化</span>
+                        )}
+                        {hasPlot && (
+                          <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#d48806', marginRight: 4 }} />剧情事件</span>
+                        )}
+                        <span style={{ color: gc.textTertiary }}>间距 = 段落实际比例 · 点击卡片跳转段落</span>
+                      </div>
+
+                      <div style={{ overflowX: 'auto' }}>
+                        <div style={{ position: 'relative', paddingTop: 6 }}>
+                          {/* 基线 */}
+                          <div style={{ position: 'absolute', left: 0, right: 0, top: 14, height: 2, background: gc.borderBar }} />
+                          {/* 按段落比例定位的列：内容直接显示 */}
+                          <div style={{ display: 'flex', alignItems: 'flex-start', minWidth: 'max-content' }}>
+                            {timelineData.map((node, i) => (
+                              <React.Fragment key={node.paragraph_idx}>
+                                {/* 段落间距 → 等比伸缩占位 */}
+                                {i > 0 && (
+                                  <div style={{ flex: Math.max(2, node.paragraph_idx - timelineData[i - 1].paragraph_idx), minWidth: 26, height: 4, alignSelf: 'center' }} />
+                                )}
+                                <div style={{ width: 210, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  {/* 时间点 + 段号 */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 18 }}>
+                                    <span
+                                      style={{
+                                        width: 12, height: 12, borderRadius: '50%', zIndex: 1, flexShrink: 0,
+                                        background: node.deltas && node.deltas.length ? '#1890ff' : '#d48806',
+                                        border: `2px solid ${gc.bgCard}`, boxShadow: '0 0 4px rgba(0,0,0,0.35)',
+                                      }}
+                                    />
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: gc.textSecondary, whiteSpace: 'nowrap' }}>
+                                      {renderParaStatusBadge(node.paragraph_uuid, node.paragraph_idx)}
+                                    </span>
+                                  </div>
+                                  {/* 角色变化内容（直接显示） */}
+                                  {node.deltas && node.deltas.length > 0 && (
+                                    <div
+                                      onClick={() => handleJumpToPara(node.paragraph_idx, node.paragraph_uuid)}
+                                      style={{ background: gc.bgPage, border: `1px solid ${gc.borderBar}`, borderLeft: '3px solid #1890ff', borderRadius: 6, padding: '6px 8px', cursor: 'pointer', fontSize: 12, color: gc.textPrimary, lineHeight: 1.4 }}
+                                    >
+                                      {node.deltas.map((d, di) => (
+                                        <div key={di}>• {d}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {/* 剧情事件内容（直接显示） */}
+                                  {node.plot_events && node.plot_events.length > 0 && (
+                                    <div
+                                      onClick={() => handleJumpToPara(node.paragraph_idx, node.paragraph_uuid)}
+                                      style={{ background: gc.bgPage, border: `1px solid ${gc.borderBar}`, borderLeft: '3px solid #d48806', borderRadius: 6, padding: '6px 8px', cursor: 'pointer', fontSize: 12, color: gc.textPrimary, lineHeight: 1.4 }}
+                                    >
+                                      {node.plot_events.map((pe) => (
+                                        <div key={pe.id} style={{ marginBottom: 2 }}>
+                                          <span style={{ fontWeight: 600 }}>【{pe.title}】</span>
+                                          {pe.description && <span style={{ color: gc.textSecondary }}>{pe.description}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()
+              )}
+            </Card>
+          </div>
         </div>
       )}
 
-      {/* 边详情 Drawer (显示原文证据、置信度及演化阶段链) */}
+      {/* 3. 底部：拓扑关系图视窗 (通栏宽屏视图 + Dijkstra 最短路径求解) */}
+      {!loading && graphData.nodes.length > 0 && (
+        <Card
+          size="small"
+          style={{
+            background: gc.bgCard,
+            borderColor: gc.borderBar,
+            borderRadius: 8,
+          }}
+        >
+          {/* 分类过滤与强度降噪工具栏 */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: gc.textSecondary, marginRight: 4 }}>
+                <FilterOutlined /> 关系分类过滤:
+              </span>
+              {Object.keys(CATEGORY_LABELS).map((cat) => {
+                const isChecked = selectedCategories.includes(cat)
+                const count = graphData.category_counts?.[cat] || 0
+                return (
+                  <Tag
+                    key={cat}
+                    color={isChecked ? CATEGORY_COLORS[cat] : 'default'}
+                    style={{ cursor: 'pointer', opacity: isChecked ? 1 : 0.45, borderRadius: 12, padding: '2px 8px' }}
+                    onClick={() => toggleCategory(cat)}
+                  >
+                    {CATEGORY_LABELS[cat]} ({count})
+                  </Tag>
+                )
+              })}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: gc.textSecondary }}>最小关联强度:</span>
+              <Slider
+                min={1}
+                max={graphData.max_strength || 10}
+                value={minStrength}
+                onChange={setMinStrength}
+                style={{ width: 100, margin: 0 }}
+              />
+              <Tag color="cyan" style={{ margin: 0 }}>≥ {minStrength}</Tag>
+            </div>
+          </div>
+
+          {/* Dijkstra 最短路径求解工具栏 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+            <NodeIndexOutlined style={{ color: gc.primary, fontSize: 16 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: gc.textPrimary }}>最短关系链求解 (后端 Dijkstra):</span>
+            <Select size="small" placeholder="选择起点角色" value={sourceId} onChange={setSourceId} style={{ width: 130 }} allowClear>
+              {graphData.nodes.map((n) => (
+                <Select.Option key={n.id} value={n.id}>{n.name}</Select.Option>
+              ))}
+            </Select>
+            <ArrowRightOutlined style={{ color: gc.textTertiary, fontSize: 12 }} />
+            <Select size="small" placeholder="选择终点角色" value={targetId} onChange={setTargetId} style={{ width: 130 }} allowClear>
+              {graphData.nodes.map((n) => (
+                <Select.Option key={n.id} value={n.id}>{n.name}</Select.Option>
+              ))}
+            </Select>
+            <Button type="primary" size="small" icon={<SearchOutlined />} loading={pathLoading} onClick={handleFindShortestPath}>
+              高亮最短路径
+            </Button>
+            {highlightedPath && (
+              <Button size="small" icon={<ClearOutlined />} onClick={handleClearHighlight}>
+                重置高亮
+              </Button>
+            )}
+          </div>
+
+          {/* 最短路径逐跳步骤面板 */}
+          {highlightedPath && highlightedPath.path_nodes && (
+            <div
+              style={{
+                marginBottom: 10,
+                padding: '8px 12px',
+                background: gc.bgPage,
+                borderRadius: 6,
+                border: `1px solid ${gc.borderBar}`,
+                fontSize: 12,
+              }}
+            >
+              <div style={{ fontWeight: 600, color: gc.primary, marginBottom: 4 }}>
+                🛣️ 路径步骤面板 (共 {highlightedPath.path_nodes.length - 1} 跳 · 加权总距离: {highlightedPath.total_distance}):
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {highlightedPath.path_nodes.map((pn, idx) => {
+                  const nextEdge = highlightedPath.path_edges?.[idx]
+                  const cat = nextEdge?.category || 'neutral'
+                  return (
+                    <React.Fragment key={pn.id}>
+                      <Tag color="blue" style={{ margin: 0 }}>{pn.name}</Tag>
+                      {nextEdge && (
+                        <span style={{ fontSize: 11, color: gc.textSecondary }}>
+                          —<Tag color={CATEGORY_COLORS[cat]} style={{ margin: '0 2px', fontSize: 10 }}>{CATEGORY_LABELS[cat] || nextEdge.relation_type}</Tag>→
+                        </span>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 通栏物理拓扑关系图画布视窗 */}
+          <div
+            ref={containerRef}
+            style={{
+              width: '100%',
+              height: 480,
+              background: gc.bgCard,
+              borderRadius: 8,
+              border: `1px solid ${gc.borderBar}`,
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          />
+        </Card>
+      )}
+
+      {/* 边详情 Drawer */}
       <Drawer
         title={
           selectedEdge
@@ -1173,15 +1210,15 @@ export default function CharacterGraph({
 
             {selectedEdge.evidence && (
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: color.textSecondary }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: gc.textSecondary }}>
                   <FileTextOutlined style={{ marginRight: 6 }} /> 原文证据摘录 (置信度: {selectedEdge.confidence || 'medium'}):
                 </div>
                 <div
                   style={{
-                    background: color.bgPage,
+                    background: gc.bgPage,
                     padding: 10,
                     borderRadius: 6,
-                    border: `1px solid ${color.borderBar}`,
+                    border: `1px solid ${gc.borderBar}`,
                     fontSize: 13,
                     fontStyle: 'italic',
                   }}
@@ -1193,15 +1230,15 @@ export default function CharacterGraph({
 
             {selectedEdge.description && (
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: color.textSecondary }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: gc.textSecondary }}>
                   最新状态说明:
                 </div>
-                <div style={{ fontSize: 13, color: color.textPrimary }}>{selectedEdge.description}</div>
+                <div style={{ fontSize: 13, color: gc.textPrimary }}>{selectedEdge.description}</div>
               </div>
             )}
 
             <div>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, color: color.textSecondary }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, color: gc.textSecondary }}>
                 <HistoryOutlined style={{ marginRight: 6 }} /> 关系演化阶段历史 (Stages):
               </div>
               {selectedEdge.stages && selectedEdge.stages.length > 0 ? (
@@ -1211,7 +1248,7 @@ export default function CharacterGraph({
                       key={sIdx}
                       style={{
                         padding: '6px 10px',
-                        background: color.bgPage,
+                        background: gc.bgPage,
                         borderRadius: 6,
                         fontSize: 12,
                         display: 'flex',
@@ -1222,14 +1259,14 @@ export default function CharacterGraph({
                       <Tag color={CATEGORY_COLORS[stg.type] || 'default'} style={{ margin: 0 }}>
                         {CATEGORY_LABELS[stg.type] || stg.type}
                       </Tag>
-                      <span style={{ color: color.textTertiary }}>
+                      <span style={{ color: gc.textTertiary }}>
                         第 {stg.from_para + 1} 段 ➔ {stg.to_para !== null && stg.to_para !== undefined ? `第 ${stg.to_para + 1} 段` : '至今'}
                       </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: color.textTertiary }}>暂无阶段演化记录</div>
+                <div style={{ fontSize: 12, color: gc.textTertiary }}>暂无阶段演化记录</div>
               )}
             </div>
 

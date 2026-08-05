@@ -2,7 +2,7 @@
   position: relative;
   height: 100%;
   box-sizing: border-box;
-  background: #ffffff;
+  background: var(--color-bgCard, #ffffff);
   border: 1px solid var(--color-borderStrong, #d9d9d9);
   display: flex;
   flex-direction: column;
@@ -52,6 +52,12 @@
   color: #1677ff;
 }
 
+[data-theme='dark'] .chat-context-banner {
+  background: rgba(24, 144, 255, 0.15);
+  border-bottom-color: rgba(24, 144, 255, 0.25);
+  color: #69b1ff;
+}
+
 .chat-context-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -59,7 +65,7 @@
   max-width: 85%;
 }
 
-/* 消息列表背景设为纯白 #ffffff，全量允许文本框选与复制 */
+/* 消息列表背景自适应深浅模式，全量允许文本框选与复制 */
 .chat-messages-container {
   flex: 1;
   overflow-y: auto;
@@ -67,7 +73,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background: #ffffff;
+  background: var(--color-bgPage, #ffffff);
   user-select: text !important;
   -webkit-user-select: text !important;
 }
@@ -163,6 +169,22 @@
   transition: all 0.2s ease-in-out !important;
 }
 
+[data-theme='dark'] .chat-panel-footer .ant-sender,
+[data-theme='dark'] .chat-panel-sidebar .ant-sender {
+  background: rgba(30, 30, 30, 0.85) !important;
+  background-color: rgba(30, 30, 30, 0.85) !important;
+  border-color: rgba(66, 66, 66, 0.9) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+[data-theme='dark'] .chat-panel-footer .ant-sender input,
+[data-theme='dark'] .chat-panel-footer .ant-sender textarea,
+[data-theme='dark'] .chat-panel-sidebar .ant-sender input,
+[data-theme='dark'] .chat-panel-sidebar .ant-sender textarea {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+
 .chat-panel-footer .ant-sender:hover,
 .chat-panel-sidebar .ant-sender:hover,
 .chat-panel-footer .ant-sender-focused,
@@ -170,6 +192,15 @@
   background: rgba(243, 244, 246, 0.88) !important;
   border-color: rgba(156, 163, 175, 0.95) !important;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+[data-theme='dark'] .chat-panel-footer .ant-sender:hover,
+[data-theme='dark'] .chat-panel-sidebar .ant-sender:hover,
+[data-theme='dark'] .chat-panel-footer .ant-sender-focused,
+[data-theme='dark'] .chat-panel-sidebar .ant-sender-focused {
+  background: rgba(38, 38, 38, 0.95) !important;
+  border-color: var(--color-primary, #d4a359) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 
 .chat-panel-footer .ant-sender-content,
@@ -207,15 +238,26 @@
   transition: all 0.2s;
 }
 
+[data-theme='dark'] .chat-apply-btn {
+  color: #69b1ff;
+  border-color: #1677ff;
+}
+
 .chat-apply-btn:hover {
   background: #e6f4ff !important;
   border-color: #1677ff !important;
   color: #0958d9 !important;
 }
 
+[data-theme='dark'] .chat-apply-btn:hover {
+  background: rgba(22, 119, 255, 0.2) !important;
+  border-color: #69b1ff !important;
+  color: #8c8c8c !important;
+}
+
 /* #11: 思考链与正文之间 1px dashed 分隔线 */
 .chat-thought-divider {
-  border-bottom: 1px dashed #e5e7eb;
+  border-bottom: 1px dashed var(--color-border, #e5e7eb);
   margin: 10px 0;
 }
 
@@ -227,20 +269,20 @@
   display: none !important;
 }
 
-/* 统一 ThoughtChain 文本与右侧折叠箭头样式为柔和灰色 #6b7280 */
+/* 统一 ThoughtChain 文本与右侧折叠箭头样式 */
 .chat-messages-container .ant-thought-chain,
 .chat-messages-container .ant-thought-chain-item-title,
 .chat-messages-container .ant-thought-chain-item-header,
 .chat-messages-container .ant-thought-chain-collapsible-button,
 .chat-messages-container .ant-thought-chain-icon {
-  color: #6b7280 !important;
+  color: var(--color-textSecondary, #6b7280) !important;
   font-size: 12px !important;
 }
 
 /* #13: 时间戳样式 */
 .chat-msg-time {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--color-textMuted, #9ca3af);
   margin-top: 4px;
   text-align: right;
 }
@@ -255,7 +297,7 @@
 .thinking-dots-animation span {
   width: 6px;
   height: 6px;
-  background: #1677ff;
+  background: var(--color-primary, #1677ff);
   border-radius: 50%;
   animation: pulseDot 1.4s infinite ease-in-out both;
 }
@@ -277,4 +319,18 @@
     transform: scale(1);
     opacity: 1;
   }
+}
+
+/* @ant-design/x Conversations 在深色模式下的样式全量覆盖 */
+[data-theme='dark'] .ant-conversations-item,
+[data-theme='dark'] .ant-conversations-group-title {
+  background-color: var(--color-bgCard, #1f1f1f) !important;
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+[data-theme='dark'] .ant-conversations-item-label {
+  color: var(--color-textPrimary, #e6e6e6) !important;
+}
+[data-theme='dark'] .ant-conversations-item:hover,
+[data-theme='dark'] .ant-conversations-item-active {
+  background-color: var(--color-bgChapterSelected, #2a2a2a) !important;
 }

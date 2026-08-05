@@ -74,7 +74,7 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
         <DiffView original={para.text} suggested={para.revised_text} fontSize={Math.round(14 * scale)} />
       </div>
 
-      <div style={{ background: '#fafafa', padding: `${Math.round(8 * scale)}px ${Math.round(10 * scale)}px`, borderRadius: radius.sm, border: `1px solid ${color.border}`, marginBottom: 10, fontSize: Math.round(13 * scale), lineHeight: 1.6 }}>
+      <div style={{ background: color.bgPage, padding: `${Math.round(8 * scale)}px ${Math.round(10 * scale)}px`, borderRadius: radius.sm, border: `1px solid ${color.border}`, marginBottom: 10, fontSize: Math.round(13 * scale), lineHeight: 1.6 }}>
         <div style={{ color: color.textSecondary, fontSize: Math.round(12 * scale), marginBottom: 4, fontWeight: 500 }}>
           📄 初始原文内容：
         </div>
@@ -83,9 +83,9 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
         </div>
       </div>
 
-      <div style={{ background: '#e6f7ff', padding: `${Math.round(10 * scale)}px ${Math.round(12 * scale)}px`, borderRadius: radius.sm, border: '1px solid #91d5ff', marginBottom: 12 }}>
+      <div style={{ background: 'var(--color-bgChapterSelected, #e6f7ff)', padding: `${Math.round(10 * scale)}px ${Math.round(12 * scale)}px`, borderRadius: radius.sm, border: `1px solid ${color.border}`, marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <div style={{ color: '#1890ff', fontSize: Math.round(12 * scale), fontWeight: 600 }}>
+          <div style={{ color: 'var(--color-primary, #1890ff)', fontSize: Math.round(12 * scale), fontWeight: 600 }}>
             📜 修改原因履历 ({notesList.length} 条)
           </div>
           {!isAdding && (
@@ -110,16 +110,16 @@ function ManualEditDetailCardInner({ para, onSaveNote, onDeleteNoteItem, onRever
                 <div
                   key={item.id || index}
                   style={{
-                    background: '#ffffff',
+                    background: color.bgCard,
                     padding: `${Math.round(8 * scale)}px ${Math.round(10 * scale)}px`,
                     borderRadius: radius.sm,
-                    border: '1px solid #bae7ff',
+                    border: `1px solid ${color.border}`,
                     fontSize: Math.round(12 * scale),
                     lineHeight: 1.5,
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <span style={{ fontWeight: 600, color: '#096dd9' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-primary, #096dd9)' }}>
                       {getCircledNum(index + 1)} 修改
                     </span>
                     <Space size={4}>

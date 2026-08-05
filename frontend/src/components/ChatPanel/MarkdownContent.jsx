@@ -25,12 +25,12 @@ export default function MarkdownContent({ content }) {
           <code
             key={idx}
             style={{
-              background: 'rgba(0, 0, 0, 0.06)',
+              background: 'var(--color-bgChapterSelected, rgba(0, 0, 0, 0.06))',
               padding: '2px 6px',
               borderRadius: 4,
               fontSize: '0.9em',
               fontFamily: 'monospace',
-              color: '#d97706',
+              color: 'var(--color-primary, #d97706)',
             }}
           >
             {part.slice(1, -1)}

@@ -474,9 +474,9 @@ export default function ChatPanel({
         ),
         styles: {
           content: {
-            backgroundColor: isUser ? '#d4a359' : '#fdfbf7',
-            border: isUser ? '1px solid #c89547' : '1px solid #e8e5de',
-            color: isUser ? '#ffffff' : '#1f2937',
+            backgroundColor: isUser ? '#d4a359' : 'var(--color-bgCard, #fdfbf7)',
+            border: isUser ? '1px solid #c89547' : '1px solid var(--color-border, #e8e5de)',
+            color: isUser ? '#ffffff' : 'var(--color-textPrimary, #1f2937)',
           },
         },
         footer: !isUser && item.replacementCard ? (
@@ -563,9 +563,9 @@ export default function ChatPanel({
                   items={[
                     {
                       title: item.isThinking ? (
-                        <span style={{ color: '#6b7280', fontSize: 12 }}>思考中...</span>
+                        <span style={{ color: 'var(--color-textSecondary, #6b7280)', fontSize: 12 }}>思考中...</span>
                       ) : (
-                        <span style={{ color: '#6b7280', fontSize: 12 }}>
+                        <span style={{ color: 'var(--color-textSecondary, #6b7280)', fontSize: 12 }}>
                           {`已思考 ${item.thinkingSeconds || 3} 秒`}
                         </span>
                       ),
@@ -584,7 +584,7 @@ export default function ChatPanel({
             {/* 针对思考中状态使用 antd 标准 Spin 与骨架加载 */}
             {item.isThinking && !item.content ? (
               <div style={{ padding: '4px 0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: '#1677ff', fontSize: 13 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: 'var(--color-primary, #1677ff)', fontSize: 13 }}>
                   <Spin size="small" />
                   <span>正在深度思考并生成回答...</span>
                 </div>
@@ -592,7 +592,7 @@ export default function ChatPanel({
               </div>
             ) : (
               /* 官方 react-markdown 库解析 Markdown 内容 */
-              <div className="react-markdown-body" style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65, color: isUser ? '#ffffff' : '#1f2937' }}>
+              <div className="react-markdown-body" style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65, color: isUser ? '#ffffff' : 'var(--color-textPrimary, #1f2937)' }}>
                 <ReactMarkdown>{item.content || ''}</ReactMarkdown>
               </div>
             )}
@@ -638,9 +638,24 @@ export default function ChatPanel({
         </div>
       </div>
 
-      {/* @ant-design/x Conversations 历史会话抽屉 */}
+      {/* @ant-design/x Conversations 历史会话悬浮面板（绝对定位，不挤压对话区） */}
       {conversationsOpen && (
-        <div style={{ padding: '8px 12px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: 56,
+            left: 0,
+            right: 0,
+            zIndex: 250,
+            padding: '12px 14px',
+            background: 'var(--color-bgCard, #ffffff)',
+            borderBottom: '1px solid var(--color-border, #e5e7eb)',
+            boxShadow: 'var(--color-shadowFloat, 0 8px 24px rgba(0, 0, 0, 0.2))',
+            maxHeight: 320,
+            overflowY: 'auto',
+            borderRadius: '0 0 12px 12px',
+          }}
+        >
           <Conversations
             items={conversationItems}
             activeKey={activeSessionId}
@@ -664,10 +679,10 @@ export default function ChatPanel({
               padding: '16px 18px',
               boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
             }}>
-              <div style={{ fontSize: `${bodyFontSize + 1}px`, fontWeight: 600, color: '#1e293b', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: `${bodyFontSize + 1}px`, fontWeight: 600, color: 'var(--color-textPrimary, #1e293b)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: `${bodyFontSize + 3}px` }}>💬</span> 段落 AI 助手
               </div>
-              <div style={{ fontSize: `${bodyFontSize}px`, color: '#475569', lineHeight: 1.65 }}>
+              <div style={{ fontSize: `${bodyFontSize}px`, color: 'var(--color-textSecondary, #475569)', lineHeight: 1.65 }}>
                 点击任意段落，在顶部浮条中点击 <b>「问 AI」</b> 按钮，即可将整段文本带入助手侧栏，针对该段落内容进行提问、分析或润色。
               </div>
             </div>
@@ -680,10 +695,10 @@ export default function ChatPanel({
               padding: '16px 18px',
               boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
             }}>
-              <div style={{ fontSize: `${bodyFontSize + 1}px`, fontWeight: 600, color: '#1e293b', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: `${bodyFontSize + 1}px`, fontWeight: 600, color: 'var(--color-textPrimary, #1e293b)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: `${bodyFontSize + 3}px` }}>✨</span> 划选文本 AI 助手
               </div>
-              <div style={{ fontSize: `${bodyFontSize}px`, color: '#475569', lineHeight: 1.65 }}>
+              <div style={{ fontSize: `${bodyFontSize}px`, color: 'var(--color-textSecondary, #475569)', lineHeight: 1.65 }}>
                 鼠标拖拽划选正文中任意字句短语，在弹出的 AI 浮条中点击 <b>「问 AI」</b>、<b>「润色」</b> 或 <b>「提意见」</b>，即可附带选区上下文发起 AI 交互。
               </div>
             </div>

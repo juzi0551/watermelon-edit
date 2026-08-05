@@ -203,8 +203,8 @@ export function ReplacementCard({
           marginTop: 10,
           padding: '12px 14px',
           borderRadius: 10,
-          background: '#f8fafc',
-          border: '1px solid #cbd5e1',
+          background: 'var(--color-bgPage, #f8fafc)',
+          border: '1px solid var(--color-border, #cbd5e1)',
           boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
           display: 'flex',
           flexDirection: 'column',
@@ -223,7 +223,7 @@ export function ReplacementCard({
             type="link"
             size="small"
             onClick={() => setExpandedRejected(true)}
-            style={{ padding: 0, fontSize: rejectedBodyFontSize, color: '#2563eb', fontWeight: 500 }}
+            style={{ padding: 0, fontSize: rejectedBodyFontSize, color: 'var(--color-primary, #2563eb)', fontWeight: 500 }}
           >
             查看原方案 ▾
           </Button>
@@ -233,15 +233,15 @@ export function ReplacementCard({
           <div
             style={{
               fontSize: rejectedBodyFontSize,
-              color: '#64748b',
+              color: 'var(--color-textSecondary, #64748b)',
               lineHeight: 1.5,
-              background: '#f1f5f9',
+              background: 'var(--color-bgCard, #f1f5f9)',
               padding: '6px 10px',
               borderRadius: 6,
               wordBreak: 'break-all',
             }}
           >
-            <span style={{ fontWeight: 600, color: '#475569', marginRight: 4 }}>已忽略方案：</span>
+            <span style={{ fontWeight: 600, color: 'var(--color-textPrimary, #475569)', marginRight: 4 }}>已忽略方案：</span>
             {previewText}
           </div>
         )}
@@ -261,8 +261,8 @@ export function ReplacementCard({
           marginTop: 10,
           padding: '12px 14px',
           borderRadius: 10,
-          background: '#f0fdf4',
-          border: '1px solid #bbf7d0',
+          background: 'var(--color-diffAddedBg, #f0fdf4)',
+          border: '1px solid var(--color-success, #bbf7d0)',
           boxShadow: '0 2px 6px rgba(34, 197, 94, 0.05)',
           display: 'flex',
           flexDirection: 'column',
@@ -281,7 +281,7 @@ export function ReplacementCard({
             type="link"
             size="small"
             onClick={() => setExpandedAccepted(true)}
-            style={{ padding: 0, fontSize: acceptedBodyFontSize, color: '#2563eb', fontWeight: 500 }}
+            style={{ padding: 0, fontSize: acceptedBodyFontSize, color: 'var(--color-primary, #2563eb)', fontWeight: 500 }}
           >
             查看原方案 ▾
           </Button>
@@ -291,15 +291,15 @@ export function ReplacementCard({
           <div
             style={{
               fontSize: acceptedBodyFontSize,
-              color: '#166534',
+              color: 'var(--color-diffAddedText, #166534)',
               lineHeight: 1.5,
-              background: '#dcfce7',
+              background: 'var(--color-bgCard, #dcfce7)',
               padding: '6px 10px',
               borderRadius: 6,
               wordBreak: 'break-all',
             }}
           >
-            <span style={{ fontWeight: 600, color: '#15803d', marginRight: 4 }}>已采纳方案：</span>
+            <span style={{ fontWeight: 600, color: 'var(--color-diffAddedText, #15803d)', marginRight: 4 }}>已采纳方案：</span>
             {previewText}
           </div>
         )}
@@ -318,16 +318,16 @@ export function ReplacementCard({
         marginTop: 12,
         padding: '14px 16px',
         borderRadius: 12,
-        background: '#ffffff',
-        border: '1px solid #e2e8f0',
+        background: 'var(--color-bgCard, #ffffff)',
+        border: '1px solid var(--color-border, #e2e8f0)',
         boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
         transition: 'all 0.2s ease',
       }}
     >
       {/* 头部：标题与段落 Tag */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: btnFontSize, fontWeight: 600, color: '#1e293b' }}>
-          <DiffOutlined style={{ color: '#2563eb' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: btnFontSize, fontWeight: 600, color: 'var(--color-textPrimary, #1e293b)' }}>
+          <DiffOutlined style={{ color: 'var(--color-primary, #2563eb)' }} />
           <span>建议修改方案</span>
           {renderStatusBadge()}
         </div>
@@ -339,7 +339,7 @@ export function ReplacementCard({
               type="link"
               size="small"
               onClick={() => setExpandedAccepted(false)}
-              style={{ padding: '2px 8px', fontSize: `${Math.max(13, bodyFontSize - 3)}px`, color: '#2563eb', fontWeight: 500 }}
+              style={{ padding: '2px 8px', fontSize: `${Math.max(13, bodyFontSize - 3)}px`, color: 'var(--color-primary, #2563eb)', fontWeight: 500 }}
             >
               收起 ▴
             </Button>
@@ -349,7 +349,7 @@ export function ReplacementCard({
               type="link"
               size="small"
               onClick={() => setExpandedRejected(false)}
-              style={{ padding: '2px 8px', fontSize: `${Math.max(13, bodyFontSize - 3)}px`, color: '#2563eb', fontWeight: 500 }}
+              style={{ padding: '2px 8px', fontSize: `${Math.max(13, bodyFontSize - 3)}px`, color: 'var(--color-primary, #2563eb)', fontWeight: 500 }}
             >
               收起 ▴
             </Button>
@@ -362,16 +362,16 @@ export function ReplacementCard({
         <div
           style={{
             padding: '8px 12px',
-            background: '#f8fafc',
-            borderLeft: '3px solid #94a3b8',
+            background: 'var(--color-bgPage, #f8fafc)',
+            borderLeft: '3px solid var(--color-textMuted, #94a3b8)',
             borderRadius: '0 6px 6px 0',
             marginBottom: 12,
             fontSize: `${Math.max(13, bodyFontSize - 1)}px`,
             lineHeight: 1.6,
-            color: '#475569',
+            color: 'var(--color-textSecondary, #475569)',
           }}
         >
-          <span style={{ fontWeight: 600, color: '#64748b', marginRight: 6 }}>原文：</span>
+          <span style={{ fontWeight: 600, color: 'var(--color-textPrimary, #64748b)', marginRight: 6 }}>原文：</span>
           {cardData.original}
         </div>
       )}
@@ -389,15 +389,15 @@ export function ReplacementCard({
                 padding: '10px 14px',
                 borderRadius: 8,
                 cursor: status === 'pending' ? 'pointer' : 'default',
-                background: isSelected ? '#f0fdf4' : '#ffffff',
-                border: isSelected ? '1.5px solid #22c55e' : '1px solid #e2e8f0',
+                background: isSelected ? 'var(--color-diffAddedBg, #f0fdf4)' : 'var(--color-bgPage, #ffffff)',
+                border: isSelected ? '1.5px solid var(--color-success, #22c55e)' : '1px solid var(--color-border, #e2e8f0)',
                 transition: 'all 0.15s ease',
                 boxShadow: isSelected ? '0 2px 8px rgba(34, 197, 94, 0.12)' : 'none',
               }}
             >
               {/* 方案标题：右对齐浅灰色方案名 */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginBottom: 4 }}>
-                <span style={{ fontWeight: 500, fontSize: `${Math.max(11, bodyFontSize - 4)}px`, color: '#94a3b8' }}>
+                <span style={{ fontWeight: 500, fontSize: `${Math.max(11, bodyFontSize - 4)}px`, color: 'var(--color-textMuted, #94a3b8)' }}>
                   {opt.cleanName}
                 </span>
                 {isSelected && status === 'pending' && optionsList.length > 1 && (
@@ -413,17 +413,17 @@ export function ReplacementCard({
               </div>
 
               {/* 改写内容 */}
-              <div style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65, color: isSelected ? '#14532d' : '#1f2937' }}>
-                <span style={{ fontWeight: 600, color: isSelected ? '#166534' : '#475569', marginRight: 6 }}>改写：</span>
+              <div style={{ fontSize: `${bodyFontSize}px`, lineHeight: 1.65, color: 'var(--color-textPrimary, #1f2937)' }}>
+                <span style={{ fontWeight: 600, color: isSelected ? 'var(--color-diffAddedText, #166534)' : 'var(--color-textSecondary, #475569)', marginRight: 6 }}>改写：</span>
                 {opt.replacement}
               </div>
 
               {/* 理由说明 */}
               {opt.note && (
                 <>
-                  <div style={{ height: 1, background: '#e2e8f0', margin: '8px 0 6px 0', width: '92%' }} />
-                  <div style={{ fontSize: noteFontSize, color: isSelected ? '#374151' : '#64748b', lineHeight: 1.5 }}>
-                    <span style={{ fontWeight: 500, color: isSelected ? '#4b5563' : '#64748b', marginRight: 4 }}>理由：</span>
+                  <div style={{ height: 1, background: 'var(--color-border, #e2e8f0)', margin: '8px 0 6px 0', width: '92%' }} />
+                  <div style={{ fontSize: noteFontSize, color: 'var(--color-textSecondary, #64748b)', lineHeight: 1.5 }}>
+                    <span style={{ fontWeight: 500, color: 'var(--color-textSecondary, #64748b)', marginRight: 4 }}>理由：</span>
                     {opt.note}
                   </div>
                 </>

@@ -247,13 +247,13 @@ export function ActionBar({
                 content={
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: color.textPrimary }}>
                         {batchInfo.status === 'running' ? '🔄 批量校对中'
                           : batchInfo.status === 'ok' ? '✓ 批量完成'
                             : batchInfo.failed_windows > 0 ? '⚠ 批量完成（部分失败）'
                               : '✖ 全部失败'}
                       </span>
-                      <span style={{ fontSize: 12, opacity: 0.6 }}>
+                      <span style={{ fontSize: 12, color: color.textSecondary }}>
                         第 {batchInfo.range_start + 1}–{batchInfo.range_end} 段 &nbsp;·&nbsp;
                         {batchInfo.done_windows}/{batchInfo.total_windows} 窗口完成
                       </span>
@@ -272,7 +272,7 @@ export function ActionBar({
                             }}>
                               {isRetrying ? '⏳' : w.status === 'ok' ? '●' : w.status === 'failed' ? '✗' : '○'}
                             </span>
-                            <span style={{ fontSize: 10, opacity: 0.55 }}>{w.range_start + 1}–{w.range_end}</span>
+                            <span style={{ fontSize: 10, color: color.textSecondary }}>{w.range_start + 1}–{w.range_end}</span>
                             {w.status === 'failed' && (
                               <Button
                                 size="small"
@@ -311,7 +311,7 @@ export function ActionBar({
                     style={{ width: 200, margin: 0 }}
                     size="small"
                   />
-                  <span style={{ color: color.textTertiary, fontSize: fontSize.bodyXs, whiteSpace: 'nowrap' }}>
+                  <span style={{ color: color.textSecondary, fontSize: fontSize.bodyXs, whiteSpace: 'nowrap' }}>
                     <LoadingOutlined spin style={{ marginRight: 6 }} />
                     {bannerText || '正在校对，请稍候…'}
                   </span>

@@ -24,7 +24,7 @@ function ErrorDetailCardInner({ error, onAccept, onReject, onClose, currentBodyF
         background: color.bgCard,
         borderRadius: radius.md,
         borderLeft: `3px solid ${color.warning}`,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        boxShadow: color.shadowFloat,
         opacity: 0,
         transform: 'translateY(3px)',
         transition: 'opacity 0.08s cubic-bezier(0, 0, 0.2, 1), transform 0.08s cubic-bezier(0, 0, 0.2, 1)',
