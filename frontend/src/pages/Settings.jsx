@@ -391,62 +391,6 @@ export default function Settings() {
       ),
     },
     {
-      key: 'prompts',
-      label: (
-        <Space>
-          <EditOutlined />
-          <span>校对指令模板</span>
-        </Space>
-      ),
-      children: (
-        <Card style={{ borderRadius: 8 }}>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-            自定义下发给大模型的校对指令模板。{'{type_desc}'} 会自动被替换为选中的校对维度（错别字、语法、格式、文风润色等）。最头部会自动注入【作者设定与世界观背景】和【已登场人物与动态关系网】。
-          </Text>
-
-          <div style={{ marginBottom: 16 }}>
-            <TextArea
-              rows={18}
-              value={promptProofread}
-              onChange={(e) => setPromptProofread(e.target.value)}
-              placeholder="校对指令模板"
-            />
-          </div>
-
-          <Space>
-            <Button
-              type="primary"
-              shape="round"
-              icon={<SaveOutlined />}
-              loading={promptSaving}
-              onClick={async () => {
-                setPromptSaving(true)
-                try {
-                  await savePrompts(promptProofread, batchMaxConcurrent)
-                  message.success('校对指令模板已保存')
-                } catch {
-                  message.error('保存失败')
-                } finally {
-                  setPromptSaving(false)
-                }
-              }}
-            >
-              保存提示词
-            </Button>
-
-            <Button
-              shape="round"
-              icon={<UndoOutlined />}
-              loading={resetting}
-              onClick={handleResetPrompts}
-            >
-              恢复默认模板
-            </Button>
-          </Space>
-        </Card>
-      ),
-    },
-    {
       key: 'concurrency',
       label: (
         <Space>

@@ -109,5 +109,6 @@ async def spa_fallback(full_path: str):
     if os.path.isfile(os.path.join(STATIC_DIR, full_path)):
         return FileResponse(os.path.join(STATIC_DIR, full_path))
     if os.path.isfile(INDEX_PATH):
-        return FileResponse(INDEX_PATH)
+        # index.html 不做缓存（no-cache），保证构建后浏览器能拿到最新 bundle 哈希
+        return FileResponse(INDEX_PATH, headers={"Cache-Control": "no-cache"})
     return {"error": "前端未构建，请先 npm run build"}

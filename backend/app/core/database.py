@@ -70,37 +70,45 @@ DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与�
 2. 检测：若前段以左引号开头且无右引号收尾，后段开头却没有左引号，即判定后段缺失左引号。
 3. 修正：在缺失引号的段落报错（type: "punctuation"）。提取该段前 5-10 个字作为 `locator`，`replacement` 在最前方补上对应的引号字符。
 
-### 【人物与剧情关键事件萃取规则】
-在校对段落文本的同时，分析段落中登场的人物与发生的事件：
-1. **角色信息与更新**：若有新登场或重要的角色，在 `character_updates` 数组中输出 `name`（姓名）、`aliases`（别名数组）、`role`（protagonist/antagonist/supporting 三者之一）、`first_appear_idx`（在当前段落切片中首次登场的段落索引）与 `description`（角色身份与背景最新完整说明）；若段落中对【已知角色】揭示了新的身份背景、重要经历、性格转折或重大变故，亦在 `description` 中提供结合最新信息的完整介绍；
-2. **角色关系演进**：若文中发生角色间的关系建立或动态转变（如结盟、敌对、倾慕、拜师、背叛等），在 `relationship_events` 数组中输出 `from`（角色A姓名）、`to`（角色B姓名）、`type`（ally/enemy/lover/family/neutral）、`description`（事件与关系简述）与发生的具体段落索引 `paragraph_idx`；
-3. **剧情关键事件**：若文中发生重大的剧情节点或非人物关系关键事件，在 `plot_events` 数组中输出 `title`（事件标题）、`description`（事件简述）与发生的具体段落索引 `paragraph_idx`。
-
-### 【输出格式】
-严格按照以下 JSON 格式输出结果。若某类数据不存在，对应的数组返回空 `[]`。
-严禁输出任何分析过程、解释说明或 Markdown 代码块标记（如 ```json），只返回纯 JSON 字符串：
-
-{
-  "chapters": [
-    {"level": 1, "title": "第一卷 风起云涌", "title_paragraph_idx": 0, "start_idx": 0, "end_idx": 4},
-    {"level": 2, "title": "第一章 少年初长", "title_paragraph_idx": 5, "parent_idx": 0, "start_idx": 5, "end_idx": 8}
-  ],
-  "errors": [
-    {"type": "typo", "paragraph_index": 1, "locator": "他是一个渴望成才的少年", "replacement": "他是一个渴望成材的少年", "severity": "medium", "description": "同音错别字"},
-    {"type": "punctuation", "paragraph_index": 2, "locator": "这件事交给我！“", "replacement": "这件事交给我！”", "severity": "medium", "description": "右引号错为左引号"},
-    {"type": "logic", "paragraph_index": 3, "locator": "张三看了看自己手中的剑", "replacement": "李四看了看自己手中的剑", "severity": "high", "description": "角色名字或描述前后矛盾，建议张三修改为李四，前文描述持剑者为李四"},
-    {"type": "style", "paragraph_index": 4, "locator": "他的心里感到极为非常地悲伤", "replacement": "他心中极为悲怆", "severity": "low", "description": "符合作者指定冷硬文风的润色建议"}
-  ],
-  "character_updates": [
-    {"name": "智星", "aliases": ["老大"], "role": "protagonist", "first_appear_idx": 0, "description": "沿河村少年，聪明机敏，三人中排行老大"}
-  ],
-  "relationship_events": [
-    {"from": "智星", "to": "看瓜老爷爷", "type": "neutral", "description": "智星带伙伴给看瓜老爷爷捶背，试图套近乎", "paragraph_idx": 2}
-  ],
-  "plot_events": [
-    {"title": "智取西瓜设局", "description": "少年们前往河滩西瓜地试图通过软磨硬泡吃西瓜", "paragraph_idx": 2}
-  ]
-}"""
+73: ### 【人物与剧情关键事件萃取规则】
+74: 在校对段落文本的同时，分析段落中登场的人物与发生的事件：
+75: 1. **角色信息与更新**：若有新登场或重要的角色，在 `character_updates` 数组中输出 `character_id`（若角色在【已登记人物画像】中，必须输出其 `[character_id: ...]` 对应的字符串，逐字复制；若是【本段怀疑新出现角色】或未登记新角色，则填空字符串 `""`）、`name`（姓名，必须使用角色标准主姓名）、`aliases`（别名数组）、`role`（protagonist/antagonist/supporting/minor 四者之一）、`first_appear_idx`（在当前段落切片中首次登场的段落索引）、`description`（角色全局弧光画像，引导字数 ≤100 字。定位为贯穿首尾的身份、性格底色、核心里程碑与立场演变。合成逻辑为“旧全局画像 + 本段新转折 → 新全局画像”，需适度压缩早期细节与中间过程、纳入新转折、优先保留首尾身份与最新状态，严禁写成单段近况或局部事件）与 `delta_summary`（在本段/近期发生的重点变化总结，15-30字，聚焦特定身份、性格、阵营与关键关系的特定转折履历）。**约束：仅允许更新【已登记人物画像】中列出的角色，以及【本段怀疑新出现角色】；未列出的已登记角色严禁输出。**
+76: 2. **角色关系演进与状态声明**：对本段出现且存在明确关系的每对角色，在 `relationship_events` 数组中声明截至本段的关系状态。
+77:    - **类型放宽**：允许输出自然的中文关系类型（如父子/兄弟/兄妹/姐妹/母子/结拜/师徒/同门/敌人/逼婚/恋人/朋友等），内部会自动映射归一化。
+78:    - **群体展开规则**：当文本明确 N 人同属某个群体（如“三人形影不离的好伙伴”、“三兄弟”、“一家人”、“同门”），必须为群体内**每一对**声明关系状态，生成 C(N,2) 条边，不得只输出主角相关对。
+79:    - **负面规则**：师兄弟/同门≠师徒；结拜≠血缘；泛称（如群X/众X/X等/王大爷）不得当作角色。
+80:    - **证据与置信度**：输出 `evidence`（原文 1-2 句摘录，≤50字）与 `confidence`（high/medium/low；high 必填 evidence，medium 可选，low 可缺）。
+81:    - **强制约束**：凡在 `description` 或 `delta_summary` 中揭示了与既有角色的明确持久关系，必须同时在 `relationship_events` 中输出对应状态声明，不得只落一处。
+82:    - 输出字段：`from`（角色A标准主姓名）、`from_character_id`、`to`（角色B标准主姓名）、`to_character_id`、`type`、`description`（关系状态简述）、`paragraph_idx`、`evidence`（原文证据）与 `confidence`（置信度）。
+83: 3. **剧情关键事件**：若文中发生重大的剧情节点或非人物关系关键事件，在 `plot_events` 数组中输出 `title`（事件标题）、`description`（事件简述）与发生的具体段落索引 `paragraph_idx`。
+84: 
+85: ### 【输出格式】
+86: 严格按照以下 JSON 格式输出结果。若某类数据不存在，对应的数组返回空 `[]`。
+87: 严禁输出任何分析过程、解释说明或 Markdown 代码块标记（如 ```json），只返回纯 JSON 字符串：
+88: 
+89: {
+90:   "chapters": [
+91:     {"level": 1, "title": "第一卷 风起云涌", "title_paragraph_idx": 0, "start_idx": 0, "end_idx": 4},
+92:     {"level": 2, "title": "第一章 少年初长", "title_paragraph_idx": 5, "parent_idx": 0, "start_idx": 5, "end_idx": 8}
+93:   ],
+94:   "errors": [
+95:     {"type": "typo", "paragraph_index": 1, "locator": "他是一个渴望成才的少年", "replacement": "他是一个渴望成材的少年", "severity": "medium", "description": "同音错别字"},
+96:     {"type": "punctuation", "paragraph_index": 2, "locator": "这件事交给我！“", "replacement": "这件事交给我！”", "severity": "medium", "description": "右引号错为左引号"},
+97:     {"type": "logic", "paragraph_index": 3, "locator": "张三看了看自己手中的剑", "replacement": "李四看了看自己手中的剑", "severity": "high", "description": "角色名字或描述前后矛盾，建议张三修改为李四，前文描述持剑者为李四"},
+98:     {"type": "style", "paragraph_index": 4, "locator": "他的心里感到极为非常地悲伤", "replacement": "他心中极为悲怆", "severity": "low", "description": "符合作者指定冷硬文风的润色建议"}
+99:   ],
+100:   "character_updates": [
+101:     {"character_id": "a1b2c3d4e5f6", "name": "智星", "aliases": ["老大"], "role": "protagonist", "first_appear_idx": 0, "description": "沿河村少年，聪明机敏，三人中排行老大。后在天山拜剑圣为师，现为蜀山记名弟子，性格沉稳兼具果敢。", "delta_summary": "在本段中揭示其拥有蜀山记名弟子身份，并展现出御剑术突破"}
+102:   ],
+103:   "relationship_events": [
+104:     {"from": "智星", "from_character_id": "a1b2c3d4e5f6", "to": "铜锁", "to_character_id": "b2c3d4e5f6a1", "type": "结拜兄弟", "description": "三人形影不离的好伙伴，结为金兰", "paragraph_idx": 2, "evidence": "智星与铜锁歃血为盟，结为生死兄弟", "confidence": "high"},
+105:     {"from": "智星", "from_character_id": "a1b2c3d4e5f6", "to": "哈呼", "to_character_id": "c3d4e5f6a1b2", "type": "好朋友", "description": "三人形影不离的好伙伴", "paragraph_idx": 2, "evidence": "智星和哈呼也是多年的莫逆之交", "confidence": "high"},
+106:     {"from": "铜锁", "from_character_id": "b2c3d4e5f6a1", "to": "哈呼", "to_character_id": "c3d4e5f6a1b2", "type": "好朋友", "description": "三人形影不离的好伙伴", "paragraph_idx": 2, "evidence": "铜锁拉着哈呼的手开心地笑着", "confidence": "medium"}
+107:   ],
+108:   "plot_events": [
+109:     {"title": "智取西瓜设局", "description": "少年们前往河滩西瓜地试图通过软磨硬泡吃西瓜", "paragraph_idx": 2}
+110:   ]
+111: }"""
 
 
 DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位温和专业的资深中文小说编辑，正与作者并肩工作。
@@ -120,6 +128,8 @@ def _init_default_settings(conn):
         "system_prompt_proofread": DEFAULT_SYSTEM_PROMPT_PROOFREAD,
         "system_prompt_chat": DEFAULT_CHAT_SYSTEM_PROMPT,
         "chat_context_chars": "200",
+        "proofread_identifier_enabled": "1",
+        "proofread_identifier_model": "",
     }
     for key, value in defaults.items():
         conn.execute(
@@ -504,6 +514,50 @@ def _migrate_schema(conn):
 
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '13')")
 
+    if version < 14:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS character_descriptions_history (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                character_id TEXT NOT NULL,
+                paragraph_idx INTEGER NOT NULL DEFAULT 0,
+                paragraph_uuid TEXT DEFAULT NULL,
+                delta_summary TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id),
+                FOREIGN KEY (character_id) REFERENCES characters(id)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_hist_dedup ON character_descriptions_history(character_id, COALESCE(paragraph_uuid, 'idx:' || paragraph_idx));
+            CREATE INDEX IF NOT EXISTS idx_hist_proj ON character_descriptions_history(project_id);
+            CREATE INDEX IF NOT EXISTS idx_hist_para ON character_descriptions_history(paragraph_idx);
+        """)
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '14')")
+
+    if version < 15:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS entity_dictionary (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                frequency INTEGER DEFAULT 1,
+                source TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_entity_dict_proj ON entity_dictionary(project_id);
+            CREATE INDEX IF NOT EXISTS idx_entity_dict_name ON entity_dictionary(name);
+        """)
+        for stmt in (
+            "ALTER TABLE character_relationships ADD COLUMN evidence TEXT DEFAULT NULL",
+            "ALTER TABLE character_relationships ADD COLUMN confidence TEXT DEFAULT 'medium'",
+        ):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '15')")
+
+
     # 物理列缺漏补查（容错自愈）
     for table_name, col_def in (
         ("errors", "paragraph_uuid TEXT DEFAULT NULL"),
@@ -519,6 +573,8 @@ def _migrate_schema(conn):
         ("paragraphs", "merged_into_uuid TEXT DEFAULT NULL"),
         ("paragraphs", "source TEXT DEFAULT 'original'"),
         ("documents", "last_error TEXT"),
+        ("character_relationships", "evidence TEXT DEFAULT NULL"),
+        ("character_relationships", "confidence TEXT DEFAULT 'medium'"),
     ):
         try:
             conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_def}")
@@ -692,9 +748,24 @@ def init_db():
                 description TEXT,
                 paragraph_idx INTEGER,
                 paragraph_uuid TEXT DEFAULT NULL,
+                evidence TEXT DEFAULT NULL,
+                confidence TEXT DEFAULT 'medium',
                 created_at TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (project_id) REFERENCES projects(id)
             );
+
+            -- 实体词典表 (仅供 Stage 0 及 pick_canonical 参考)
+            CREATE TABLE IF NOT EXISTS entity_dictionary (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                frequency INTEGER DEFAULT 1,
+                source TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_entity_dict_proj ON entity_dictionary(project_id);
+            CREATE INDEX IF NOT EXISTS idx_entity_dict_name ON entity_dictionary(name);
 
             -- 关键剧情事件
             CREATE TABLE IF NOT EXISTS plot_events (
@@ -720,6 +791,20 @@ def init_db():
                 FOREIGN KEY (document_id) REFERENCES documents(id)
             );
 
+            -- 角色履历表
+            CREATE TABLE IF NOT EXISTS character_descriptions_history (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                character_id TEXT NOT NULL,
+                paragraph_idx INTEGER NOT NULL DEFAULT 0,
+                paragraph_uuid TEXT DEFAULT NULL,
+                delta_summary TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (project_id) REFERENCES projects(id),
+                FOREIGN KEY (character_id) REFERENCES characters(id)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_hist_dedup ON character_descriptions_history(character_id, COALESCE(paragraph_uuid, 'idx:' || paragraph_idx));
+
             -- 方案卡片决策状态表
             CREATE TABLE IF NOT EXISTS chat_cards (
                 message_id TEXT PRIMARY KEY,
@@ -727,6 +812,7 @@ def init_db():
                 status TEXT NOT NULL,
                 updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
+
         """)
         _migrate_schema(conn)
 
@@ -743,6 +829,16 @@ def get_conn():
         conn.commit()
     finally:
         conn.close()
+
+
+def _safe_invalidate_cache(project_id: str | None):
+    if project_id:
+        try:
+            from app.core.graph_engine import invalidate_graph_cache
+            invalidate_graph_cache(project_id)
+        except Exception:
+            pass
+
 
 
 # ==================== Projects ====================
@@ -859,6 +955,13 @@ def toggle_project_lock(project_id: str, is_locked: bool):
 
 def delete_project(project_id: str):
     with get_conn() as conn:
+        # 项目级关联表（FK 未启用 PRAGMA foreign_keys，需显式清理）
+        conn.execute("DELETE FROM entity_dictionary WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM character_descriptions_history WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM character_relationships WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM plot_events WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM characters WHERE project_id = ?", (project_id,))
+
         doc_rows = conn.execute("SELECT id FROM documents WHERE project_id = ?", (project_id,)).fetchall()
         for doc in doc_rows:
             doc_id = doc["id"]
@@ -1235,7 +1338,7 @@ def delete_paragraph_and_reorder(document_id: str, idx: int):
             (document_id, idx)
         )
 
-        # 5. character_relationships / plot_events：后续段落 paragraph_idx -= 1
+        # 5. character_relationships / plot_events / character_descriptions_history：后续段落 paragraph_idx -= 1
         if project_id:
             conn.execute(
                 """UPDATE character_relationships
@@ -1249,25 +1352,42 @@ def delete_paragraph_and_reorder(document_id: str, idx: int):
                    WHERE project_id = ? AND paragraph_idx > ?""",
                 (project_id, idx)
             )
+            conn.execute(
+                """UPDATE character_descriptions_history
+                   SET paragraph_idx = paragraph_idx - 1
+                   WHERE project_id = ? AND paragraph_idx > ?""",
+                (project_id, idx)
+            )
+            _safe_invalidate_cache(project_id)
+
 
 
 def _resolve_para_target(conn, document_id: str, idx_or_uuid: int | str) -> tuple[int, str]:
-    """给定 document_id 与 idx 或 uuid，返回 (idx, uuid)"""
-    if isinstance(idx_or_uuid, int) or (isinstance(idx_or_uuid, str) and idx_or_uuid.isdigit()):
-        target_idx = int(idx_or_uuid)
-        row = conn.execute(
-            "SELECT idx, uuid FROM paragraphs WHERE document_id = ? AND idx = ?",
-            (document_id, target_idx),
-        ).fetchone()
-    else:
-        uuid_str = str(idx_or_uuid)
+    """给定 document_id 与 idx 或 uuid，返回 (idx, uuid)。优先匹配 UUID，若未命中且为数字再按 idx 查找。"""
+    if isinstance(idx_or_uuid, str):
         row = conn.execute(
             "SELECT idx, uuid FROM paragraphs WHERE document_id = ? AND uuid = ?",
-            (document_id, uuid_str),
+            (document_id, idx_or_uuid),
         ).fetchone()
-    if not row:
-        raise ValueError(f"目标段落不存在 doc={document_id} target={idx_or_uuid}")
-    return row["idx"], row["uuid"]
+        if row:
+            return row["idx"], row["uuid"]
+
+        if idx_or_uuid.isdigit():
+            row = conn.execute(
+                "SELECT idx, uuid FROM paragraphs WHERE document_id = ? AND idx = ?",
+                (document_id, int(idx_or_uuid)),
+            ).fetchone()
+            if row:
+                return row["idx"], row["uuid"]
+    elif isinstance(idx_or_uuid, int):
+        row = conn.execute(
+            "SELECT idx, uuid FROM paragraphs WHERE document_id = ? AND idx = ?",
+            (document_id, idx_or_uuid),
+        ).fetchone()
+        if row:
+            return row["idx"], row["uuid"]
+
+    raise ValueError(f"目标段落不存在 doc={document_id} target={idx_or_uuid}")
 
 
 def insert_paragraph_and_reorder(
@@ -1380,7 +1500,7 @@ def insert_paragraph_and_reorder(
             (document_id, insert_idx),
         )
 
-        # 5. 平移 character_relationships / plot_events
+        # 5. 平移 character_relationships / plot_events / character_descriptions_history
         if project_id:
             conn.execute(
                 "UPDATE character_relationships SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
@@ -1390,6 +1510,12 @@ def insert_paragraph_and_reorder(
                 "UPDATE plot_events SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
                 (project_id, insert_idx),
             )
+            conn.execute(
+                "UPDATE character_descriptions_history SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
+                (project_id, insert_idx),
+            )
+            _safe_invalidate_cache(project_id)
+
 
         return {"uuid": new_uuid, "idx": insert_idx, "text": text}
 
@@ -1497,7 +1623,7 @@ def merge_paragraphs(
             # 删掉被吞并的额外章节记录
             conn.execute("DELETE FROM chapters WHERE id = ?", (ch_remove["id"],))
 
-        # 5. 重定向 character_relationships 与 plot_events
+        # 5. 重定向 character_relationships, plot_events, character_descriptions_history
         if project_id:
             conn.execute(
                 """UPDATE character_relationships
@@ -1511,6 +1637,18 @@ def merge_paragraphs(
                    WHERE project_id = ? AND (paragraph_uuid = ? OR (paragraph_uuid IS NULL AND paragraph_idx = ?))""",
                 (keep_uuid, keep_idx, project_id, remove_uuid, remove_idx),
             )
+            conn.execute(
+                """UPDATE character_descriptions_history
+                   SET paragraph_uuid = ?, paragraph_idx = ?
+                   WHERE project_id = ? AND (paragraph_uuid = ? OR (paragraph_uuid IS NULL AND paragraph_idx = ?))""",
+                (keep_uuid, keep_idx, project_id, remove_uuid, remove_idx),
+            )
+            conn.execute(
+                "UPDATE character_descriptions_history SET paragraph_idx = paragraph_idx - 1 WHERE project_id = ? AND paragraph_idx > ?",
+                (project_id, remove_idx),
+            )
+            _safe_invalidate_cache(project_id)
+
 
         # 6. 单事务内对 p_remove 标记逻辑合并与重定向指针，并重新排列后续有效段落
         del_id = f"{document_id}:deleted:{remove_uuid}"
@@ -1662,7 +1800,7 @@ def merge_multiple_paragraphs(
                 )
                 conn.execute("DELETE FROM chapters WHERE id = ?", (ch_remove["id"],))
 
-        # 5. 重定向 character_relationships 与 plot_events
+        # 5. 重定向 character_relationships, plot_events, character_descriptions_history
         if project_id and remove_uuids:
             placeholders_uuid = ",".join("?" for _ in remove_uuids)
             conn.execute(
@@ -1673,6 +1811,12 @@ def merge_multiple_paragraphs(
             )
             conn.execute(
                 f"""UPDATE plot_events
+                    SET paragraph_uuid = ?, paragraph_idx = ?
+                    WHERE project_id = ? AND paragraph_uuid IN ({placeholders_uuid})""",
+                (keep_uuid, keep_idx, project_id, *remove_uuids),
+            )
+            conn.execute(
+                f"""UPDATE character_descriptions_history
                     SET paragraph_uuid = ?, paragraph_idx = ?
                     WHERE project_id = ? AND paragraph_uuid IN ({placeholders_uuid})""",
                 (keep_uuid, keep_idx, project_id, *remove_uuids),
@@ -1688,6 +1832,12 @@ def merge_multiple_paragraphs(
             )
             conn.execute(
                 f"""UPDATE plot_events
+                    SET paragraph_uuid = ?, paragraph_idx = ?
+                    WHERE project_id = ? AND paragraph_idx IN ({placeholders_idx})""",
+                (keep_uuid, keep_idx, project_id, *remove_idxs),
+            )
+            conn.execute(
+                f"""UPDATE character_descriptions_history
                     SET paragraph_uuid = ?, paragraph_idx = ?
                     WHERE project_id = ? AND paragraph_idx IN ({placeholders_idx})""",
                 (keep_uuid, keep_idx, project_id, *remove_idxs),
@@ -1721,6 +1871,15 @@ def merge_multiple_paragraphs(
                     (new_id, r["uuid"], document_id, new_idx, r["text"], r["revised_text"],
                      r["style_name"], r["char_count"], r["has_page_break_before"], r["page_break_type"], r["edit_note"], (r["source"] if r["source"] else "original"))
                 )
+
+        if project_id:
+            for new_idx, r in enumerate(remaining):
+                conn.execute(
+                    "UPDATE character_descriptions_history SET paragraph_idx = ? WHERE project_id = ? AND paragraph_uuid = ?",
+                    (new_idx, project_id, r["uuid"])
+                )
+            _safe_invalidate_cache(project_id)
+
 
     return {"uuid": keep_uuid, "idx": keep_idx, "text": merged_text}
 
@@ -1810,7 +1969,15 @@ def clean_empty_paragraphs(document_id: str) -> int:
                 if ev["paragraph_idx"] in old_to_new:
                     conn.execute("UPDATE plot_events SET paragraph_idx = ? WHERE id = ?", (old_to_new[ev["paragraph_idx"]], ev["id"]))
 
+            hist_rows = conn.execute("SELECT id, paragraph_idx FROM character_descriptions_history WHERE project_id = ?", (project_id,)).fetchall()
+            for h in hist_rows:
+                if h["paragraph_idx"] in old_to_new:
+                    conn.execute("UPDATE character_descriptions_history SET paragraph_idx = ? WHERE id = ?", (old_to_new[h["paragraph_idx"]], h["id"]))
+
+            _safe_invalidate_cache(project_id)
+
         return len(empty_paras)
+
 
 
 def set_paragraph_as_chapter(document_id: str, idx: int, level: int = 1, title: str | None = None) -> str:
@@ -2013,7 +2180,25 @@ def restore_paragraph(document_id: str, uuid: str, target_idx: int | None = None
             (target_idx, restored_id, uuid)
         )
 
+        doc_row = conn.execute("SELECT project_id FROM documents WHERE id = ?", (document_id,)).fetchone()
+        project_id = doc_row["project_id"] if doc_row else None
+        if project_id:
+            conn.execute(
+                "UPDATE character_relationships SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
+                (project_id, target_idx)
+            )
+            conn.execute(
+                "UPDATE plot_events SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
+                (project_id, target_idx)
+            )
+            conn.execute(
+                "UPDATE character_descriptions_history SET paragraph_idx = paragraph_idx + 1 WHERE project_id = ? AND paragraph_idx >= ?",
+                (project_id, target_idx)
+            )
+            _safe_invalidate_cache(project_id)
+
         return {"idx": target_idx, "uuid": uuid, "status": "restored"}
+
 
 
 def get_paragraphs(document_id: str) -> list[dict]:
@@ -2824,32 +3009,149 @@ def update_project_profile(project_id: str, author_name: str | None = None, auth
         )
 
 
-def upsert_character(project_id: str, name: str, aliases: list[str] | None = None, role: str = "supporting", first_appear_idx: int = 0, description: str = "", first_appear_paragraph_uuid: str | None = None) -> str:
-    """插入或更新项目角色信息。"""
+def upsert_character(
+    project_id: str,
+    name: str,
+    aliases: list[str] | None = None,
+    role: str = "supporting",
+    first_appear_idx: int = 0,
+    description: str = "",
+    first_appear_paragraph_uuid: str | None = None,
+    character_id: str | None = None,
+) -> str:
+    """插入或更新项目角色信息。若提供 character_id 则优先按 ID 定位更新。"""
     from app.utils.helpers import generate_id
-    aliases_json = json.dumps(aliases or [], ensure_ascii=False)
     with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT id FROM characters WHERE project_id = ? AND name = ?",
-            (project_id, name),
-        ).fetchone()
+        existing = None
+        if character_id:
+            existing = conn.execute(
+                "SELECT id, name, aliases FROM characters WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+
+        if not existing and name:
+            existing = conn.execute(
+                "SELECT id, name, aliases FROM characters WHERE project_id = ? AND name = ?",
+                (project_id, name),
+            ).fetchone()
+
         if existing:
             char_id = existing["id"]
+            db_name = existing["name"]
+            curr_aliases = json.loads(existing["aliases"]) if existing["aliases"] else []
+            if not isinstance(curr_aliases, list):
+                curr_aliases = []
+
+            # 合并传入的 aliases
+            if aliases and isinstance(aliases, list):
+                for a in aliases:
+                    if a and a != db_name and a not in curr_aliases:
+                        curr_aliases.append(a)
+
+            # 若传入的 name 与主名不同，将传入的 name 补充进别名表，保留原有规范主名
+            if name and name != db_name and name not in curr_aliases:
+                curr_aliases.append(name)
+
+            aliases_json = json.dumps(curr_aliases, ensure_ascii=False)
             conn.execute(
                 """UPDATE characters
-                   SET aliases = ?, role = ?, description = ?, first_appear_paragraph_uuid = COALESCE(?, first_appear_paragraph_uuid)
+                   SET aliases = ?, role = ?, description = COALESCE(NULLIF(?, ''), description), first_appear_paragraph_uuid = COALESCE(?, first_appear_paragraph_uuid)
                    WHERE id = ?""",
                 (aliases_json, role, description, first_appear_paragraph_uuid, char_id),
             )
-            return char_id
         else:
-            char_id = generate_id()
+            char_id = character_id or generate_id()
+            aliases_json = json.dumps(aliases or [], ensure_ascii=False)
             conn.execute(
                 """INSERT INTO characters (id, project_id, name, aliases, role, first_appear_idx, first_appear_paragraph_uuid, description)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (char_id, project_id, name, aliases_json, role, first_appear_idx, first_appear_paragraph_uuid, description),
             )
-            return char_id
+    _safe_invalidate_cache(project_id)
+    return char_id
+
+
+def upsert_character_history_summary(
+    project_id: str,
+    character_id: str,
+    paragraph_idx: int,
+    delta_summary: str,
+    paragraph_uuid: str | None = None
+) -> str:
+    """插入或更新角色的段落履历 delta_summary，并带唯一索引 (character_id, paragraph_uuid) 去重。"""
+    from app.utils.helpers import generate_id
+    with get_conn() as conn:
+        hist_id = None
+        if paragraph_uuid:
+            row = conn.execute(
+                "SELECT id FROM character_descriptions_history WHERE character_id = ? AND paragraph_uuid = ?",
+                (character_id, paragraph_uuid)
+            ).fetchone()
+            if row:
+                hist_id = row["id"]
+        if not hist_id:
+            row = conn.execute(
+                "SELECT id FROM character_descriptions_history WHERE character_id = ? AND paragraph_idx = ?",
+                (character_id, paragraph_idx)
+            ).fetchone()
+            if row:
+                hist_id = row["id"]
+
+        if hist_id:
+            conn.execute(
+                """UPDATE character_descriptions_history
+                   SET paragraph_idx = ?, paragraph_uuid = ?, delta_summary = ?, created_at = (datetime('now', 'localtime'))
+                   WHERE id = ?""",
+                (paragraph_idx, paragraph_uuid, delta_summary, hist_id)
+            )
+        else:
+            hist_id = generate_id()
+            conn.execute(
+                """INSERT INTO character_descriptions_history
+                   (id, project_id, character_id, paragraph_idx, paragraph_uuid, delta_summary)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (hist_id, project_id, character_id, paragraph_idx, paragraph_uuid, delta_summary)
+            )
+    _safe_invalidate_cache(project_id)
+    return hist_id
+
+
+def get_character_history_summaries(
+    project_id: str,
+    character_id: str | None = None,
+    upto_paragraph_idx: int | None = None,
+    upto_paragraph_uuid: str | None = None
+) -> list[dict]:
+    """获取角色的段落履历 delta_summary 链。"""
+    with get_conn() as conn:
+        effective_upto_idx = upto_paragraph_idx
+        if upto_paragraph_uuid is not None:
+            p_row = conn.execute(
+                """SELECT p.idx FROM paragraphs p
+                   JOIN documents d ON p.document_id = d.id
+                   WHERE d.project_id = ? AND d.is_current = 1 AND p.uuid = ?""",
+                (project_id, upto_paragraph_uuid)
+            ).fetchone()
+            if p_row:
+                effective_upto_idx = p_row["idx"]
+
+        query = """SELECT h.*
+                   FROM character_descriptions_history h
+                   WHERE h.project_id = ?"""
+        params = [project_id]
+
+        if character_id:
+            query += " AND h.character_id = ?"
+            params.append(character_id)
+
+        if effective_upto_idx is not None:
+            query += " AND h.paragraph_idx <= ?"
+            params.append(effective_upto_idx)
+
+        query += " ORDER BY h.paragraph_idx ASC, h.created_at ASC"
+
+        rows = conn.execute(query, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_characters(project_id: str) -> list[dict]:
@@ -2870,67 +3172,45 @@ def get_characters(project_id: str) -> list[dict]:
         return result
 
 
-def insert_relationship(project_id: str, from_char_id: str, to_char_id: str, relation_type: str, description: str = "", paragraph_idx: int = 0, paragraph_uuid: str | None = None) -> str:
-    """写入角色动态演进关系。"""
+def insert_relationship(
+    project_id: str,
+    from_char_id: str,
+    to_char_id: str,
+    relation_type: str,
+    description: str = "",
+    paragraph_idx: int = 0,
+    paragraph_uuid: str | None = None,
+    evidence: str | None = None,
+    confidence: str = "medium",
+) -> str:
+    """写入角色动态演进关系（含原文证据与置信度）。"""
     from app.utils.helpers import generate_id
     rel_id = generate_id()
     with get_conn() as conn:
+        if not paragraph_uuid:
+            p_row = conn.execute(
+                """SELECT p.uuid FROM paragraphs p
+                   JOIN documents d ON p.document_id = d.id
+                   WHERE d.project_id = ? AND d.is_current = 1 AND (p.is_deleted IS NULL OR p.is_deleted = 0) AND p.idx = ?""",
+                (project_id, paragraph_idx),
+            ).fetchone()
+            if p_row:
+                paragraph_uuid = p_row["uuid"]
         conn.execute(
             """INSERT INTO character_relationships
-               (id, project_id, from_char_id, to_char_id, relation_type, description, paragraph_idx, paragraph_uuid)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (rel_id, project_id, from_char_id, to_char_id, relation_type, description, paragraph_idx, paragraph_uuid),
+               (id, project_id, from_char_id, to_char_id, relation_type, description, paragraph_idx, paragraph_uuid, evidence, confidence)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (rel_id, project_id, from_char_id, to_char_id, relation_type, description, paragraph_idx, paragraph_uuid, evidence, confidence),
         )
-        return rel_id
+    _safe_invalidate_cache(project_id)
+    return rel_id
 
 
 def get_character_graph(project_id: str, upto_paragraph_idx: int | None = None, upto_paragraph_uuid: str | None = None) -> dict:
-    """获取项目的人物关系图谱网络数据（支持按段落编号或 UUID 截断查看演进过程）。"""
-    chars = get_characters(project_id)
-    plot_events = get_plot_events(project_id, upto_paragraph_idx, upto_paragraph_uuid)
-    with get_conn() as conn:
-        if upto_paragraph_uuid is not None:
-            # 查出此 uuid 对应的 idx 以便筛选
-            p_row = conn.execute("SELECT idx FROM paragraphs WHERE uuid = ?", (upto_paragraph_uuid,)).fetchone()
-            cutoff_idx = p_row["idx"] if p_row else None
-            if cutoff_idx is not None:
-                rel_rows = conn.execute(
-                    """SELECT r.*, f.name as from_name, t.name as to_name
-                       FROM character_relationships r
-                       JOIN characters f ON r.from_char_id = f.id
-                       JOIN characters t ON r.to_char_id = t.id
-                       WHERE r.project_id = ? AND r.paragraph_idx <= ?
-                       ORDER BY r.paragraph_idx ASC""",
-                    (project_id, cutoff_idx),
-                ).fetchall()
-            else:
-                rel_rows = []
-        elif upto_paragraph_idx is not None:
-            rel_rows = conn.execute(
-                """SELECT r.*, f.name as from_name, t.name as to_name
-                   FROM character_relationships r
-                   JOIN characters f ON r.from_char_id = f.id
-                   JOIN characters t ON r.to_char_id = t.id
-                   WHERE r.project_id = ? AND r.paragraph_idx <= ?
-                   ORDER BY r.paragraph_idx ASC""",
-                (project_id, upto_paragraph_idx),
-            ).fetchall()
-        else:
-            rel_rows = conn.execute(
-                """SELECT r.*, f.name as from_name, t.name as to_name
-                   FROM character_relationships r
-                   JOIN characters f ON r.from_char_id = f.id
-                   JOIN characters t ON r.to_char_id = t.id
-                   WHERE r.project_id = ?
-                   ORDER BY r.paragraph_idx ASC""",
-                (project_id,),
-            ).fetchall()
+    """获取项目的人物关系图谱网络数据（委托给 graph_engine 计算图拓扑与中心度）。"""
+    from app.core.graph_engine import get_character_graph as engine_get_graph
+    return engine_get_graph(project_id, upto_paragraph_idx, upto_paragraph_uuid)
 
-    return {
-        "nodes": chars,
-        "edges": [dict(r) for r in rel_rows],
-        "plot_events": plot_events,
-    }
 
 
 def insert_plot_event(project_id: str, paragraph_idx: int, title: str, description: str = "", paragraph_uuid: str | None = None) -> str:

@@ -165,6 +165,14 @@ async def api_upload_to_project(project_id: str, file: UploadFile = File(...)):
     update_project_status(project_id, "parsed")
     update_project_document(project_id, doc_id)
 
+    # 异步启动后台实体预扫描 (jieba / ngram / dialogue)，分块协作不阻塞事件循环
+    try:
+        import asyncio
+        from app.core.entity_pre_scanner import run_pre_scanner_async
+        asyncio.create_task(run_pre_scanner_async(project_id))
+    except Exception as ex:
+        logger.warning("Trigger entity pre-scanner failed for project %s: %s", project_id, ex)
+
     return {
         "document_id": doc_id,
         "filename": file.filename,
@@ -484,8 +492,38 @@ async def api_get_character_graph(project_id: str, upto_paragraph_idx: int | Non
     project = get_project(project_id)
     if not project:
         return {"error": "项目不存在"}
+    from app.core.graph_engine import get_character_graph
     graph = get_character_graph(project_id, upto_paragraph_idx, upto_paragraph_uuid)
     return graph
+
+
+@router.get("/projects/{project_id}/character-graph/shortest-path")
+@router.get("/projects/{project_id}/character-shortest-path")
+async def api_get_character_graph_shortest_path(
+    project_id: str,
+    source_id: str | None = None,
+    target_id: str | None = None,
+    source: str | None = None,
+    target: str | None = None,
+    upto_paragraph_idx: int | None = None,
+    upto_paragraph_uuid: str | None = None,
+):
+    """计算两角色的最短关系路径 (Dijkstra Shortest Path)。"""
+    project = get_project(project_id)
+    if not project:
+        return {"error": "项目不存在"}
+
+    src = source_id or source
+    tgt = target_id or target
+    if not src or not tgt:
+        return {"error": "缺少参数 source_id / target_id"}
+
+    from app.core.graph_engine import find_shortest_path
+    result = find_shortest_path(
+        project_id, src, tgt, upto_paragraph_idx=upto_paragraph_idx, upto_paragraph_uuid=upto_paragraph_uuid
+    )
+    return result
+
 
 
 @router.post("/projects/{project_id}/scan-terms")
@@ -505,6 +543,33 @@ async def api_scan_terms(project_id: str):
         "total_issues": res_terms.get("found_issues", 0) + res_punct.get("found_issues", 0),
         "new_issues": new_count,
     }
+
+
+@router.post("/projects/{project_id}/rescan-entities")
+async def api_rescan_project_entities(project_id: str):
+    """手动重新触发实体预扫描 (jieba/ngram/dialogue)，分块协作执行。"""
+    from app.core.entity_pre_scanner import run_pre_scanner_async
+    count = await run_pre_scanner_async(project_id)
+    return {"status": "ok", "entity_count": count}
+
+
+@router.get("/projects/{project_id}/prescan-status")
+async def api_get_prescan_status(project_id: str):
+    """获取项目实体预扫描状态 (idle/running/completed/failed) 与实体数。"""
+    from app.core.entity_pre_scanner import get_scan_status, is_dictionary_expired
+    status, count = get_scan_status(project_id)
+    return {
+        "status": status,
+        "entity_count": count,
+        "expired": is_dictionary_expired(project_id),
+    }
+
+
+@router.get("/projects/{project_id}/entity-dictionary-status")
+async def api_get_entity_dictionary_status(project_id: str):
+    """获取项目实体词典的过期状态标示。"""
+    from app.core.entity_pre_scanner import is_dictionary_expired
+    return {"expired": is_dictionary_expired(project_id)}
 
 
 

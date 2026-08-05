@@ -356,8 +356,31 @@ export async function getCharacterGraph(projectId, uptoParagraphIdx, uptoParagra
   return data
 }
 
+export async function getCharacterShortestPath(projectId, sourceId, targetId, uptoParagraphIdx, uptoParagraphUuid = null) {
+  const params = { source_id: sourceId, target_id: targetId }
+  if (uptoParagraphUuid) params.upto_paragraph_uuid = uptoParagraphUuid
+  else if (uptoParagraphIdx !== undefined && uptoParagraphIdx !== null) params.upto_paragraph_idx = uptoParagraphIdx
+  const { data } = await api.get(`/projects/${projectId}/character-graph/shortest-path`, { params })
+  return data
+}
+
 export async function scanProjectTerms(projectId) {
   const { data } = await api.post(`/projects/${projectId}/scan-terms`)
+  return data
+}
+
+export async function rescanEntities(projectId) {
+  const { data } = await api.post(`/projects/${projectId}/rescan-entities`)
+  return data
+}
+
+export async function getEntityDictionaryStatus(projectId) {
+  const { data } = await api.get(`/projects/${projectId}/entity-dictionary-status`)
+  return data
+}
+
+export async function getProjectPrescanStatus(projectId) {
+  const { data } = await api.get(`/projects/${projectId}/prescan-status`)
   return data
 }
 

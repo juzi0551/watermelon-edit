@@ -69,9 +69,8 @@ async def stream_llm(
             if system_prompt:
                 req_messages.append({"role": "system", "content": system_prompt})
         else:
-            sp = get_setting("system_prompt_proofread", _DEFAULT_SYSTEM_PROMPT_HARDCODED)
-            if sp:
-                req_messages.append({"role": "system", "content": sp})
+            if _DEFAULT_SYSTEM_PROMPT_HARDCODED:
+                req_messages.append({"role": "system", "content": _DEFAULT_SYSTEM_PROMPT_HARDCODED})
         req_messages.append({"role": "user", "content": prompt or ""})
 
     logged_sp = system_prompt

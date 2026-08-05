@@ -1,14 +1,20 @@
-import React, { useState, useEffect } from 'react'
-import { Card, Button, Table, Tag, Space, Modal, Input, Popconfirm, Upload, message, Tooltip } from 'antd'
+import React, { useState, useEffect, useRef } from 'react'
+import { Card, Button, Table, Tag, Space, Modal, Input, Popconfirm, Upload, message, Spin, Tooltip } from 'antd'
 import { PlusOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { listProjects, createProject, deleteProject, renameProject, uploadToProject, toggleProjectLock } from '../services/api'
+import { listProjects, createProject, deleteProject, renameProject, uploadToProject, toggleProjectLock, getProjectPrescanStatus } from '../services/api'
 
 export default function ProjectList() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(false)
   const [renameModal, setRenameModal] = useState({ open: false, id: '', name: '' })
+  const [processingId, setProcessingId] = useState(null)   // 正在构建实体词典的项目
+  const [processingName, setProcessingName] = useState('')
+  const pollRef = useRef(null)
+  const doneRef = useRef(false)
   const navigate = useNavigate()
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
 
   const load = async () => {
     setLoading(true)
@@ -24,6 +30,47 @@ export default function ProjectList() {
   useEffect(() => {
     document.title = 'Watermelon Edit'
   }, [])
+
+  // 轮询预扫描状态：完成后进入正文页（doneRef 保证完成分支只执行一次）
+  useEffect(() => {
+    if (!processingId) return
+    doneRef.current = false
+
+    const timeout = window.setTimeout(() => {
+      if (doneRef.current) return
+      doneRef.current = true
+      clearInterval(pollRef.current)
+      setProcessingId(null)
+      navigateRef.current(`/project/${processingId}`)
+    }, 90000)
+
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await getProjectPrescanStatus(processingId)
+        if (doneRef.current) return
+        if (res?.status === 'completed' || res?.status === 'failed') {
+          doneRef.current = true
+          clearInterval(timer)
+          window.clearTimeout(timeout)
+          setProcessingId(null)
+          if (res.status === 'completed') {
+            message.success(`实体词典构建完成（${res.entity_count || 0} 条）`)
+          } else {
+            message.warning('实体词典构建失败，稍后可在图谱中手动重扫')
+          }
+          navigateRef.current(`/project/${processingId}`)
+        }
+      } catch (e) {
+        // 轮询偶发失败不打断，继续等
+      }
+    }, 1000)
+    pollRef.current = timer
+
+    return () => {
+      clearInterval(timer)
+      window.clearTimeout(timeout)
+    }
+  }, [processingId])
 
   const handleDelete = async (id) => {
     await deleteProject(id)
@@ -56,8 +103,12 @@ export default function ProjectList() {
     try {
       const proj = await createProject(name)
       await uploadToProject(proj.id, file)
-      message.success('上传并解析成功')
-      navigate(`/project/${proj.id}`, { state: { isNewProject: true } })
+      message.success('上传并解析成功，正在构建实体词典…')
+      setLoading(false)
+      // 不立即进入正文：停在列表页等待实体词典构建完成
+      setProcessingId(proj.id)
+      setProcessingName(proj.name)
+      load()
     } catch (e) {
       message.error('上传失败：' + (e.response?.data?.detail || e.message))
       setLoading(false)
@@ -79,12 +130,20 @@ export default function ProjectList() {
       title: '项目名称',
       dataIndex: 'name',
       key: 'name',
-      render: (text, record) => (
-        <Space>
-          <a style={{ color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate(`/project/${record.id}`)}>{text}</a>
-          {record.is_locked === 1 && <Tag color="gold" icon={<LockOutlined />}>已锁定</Tag>}
-        </Space>
-      ),
+      render: (text, record) => {
+        const isProcessing = processingId === record.id
+        return (
+          <Space>
+            {isProcessing ? (
+              <span style={{ color: '#bfbfbf', fontWeight: 600, cursor: 'not-allowed' }}>{text}</span>
+            ) : (
+              <a style={{ color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate(`/project/${record.id}`)}>{text}</a>
+            )}
+            {isProcessing && <Tag color="processing" icon={<Spin size="small" />}>文档处理中</Tag>}
+            {record.is_locked === 1 && <Tag color="gold" icon={<LockOutlined />}>已锁定</Tag>}
+          </Space>
+        )
+      },
     },
     {
       title: '文件',
@@ -194,6 +253,25 @@ export default function ProjectList() {
           onPressEnter={handleRename}
           autoFocus
         />
+      </Modal>
+
+      {/* 实体词典构建中提示 */}
+      <Modal
+        title="文档处理中"
+        open={!!processingId}
+        footer={null}
+        closable={false}
+        centered
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Spin size="large" />
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>「{processingName}」正在构建实体词典…</div>
+            <div style={{ color: '#999', fontSize: 13 }}>
+              将自动识别全书高频人名/地名，构建完成后自动进入正文。大型文档约需十几秒。
+            </div>
+          </div>
+        </div>
       </Modal>
     </div>
   )

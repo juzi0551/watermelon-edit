@@ -58,9 +58,12 @@ def make_llm_response():
     })
 
 
+from app.core.auth import get_current_user
+
 class TestApiE2E(unittest.TestCase):
     def setUp(self):
         """每个测试独立临时库与项目，杜绝用例间状态耦合"""
+        fastapi_app.dependency_overrides[get_current_user] = lambda: {"id": "test_user", "username": "admin"}
         self._tmp, self._orig_path, self._orig_dir = setup_env()
         init_db()
         self.proj = "proj_e2e"
@@ -77,6 +80,7 @@ class TestApiE2E(unittest.TestCase):
         self.uuids = {r["idx"]: r["uuid"] for r in rows}
 
     def tearDown(self):
+        fastapi_app.dependency_overrides.clear()
         db_mod.DB_PATH = self._orig_path
         db_mod.DB_DIR = self._orig_dir
         self._tmp.cleanup()

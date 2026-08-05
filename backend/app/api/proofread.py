@@ -5,7 +5,12 @@ import time
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.core.proofer import proofread_window, build_proofread_system_prompt, build_proofread_user_text
+from app.core.proofer import (
+    proofread_window,
+    build_proofread_system_prompt,
+    build_proofread_user_text,
+    identify_window_characters,
+)
 from app.core.llm import LLMCallError
 from app.core.database import (
     get_project, get_current_document,
@@ -29,6 +34,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 WINDOW_SIZE = 30
+
+
+async def _build_stage1_system_prompt(
+    types: list[str],
+    project_id: str | None,
+    current_idx: int,
+    window_paras: list[tuple],
+    model_id: str | None,
+) -> str:
+    """内部辅助：判断是否启用 Stage 0 角色识别，获取识别结果后构建 Stage 1 System Prompt。"""
+    appearing_ids, suspected_new = None, None
+    if get_setting("proofread_identifier_enabled", "1") == "1" and project_id and window_paras:
+        appearing_ids, suspected_new = await identify_window_characters(
+            project_id, window_paras, model_id=model_id
+        )
+    return build_proofread_system_prompt(
+        types,
+        project_id=project_id,
+        current_paragraph_idx=current_idx,
+        appearing_character_ids=appearing_ids,
+        suspected_new_characters=suspected_new,
+    )
 
 
 def get_max_concurrent() -> int:
@@ -164,7 +191,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
             window_paras = [(p["idx"], get_paragraph_content(p)) for p in window_rows]
             found_chapters = 0
             if window_paras:
-                system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
+                system_prompt = await _build_stage1_system_prompt(types, project_id, ws, window_paras, req.model)
                 user_text = build_proofread_user_text(window_paras)
                 _last_log_ctx = dict(
                     model=req.model, mode=req.mode,
@@ -207,6 +234,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 set_document_error(doc_id, f"校对完成：自动识别并新增 {new_chs} 个新章节标题")
             else:
                 clear_document_error(doc_id)
+            from app.core.entity_pre_scanner import mark_dictionary_expired
+            mark_dictionary_expired(project_id)
             update_project_status(project_id, "reviewing")
             logger.info("继续校对(单窗口) doc=%s window=%s-%s upto=%s/%s",
                         doc_id, ws, we, we, total)
@@ -225,7 +254,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 window_paras = [(p["idx"], get_paragraph_content(p)) for p in batch_rows]
                 if not window_paras:
                     continue
-                system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=min(batch))
+                system_prompt = await _build_stage1_system_prompt(types, project_id, min(batch), window_paras, req.model)
                 user_text = build_proofread_user_text(window_paras)
                 _last_log_ctx = dict(
                     model=req.model, mode=req.mode,
@@ -257,6 +286,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                         insert_error(doc_id, e)
                         found_errors += 1
             clear_document_error(doc_id)
+            from app.core.entity_pre_scanner import mark_dictionary_expired
+            mark_dictionary_expired(project_id)
             update_project_status(project_id, "reviewing")
             logger.info("选中段校对完成 doc=%s indices=%s errors=%s",
                         doc_id, req.paragraph_indices, found_errors)
@@ -265,6 +296,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
         if req.mode == "chapter":
             ch = next((c for c in get_chapters(doc_id) if c["id"] == req.chapter_id), None)
             if not ch:
+                from app.core.entity_pre_scanner import mark_dictionary_expired
+                mark_dictionary_expired(project_id)
                 update_project_status(project_id, "reviewing")
                 return
             range_start, range_end = ch["start_idx"], ch["end_idx"]
@@ -281,7 +314,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 window_paras = [(i, chapter_text_by_idx[i]) for i in range(ws, we) if i in chapter_text_by_idx]
                 if not window_paras:
                     continue
-                system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
+                system_prompt = await _build_stage1_system_prompt(types, project_id, ws, window_paras, req.model)
                 user_text = build_proofread_user_text(window_paras)
                 _last_log_ctx = dict(
                     model=req.model, mode=req.mode,
@@ -321,6 +354,8 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 set_document_error(doc_id, f"章节校对完成：自动识别并新增 {new_chapters_total} 个新章节标题")
             else:
                 clear_document_error(doc_id)
+            from app.core.entity_pre_scanner import mark_dictionary_expired
+            mark_dictionary_expired(project_id)
             update_project_status(project_id, "reviewing")
             logger.info("章节校对完成 doc=%s chapter=%s errors=%s chapters=%s upto=%s",
                         doc_id, req.chapter_id, found_errors, found_chapters, new_upto)
@@ -362,7 +397,7 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                     window_paras = [(p["idx"], get_paragraph_content(p)) for p in window_rows]
                     if not window_paras:
                         return [], []
-                    system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
+                    system_prompt = await _build_stage1_system_prompt(types, project_id, ws, window_paras, req.model)
                     user_text = build_proofread_user_text(window_paras)
                     log_ctx = dict(
                         model=req.model, mode="batch",
@@ -560,7 +595,7 @@ async def retry_window(project_id: str, req: RetryWindowRequest):
             finish_batch(req.batch_id, done, failed)
             return {"status": "ok", "message": "窗口无段落，已标记为完成"}
 
-        system_prompt = build_proofread_system_prompt(types, project_id=project_id, current_paragraph_idx=ws)
+        system_prompt = await _build_stage1_system_prompt(types, project_id, ws, window_paras, req.model)
         user_text = build_proofread_user_text(window_paras)
 
         t0 = time.time()
