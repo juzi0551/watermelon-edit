@@ -9,6 +9,8 @@ import Settings from './pages/Settings'
 import LLMDebug from './components/LLMDebug'
 import ThemeSwitcher from './components/ThemeSwitcher'
 import { applyThemeVariables, color } from './design-tokens'
+import { AuthProvider } from './context/AuthContext'
+import LoginModal from './components/Auth/LoginModal'
 
 const { Header, Content, Footer } = Layout
 const { Text } = Typography
@@ -20,23 +22,63 @@ function getSystemTheme() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
+import { UserOutlined, LockOutlined, LogoutOutlined } from '@ant-design/icons'
+import { useAuth } from './context/AuthContext'
+import ChangePasswordModal from './components/Auth/ChangePasswordModal'
+
 function AppHeader() {
   const navigate = useNavigate()
+  const { defaultUsername, logout } = useAuth()
+  const [changePwdOpen, setChangePwdOpen] = useState(false)
+
+  const userMenuItems = [
+    {
+      key: 'user-title',
+      label: <Text disabled style={{ fontSize: '12px' }}>账号: {defaultUsername}</Text>,
+    },
+    { type: 'divider' },
+    {
+      key: 'change-pwd',
+      icon: <LockOutlined />,
+      label: '修改密码',
+      onClick: () => setChangePwdOpen(true),
+    },
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: '退出登录',
+      danger: true,
+      onClick: () => logout(),
+    },
+  ]
+
   return (
-    <Header style={{ background: '#374151', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Link to="/" style={{ textDecoration: 'none' }}>
-        <Text strong style={{ color: '#fff', fontSize: 18 }}>Watermelon Edit</Text>
-      </Link>
-      <Space size="middle">
-        <ThemeSwitcher buttonType="text" buttonStyle={{ color: '#fff' }} />
-        <LLMDebug />
-        <Button
-          type="text"
-          icon={<SettingOutlined style={{ color: '#fff', fontSize: 18 }} />}
-          onClick={() => navigate('/settings')}
-        />
-      </Space>
-    </Header>
+    <>
+      <Header style={{ background: '#374151', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Link to="/" style={{ textDecoration: 'none' }}>
+          <Text strong style={{ color: '#fff', fontSize: 18 }}>Watermelon Edit</Text>
+        </Link>
+        <Space size="middle">
+          <ThemeSwitcher buttonType="text" buttonStyle={{ color: '#fff' }} />
+          <LLMDebug />
+          <Button
+            type="text"
+            icon={<SettingOutlined style={{ color: '#fff', fontSize: 18 }} />}
+            onClick={() => navigate('/settings')}
+          />
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+            <Button
+              type="text"
+              icon={<UserOutlined style={{ color: '#fff', fontSize: 18 }} />}
+            />
+          </Dropdown>
+        </Space>
+      </Header>
+      <ChangePasswordModal
+        open={changePwdOpen}
+        onCancel={() => setChangePwdOpen(false)}
+      />
+    </>
   )
 }
 
@@ -56,6 +98,7 @@ function AppLayout() {
       <Footer style={{ textAlign: 'center', background: 'var(--color-bgCard)', borderTop: '1px solid var(--color-border)', padding: '12px 16px' }}>
         <Text type="secondary">Watermelon Edit v0.1.0 · 基于 DeepSeek / Kimi 等大模型</Text>
       </Footer>
+      <LoginModal />
     </Layout>
   )
 }
@@ -114,9 +157,11 @@ export default function App() {
   return (
     <ThemeContext.Provider value={{ themeMode, setThemeMode, isDark }}>
       <ConfigProvider {...themeConfig}>
-        <BrowserRouter>
-          <AppLayout />
-        </BrowserRouter>
+        <AuthProvider>
+          <BrowserRouter>
+            <AppLayout />
+          </BrowserRouter>
+        </AuthProvider>
       </ConfigProvider>
     </ThemeContext.Provider>
   )

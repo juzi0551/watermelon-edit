@@ -155,7 +155,17 @@ def main():
         print("  按 Ctrl+C 停止")
         print("=" * 50)
 
-        _restore_console()
+        # 校验是否有 --reset-password 命令行参数
+        if '--reset-password' in sys.argv:
+            _restore_console()
+            db_mod.init_db()
+            db_mod.set_setting('admin_password_hash', '')
+            print("=" * 50)
+            print("  [SUCCESS] 主访问口令已成功清空/重置！")
+            print("  下次启动软件将提示设置新的主口令。")
+            print("=" * 50)
+            sys.exit(0)
+
         is_frozen = getattr(sys, 'frozen', False)
         if is_frozen:
             uvicorn.run(main_mod.app, host='127.0.0.1', port=8000, log_level='info')

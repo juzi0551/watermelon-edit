@@ -18,11 +18,16 @@ export async function streamChatAdapter({
   let content = ''
   let thinking = ''
   let toolCallArgs = ''
-
   try {
+    const token = localStorage.getItem('token')
+    const headers = { 'Content-Type': 'application/json' }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
     const response = await fetch(getChatStreamUrl(projectId), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         session_id: sessionId,
         model: model,
@@ -31,6 +36,11 @@ export async function streamChatAdapter({
       }),
       signal,
     })
+
+    if (response.status === 401) {
+      window.dispatchEvent(new Event('auth:unauthorized'))
+      throw new Error('未授权或登录已过期')
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP 错误 ${response.status}`)

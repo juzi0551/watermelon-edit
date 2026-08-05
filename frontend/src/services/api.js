@@ -5,6 +5,57 @@ const API_BASE = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
   : '/api'
 const api = axios.create({ baseURL: API_BASE })
 
+// 请求拦截器：注入 Bearer Token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+}, (error) => Promise.reject(error))
+
+// 响应拦截器：捕获 401 并广播 auth:unauthorized 事件
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      window.dispatchEvent(new Event('auth:unauthorized'))
+    }
+    return Promise.reject(error)
+  }
+)
+
+// ==================== Auth (身份验证) ====================
+
+export async function getAuthStatus() {
+  const { data } = await api.get('/auth/status')
+  return data // { token_valid: bool, username: str }
+}
+
+export async function loginPassword(username, password) {
+  const { data } = await api.post('/auth/login', { username, password })
+  if (data.token) {
+    localStorage.setItem('token', data.token)
+  }
+  return data
+}
+
+export async function changePassword(oldPassword, newPassword) {
+  const { data } = await api.post('/auth/change-password', {
+    old_password: oldPassword,
+    new_password: newPassword,
+  })
+  if (data.token) {
+    localStorage.setItem('token', data.token)
+  }
+  return data
+}
+
+export function logout() {
+  localStorage.removeItem('token')
+  window.dispatchEvent(new Event('auth:unauthorized'))
+}
+
 // ==================== Projects ====================
 
 export async function listProjects() {

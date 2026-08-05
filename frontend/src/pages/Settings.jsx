@@ -15,7 +15,13 @@ import {
 const { Text } = Typography
 const { TextArea } = Input
 
+import { LockOutlined, LogoutOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { useAuth } from '../context/AuthContext'
+import ChangePasswordModal from '../components/Auth/ChangePasswordModal'
+
 export default function Settings() {
+  const { defaultUsername, logout } = useAuth()
+  const [changePwdOpen, setChangePwdOpen] = useState(false)
   const [providers, setProviders] = useState([])
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState(null)
@@ -490,6 +496,48 @@ export default function Settings() {
         </Card>
       ),
     },
+    {
+      key: 'account',
+      label: (
+        <Space>
+          <SafetyCertificateOutlined />
+          <span>账号与安全</span>
+        </Space>
+      ),
+      children: (
+        <Card style={{ borderRadius: 8 }}>
+          <div style={{ marginBottom: 20 }}>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              当前登录账号：<Text strong>{defaultUsername}</Text>
+            </Text>
+            <Text type="secondary">
+              管理员口令托管在服务器环境变量（.env）中。您可以在此处修改口令并原子吊销历史 Token，或安全退出当前会话。
+            </Text>
+          </div>
+
+          <Space size="large">
+            <Button
+              type="primary"
+              icon={<LockOutlined />}
+              onClick={() => setChangePwdOpen(true)}
+            >
+              修改管理员密码
+            </Button>
+            <Popconfirm
+              title="确认退出当前账号登录？"
+              onConfirm={() => logout()}
+              okText="退出"
+              cancelText="取消"
+              okType="danger"
+            >
+              <Button icon={<LogoutOutlined />} danger>
+                退出登录
+              </Button>
+            </Popconfirm>
+          </Space>
+        </Card>
+      ),
+    },
   ]
 
   return (
@@ -499,6 +547,11 @@ export default function Settings() {
       </Button>
 
       <Tabs defaultActiveKey="keys" items={tabItems} size="large" />
+
+      <ChangePasswordModal
+        open={changePwdOpen}
+        onCancel={() => setChangePwdOpen(false)}
+      />
 
       {/* Modal 1: 添加自定义服务商 */}
       <Modal

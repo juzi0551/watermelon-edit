@@ -1,14 +1,19 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+import dotenv
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from app.api import upload, proofread, results, apply, export, models, projects, settings, debug, chat
+
+from app.core.auth import get_current_user, verify_env_config, ENV_FILE_PATH
+dotenv.load_dotenv(ENV_FILE_PATH)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+from app.api import upload, proofread, results, apply, export, models, projects, settings, debug, chat, auth
 from app.utils.helpers import ensure_dirs
-from app.core.database import init_db
+import app.core.database as db_mod
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BACKEND_DIR, "static")
@@ -17,8 +22,18 @@ INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 1. 验证环境变量配置
+    verify_env_config()
     ensure_dirs()
-    init_db()
+    db_mod.init_db()
+
+    # 2. 清理 DB 中弃用的 admin_password_hash 键（清理死数据）
+    try:
+        with db_mod.get_conn() as conn:
+            conn.execute("DELETE FROM settings WHERE key = 'admin_password_hash'")
+    except Exception:
+        pass
+
     yield
 
 
@@ -28,26 +43,41 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS（开发阶段允许所有来源）
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS 配置
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-# 注册 API 路由
-app.include_router(projects.router, prefix="/api", tags=["projects"])
-app.include_router(settings.router, prefix="/api", tags=["settings"])
-app.include_router(upload.router, prefix="/api", tags=["upload"])
-app.include_router(proofread.router, prefix="/api", tags=["proofread"])
-app.include_router(results.router, prefix="/api", tags=["results"])
-app.include_router(apply.router, prefix="/api", tags=["apply"])
-app.include_router(export.router, prefix="/api", tags=["export"])
-app.include_router(models.router, prefix="/api", tags=["models"])
-app.include_router(debug.router, prefix="/api", tags=["debug"])
-app.include_router(chat.router, prefix="/api", tags=["chat"])
+# 注册认证路由（未受保护）
+app.include_router(auth.router, prefix="/api", tags=["auth"])
+
+# 业务路由全局注入鉴权依赖
+auth_dep = [Depends(get_current_user)]
+app.include_router(projects.router, prefix="/api", tags=["projects"], dependencies=auth_dep)
+app.include_router(settings.router, prefix="/api", tags=["settings"], dependencies=auth_dep)
+app.include_router(upload.router, prefix="/api", tags=["upload"], dependencies=auth_dep)
+app.include_router(proofread.router, prefix="/api", tags=["proofread"], dependencies=auth_dep)
+app.include_router(results.router, prefix="/api", tags=["results"], dependencies=auth_dep)
+app.include_router(apply.router, prefix="/api", tags=["apply"], dependencies=auth_dep)
+app.include_router(export.router, prefix="/api", tags=["export"], dependencies=auth_dep)
+app.include_router(models.router, prefix="/api", tags=["models"], dependencies=auth_dep)
+app.include_router(debug.router, prefix="/api", tags=["debug"], dependencies=auth_dep)
+app.include_router(chat.router, prefix="/api", tags=["chat"], dependencies=auth_dep)
 
 
 @app.get("/api/health")
