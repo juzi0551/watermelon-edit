@@ -254,18 +254,47 @@ async def stream_llm(
             os.environ.pop("CLOUDFLARE_ACCOUNT_ID", None)
 
 
+class LLMCallError(Exception):
+    """大模型调用失败（缺 Key / 超时 / 返回异常等）。由调用方捕获并转为 HTTP 错误。"""
+    def __init__(self, message: str, partial_raw: str | None = None, partial_thinking: str | None = None):
+        super().__init__(message)
+        self.message = message
+        self.partial_raw = partial_raw
+        self.partial_thinking = partial_thinking
+
+
+# 内存环形缓冲：记录最近 N 次大模型调用，供调试面板查看（重启后清空）
+LLM_CALL_LOG = deque(maxlen=50)
+
+
+def _record_llm_call(entry: dict):
+    LLM_CALL_LOG.append(entry)
+
+
+_TEST_PROMPT = "只回复一个字：好"
+
+
 async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = "", system_prompt: str | None = None) -> tuple[str, dict]:
     """调用大模型，返回 (响应内容, token_info)。保持向后兼容，内部使用 stream_llm 生成器。"""
     content = ""
+    thinking = ""
     token_info = {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None, "cost": None}
     async for event in stream_llm(prompt=prompt, model_id=model_id, timeout=timeout, tag=tag, system_prompt=system_prompt):
-        if event["type"] == "delta":
-            content += event["text"]
+        if event["type"] == "thinking":
+            if event.get("text"):
+                thinking += event["text"]
+        elif event["type"] == "delta":
+            if event.get("text"):
+                content += event["text"]
         elif event["type"] == "done":
             if event.get("usage"):
                 token_info = event["usage"]
+            if event.get("thinking"):
+                thinking = event["thinking"]
         elif event["type"] == "error":
-            raise LLMCallError(event["error"])
+            raise LLMCallError(event["error"], partial_raw=content or None, partial_thinking=thinking or None)
+    
+    token_info["thinking"] = thinking if thinking else None
     return content, token_info
 
 

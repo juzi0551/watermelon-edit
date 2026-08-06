@@ -23,7 +23,7 @@ DB_PATH = os.path.join(DB_DIR, "novel_proofreader.db")
 
 DEFAULT_PROOFREAD_TYPES = '["typo","grammar","punctuation","format"]'
 
-DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与排版专家。你的任务是基于带有 [全局段落索引编号] 前缀的待校对正文，仔细查看每个段落，提取章节层级结构，并精准定位与修正特定类型的文本错误。
+DEFAULT_SYSTEM_PROMPT_PROOFREAD = """你是一名资深的中文小说校对与排版专家，请务必使用中文进行思考！。你的任务是基于带有 [全局段落索引编号] 前缀的待校对正文，仔细查看每个段落，提取章节层级结构，并精准定位与修正特定类型的文本错误。
 
 ### 【校验依据与错误类型定义】
 本次校对必须严格遵循中国国家出版标准。你需要检查并输出 {type_desc} 等以下类型的错误（即 `type` 对应的分类，并在 `description` 中简述）：

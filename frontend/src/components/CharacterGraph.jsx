@@ -967,10 +967,10 @@ export default function CharacterGraph({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: gc.textPrimary }}>
                     <ClockCircleOutlined style={{ marginRight: 6, color: gc.primary }} />
-                    角色变化与剧情事件演进时间线 (按段落比例)
+                    角色演化与剧情时间轴
                   </span>
                   <span style={{ fontSize: 11, color: gc.textTertiary }}>
-                    位置 = 段落实际比例 · 悬停看详情 · 点击跳转 ➔
+                    按段落比例分布 · 点击卡片跳转原文 ➔
                   </span>
                 </div>
               }
@@ -990,31 +990,31 @@ export default function CharacterGraph({
                     <div>
                       {/* 图例 + 时间范围 */}
                       <div style={{ display: 'flex', gap: 16, marginBottom: 8, fontSize: 12, color: gc.textSecondary, flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 600, color: gc.textPrimary }}>📌 {minP + 1} → {maxP + 1} 段</span>
+                        <span style={{ fontWeight: 600, color: gc.textPrimary }}>📌 第 {minP + 1} → {maxP + 1} 段</span>
                         {hasDelta && (
                           <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#1890ff', marginRight: 4 }} />角色变化</span>
                         )}
                         {hasPlot && (
                           <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#d48806', marginRight: 4 }} />剧情事件</span>
                         )}
-                        <span style={{ color: gc.textTertiary }}>间距 = 段落实际比例 · 点击卡片跳转段落</span>
+                        <span style={{ color: gc.textTertiary }}>按段落比例分布 · 点击卡片跳转原文</span>
                       </div>
 
                       <div style={{ overflowX: 'auto' }}>
-                        <div style={{ position: 'relative', paddingTop: 6 }}>
+                        <div style={{ position: 'relative', width: 'max-content', minWidth: '100%', paddingTop: 4, paddingBottom: 6 }}>
                           {/* 基线 */}
-                          <div style={{ position: 'absolute', left: 0, right: 0, top: 14, height: 2, background: gc.borderBar }} />
+                          <div style={{ position: 'absolute', left: 0, right: 0, top: 10, height: 2, background: gc.borderBar }} />
                           {/* 按段落比例定位的列：内容直接显示 */}
-                          <div style={{ display: 'flex', alignItems: 'flex-start', minWidth: 'max-content' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                             {timelineData.map((node, i) => (
                               <React.Fragment key={node.paragraph_idx}>
                                 {/* 段落间距 → 等比伸缩占位 */}
                                 {i > 0 && (
-                                  <div style={{ flex: Math.max(2, node.paragraph_idx - timelineData[i - 1].paragraph_idx), minWidth: 26, height: 4, alignSelf: 'center' }} />
+                                  <div style={{ flex: Math.max(2, node.paragraph_idx - timelineData[i - 1].paragraph_idx), minWidth: 26, height: 2, alignSelf: 'flex-start', marginTop: 9 }} />
                                 )}
-                                <div style={{ width: 210, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  {/* 时间点 + 段号 */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: 18 }}>
+                                <div style={{ width: 210, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  {/* 原点 (圆圈位于基线正中) */}
+                                  <div style={{ height: 14, display: 'flex', alignItems: 'center' }}>
                                     <span
                                       style={{
                                         width: 12, height: 12, borderRadius: '50%', zIndex: 1, flexShrink: 0,
@@ -1022,9 +1022,10 @@ export default function CharacterGraph({
                                         border: `2px solid ${gc.bgCard}`, boxShadow: '0 0 4px rgba(0,0,0,0.35)',
                                       }}
                                     />
-                                    <span style={{ fontSize: 11, fontWeight: 600, color: gc.textSecondary, whiteSpace: 'nowrap' }}>
-                                      {renderParaStatusBadge(node.paragraph_uuid, node.paragraph_idx)}
-                                    </span>
+                                  </div>
+                                  {/* 段号 (位于原点正下方，不再被基线贯穿) */}
+                                  <div style={{ fontSize: 11, fontWeight: 600, color: gc.textSecondary, whiteSpace: 'nowrap' }}>
+                                    {renderParaStatusBadge(node.paragraph_uuid, node.paragraph_idx)}
                                   </div>
                                   {/* 角色变化内容（直接显示） */}
                                   {node.deltas && node.deltas.length > 0 && (

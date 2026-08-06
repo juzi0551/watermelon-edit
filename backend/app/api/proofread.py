@@ -485,7 +485,9 @@ async def _proofread_job(project_id: str, doc_id: str, req: ProofreadRequest):
                 generate_id(), project_id, doc_id,
                 **_last_log_ctx,
                 status="error", duration_ms=duration, error_message=str(e),
-                response_raw=None, errors_found=0, chapters_found=0,
+                response_raw=getattr(e, "partial_raw", None),
+                thinking=getattr(e, "partial_thinking", None),
+                errors_found=0, chapters_found=0,
             )
         try:
             new_upto = get_document_progress(doc_id)["proofread_upto"]
