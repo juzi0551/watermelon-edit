@@ -63,4 +63,8 @@ bak/
 chat_layout_now.png
 tmp-portable/
 *.zip
+deploy/release/
+
+# 私有部署档案（服务器路径/命令，勿公开到公共仓）
+deploy/
 
