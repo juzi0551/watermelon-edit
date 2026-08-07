@@ -51,6 +51,7 @@ src-tauri/gen/
 
 # Secrets & runtime data (NEVER commit)
 backend/app/data/
+/data/
 *.db
 *.docx
 *.doc
