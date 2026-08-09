@@ -26,7 +26,7 @@ export const lightColors = {
   bgCard: '#fafafa',
   bgReader: '#f9f7f4',
   bgToolbar: '#fafafa',
-  bgHighlight: '#fffbe6',
+  bgHighlight: '#ffe58f',
   bgChapterSelected: '#e5e5e5',
 
   diffRemovedBg: '#fff1f0',
@@ -59,7 +59,7 @@ export const darkColors = {
   bgCard: '#1f1f1f',
   bgReader: '#1e1c18',
   bgToolbar: '#4a4a4a',
-  bgHighlight: '#3c361e',
+  bgHighlight: '#594200',
   bgChapterSelected: '#2a2a2a',
 
   diffRemovedBg: '#431418',

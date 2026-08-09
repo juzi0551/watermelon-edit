@@ -354,13 +354,14 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
           }}
           style={{
             cursor: 'pointer',
-            padding: isCharDiff ? '0 1px' : '0',
+            padding: isSelected ? '1px 3px' : (isCharDiff ? '0 1px' : '0'),
             backgroundColor: isSelected ? color.bgHighlight : 'transparent',
             borderBottom,
             textDecoration,
             color: colorStyle,
-            borderRadius: isCharDiff ? 3 : 0,
-            transition: 'border-bottom 0.1s ease',
+            borderRadius: isSelected ? 3 : (isCharDiff ? 3 : 0),
+            boxShadow: isSelected ? '0 0 0 1.5px #d48806' : undefined,
+            transition: 'border-bottom 0.1s ease, background-color 0.15s ease, box-shadow 0.15s ease',
           }}
         >
           {segText}
