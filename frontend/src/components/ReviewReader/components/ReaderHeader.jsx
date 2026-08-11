@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Button, Popover, List, Typography, Badge, Space, Tag } from 'antd'
-import { UnorderedListOutlined, WarningOutlined, RightOutlined } from '@ant-design/icons'
+import { UnorderedListOutlined, WarningOutlined, RightOutlined, BookOutlined } from '@ant-design/icons'
 import { color } from '../../../design-tokens'
 
 const { Text } = Typography
@@ -13,6 +13,9 @@ export function ReaderHeader({
   pendingCount = 0,
   panelOpen,
   onTogglePanel,
+  annotationPanelOpen = false,
+  onToggleAnnotationPanel,
+  annotationCount = 0,
   tbFontSize,
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -166,8 +169,39 @@ export function ReaderHeader({
         </Text>
       </div>
 
-      {/* 右侧：最右侧靠齐的问题按钮 */}
-      <div style={{ display: 'flex', alignItems: 'center', zIndex: 2, marginLeft: 'auto' }}>
+      {/* 右侧：书籍注释与问题诊断按钮（保持互斥） */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, zIndex: 2, marginLeft: 'auto' }}>
+        <Button
+          type={annotationPanelOpen ? 'primary' : 'text'}
+          icon={<BookOutlined style={{ fontSize: 15 }} />}
+          onClick={onToggleAnnotationPanel}
+          style={{
+            height: 36,
+            paddingInline: 12,
+            borderRadius: 8,
+            fontSize: 14,
+            fontWeight: 500,
+            color: annotationPanelOpen ? '#fff' : '#7c3aed',
+            background: annotationPanelOpen ? '#7c3aed' : 'transparent',
+            borderColor: annotationPanelOpen ? '#7c3aed' : 'transparent',
+          }}
+        >
+          书籍注释
+          {annotationCount > 0 && (
+            <Badge
+              count={annotationCount}
+              overflowCount={999}
+              style={{
+                marginLeft: 6,
+                backgroundColor: annotationPanelOpen ? '#fff' : '#7c3aed',
+                color: annotationPanelOpen ? '#7c3aed' : '#fff',
+                fontWeight: 600,
+                boxShadow: 'none',
+              }}
+            />
+          )}
+        </Button>
+
         <Button
           type={panelOpen ? 'primary' : 'text'}
           icon={<WarningOutlined style={{ fontSize: 15 }} />}

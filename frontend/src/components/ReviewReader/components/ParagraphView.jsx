@@ -4,7 +4,7 @@ import { color } from '../../../design-tokens'
 import { parseEditNotes } from '../utils/readerUtils'
 import { computeExactLcsDiff } from '../utils/diffUtils'
 
-export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editNote, paraIdx, onSelectManualEdit, mergeMode }) {
+export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText, editNote, paraIdx, onSelectManualEdit, mergeMode, annotations = [], selectedAnnotationId = null, onSelectAnnotation }) {
   // 1. 过滤活跃未作废错误
   const activeErrs = (paraErrors || []).filter(e => !e.is_obsolete)
 
@@ -27,6 +27,12 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
     ? computeExactLcsDiff(origText, text)
     : null
 
+  // 过滤本段落关联的书籍划线注释
+  const paraAnnotations = useMemo(() => {
+    if (!annotations || !Array.isArray(annotations)) return []
+    return annotations.filter(a => a.paragraph_idx === paraIdx || String(a.paragraph_uuid) === String(paraIdx))
+  }, [annotations, paraIdx])
+
   // 收集所有纯删除及纯新增记录与发生位置
   const pureDeletionsByPos = {} // pos -> Array of deletion items
   const pureAdditionsByPos = {} // pos -> Array of addition items
@@ -36,7 +42,6 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
   activeErrs.forEach(e => {
     if (e.user_status === 'pending' && e.suggested_text) {
       if (!e.original_text || e.original_text.trim() === '') {
-        // 纯新增（无原文锚点）
         let pos = 0
         if (e.description) {
           const mAfter = e.description.match(/在[“"'「]([^”"'」]+)[”"'」](?:之后|后)/)
@@ -61,7 +66,6 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
           suggestedText: e.suggested_text,
         })
       } else {
-        // 包含 original_text 锚点，使用 diffChars 精准排除替换，仅捕获纯增字
         const from = addPosMap[e.original_text] ?? 0
         const start = text.indexOf(e.original_text, from)
         if (start >= 0) {
@@ -94,7 +98,7 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
     }
   })
 
-  // B. 利用 diffChars 直接从 (origText -> text) 原生变动中计算删除点与其在正文中的精确位置 textPos
+  // B. 利用 diffChars 直接从 (origText -> text) 原生变动中计算删除点与位置
   if (origText && text && origText !== text) {
     const changes = diffChars(origText, text)
     let textPos = 0
@@ -105,7 +109,6 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
           (idx > 0 && changes[idx - 1].added)
         if (!isReplacement) {
           const pos = Math.min(textPos, text.length)
-          // 查找匹配此删除片段的已采纳 AI 错误
           const matchedErr = activeErrs.find(e =>
             e.user_status === 'accepted' &&
             e.original_text &&
@@ -177,11 +180,33 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
     }
   })
 
-  if (intervals.length === 0 && !hasManualEdit && Object.keys(pureDeletionsByPos).length === 0 && Object.keys(pureAdditionsByPos).length === 0) {
+  // 注入划线注释区间点
+  const annotIntervals = []
+  const annotPosMap = {}
+  paraAnnotations.forEach((ann, aIdx) => {
+    const sel = ann.selected_text
+    if (!sel) return
+    const from = annotPosMap[sel] ?? 0
+    const start = text.indexOf(sel, from)
+    if (start >= 0) {
+      const end = start + sel.length
+      annotIntervals.push({
+        annotation: ann,
+        start,
+        end,
+        numIndex: aIdx + 1,
+      })
+      bounds.add(start)
+      bounds.add(end)
+      annotPosMap[sel] = start + 1
+    }
+  })
+
+  if (intervals.length === 0 && !hasManualEdit && annotIntervals.length === 0 && Object.keys(pureDeletionsByPos).length === 0 && Object.keys(pureAdditionsByPos).length === 0) {
     return <span>{text}</span>
   }
 
-  // 手工编辑切点注入（只要有手工改动就注入，不依赖备注）
+  // 手工编辑切点注入
   if (hasManualEdit) {
     for (let k = 0; k <= text.length; k++) {
       bounds.add(k)
@@ -269,6 +294,7 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
 
     const segText = text.slice(start, end)
     const covering = intervals.filter(iv => iv.start <= start && iv.end >= end)
+    const coveringAnnot = annotIntervals.filter(iv => iv.start <= start && iv.end >= end)
 
     let borderBottom = 'none'
     let textDecoration = undefined
@@ -318,13 +344,22 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
       }
     }
 
-    // 手工修改字符下划线（只要有手工改动且字符未被 AI 覆盖时显示）
+    // 手工修改字符下划线
     if (!isCharDiff && covering.length === 0 && hasManualEdit && manualLcs) {
       const isUserEditedChar = manualLcs.suggMatched[start] === false
       if (isUserEditedChar) {
         borderBottom = '2.5px solid #1890ff'
       }
     }
+
+    // 划线注释下划线
+    const isAnnotated = coveringAnnot.length > 0
+    const isAnnotSelected = isAnnotated && coveringAnnot.some(iv => iv.annotation.id === selectedAnnotationId)
+    if (isAnnotated && borderBottom === 'none') {
+      borderBottom = isAnnotSelected ? '3.5px solid #6b21a8' : '2.5px solid #7c3aed'
+    }
+
+    const endingAnnots = annotIntervals.filter(iv => iv.end === end)
 
     segs.push(
       <React.Fragment key={`seg${start}`}>
@@ -333,16 +368,22 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
         <span
           data-error-id={ids.join(',')}
           data-manual-edit={ids.length === 0 && borderBottom === '2.5px solid #1890ff' ? 'true' : undefined}
+          data-annotation-id={isAnnotated ? coveringAnnot.map(iv => iv.annotation.id).join(',') : undefined}
           onClick={(ev) => {
+            if (mergeMode) return
             const isManualEditSpan = ids.length === 0 && borderBottom === '2.5px solid #1890ff'
             const hasAiError = ids.length > 0
 
-            if (!hasAiError && !isManualEditSpan) {
-              // 普通文本段：不阻断冒泡，允许冒泡到 ParaRow 的 handleParaClick 显示工具条
+            if (isAnnotated) {
+              ev.stopPropagation()
+              onSelectAnnotation?.(coveringAnnot[0].annotation.id)
               return
             }
 
-            if (mergeMode) return
+            if (!hasAiError && !isManualEditSpan) {
+              return
+            }
+
             ev.stopPropagation()
             if (isManualEditSpan) {
               onSelectManualEdit?.(paraIdx)
@@ -354,18 +395,43 @@ export function ParagraphView({ text, paraErrors, selectedId, onSelect, origText
           }}
           style={{
             cursor: 'pointer',
-            padding: isSelected ? '1px 3px' : (isCharDiff ? '0 1px' : '0'),
-            backgroundColor: isSelected ? color.bgHighlight : 'transparent',
+            padding: (isSelected || isAnnotSelected) ? '1px 3px' : (isCharDiff ? '0 1px' : '0'),
+            backgroundColor: isSelected ? color.bgHighlight : (isAnnotSelected ? 'rgba(124, 58, 237, 0.15)' : 'transparent'),
             borderBottom,
             textDecoration,
             color: colorStyle,
-            borderRadius: isSelected ? 3 : (isCharDiff ? 3 : 0),
-            boxShadow: isSelected ? '0 0 0 1.5px #d48806' : undefined,
+            borderRadius: (isSelected || isAnnotSelected) ? 3 : (isCharDiff ? 3 : 0),
+            boxShadow: isSelected ? '0 0 0 1.5px #d48806' : (isAnnotSelected ? '0 0 0 1.5px #7c3aed' : undefined),
             transition: 'border-bottom 0.1s ease, background-color 0.15s ease, box-shadow 0.15s ease',
           }}
         >
           {segText}
         </span>
+        {endingAnnots.map(ea => (
+          <span
+            key={`annot_badge_${ea.annotation.id}`}
+            style={{
+              color: String(ea.annotation.id) === String(selectedAnnotationId) ? '#6b21a8' : '#7c3aed',
+              fontWeight: 700,
+              fontSize: '0.82em',
+              marginLeft: 2,
+              marginRight: 3,
+              cursor: 'pointer',
+              userSelect: 'none',
+              padding: '1px 4px',
+              background: String(ea.annotation.id) === String(selectedAnnotationId) ? '#f3e8ff' : '#faf5ff',
+              borderRadius: 4,
+              border: '1px solid #d8b4fe',
+            }}
+            onClick={(ev) => {
+              if (mergeMode) return
+              ev.stopPropagation()
+              onSelectAnnotation?.(ea.annotation.id)
+            }}
+          >
+            [注{ea.numIndex}]
+          </span>
+        ))}
       </React.Fragment>,
     )
   }

@@ -10,6 +10,7 @@ export function useReaderScroll({
   selectedChapter,
   updatePos,
   updateManualEditPos,
+  updateAnnotationPos,
   updateToolbarPos,
 }) {
   const positionSavedRef = useRef(false)
@@ -84,6 +85,7 @@ export function useReaderScroll({
           rafId = null
           updatePos?.()
           updateManualEditPos?.()
+          updateAnnotationPos?.()
           updateToolbarPos?.()
         })
       }
@@ -94,7 +96,7 @@ export function useReaderScroll({
       clearTimeout(timer)
       if (rafId) cancelAnimationFrame(rafId)
     }
-  }, [flowRef, paras.length, project?.id, updatePos, updateManualEditPos, updateToolbarPos])
+  }, [flowRef, paras.length, project?.id, updatePos, updateManualEditPos, updateAnnotationPos, updateToolbarPos])
 
   useEffect(() => {
     if (positionSavedRef.current || paras.length === 0 || !flowRef.current) return

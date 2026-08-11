@@ -10,13 +10,68 @@ CHAPTER_REGEX_NUMBER = re.compile(r"^([0-9]{1,3}|[一二三四五六七八九十
 CHAPTER_KEYWORDS = {"序章", "序言", "前言", "楔子", "尾声", "后记", "附录", "番外"}
 
 
-def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict], bool]:
+def extract_word_comments(doc: DocxDocument) -> list[dict]:
+    """使用纯 OpenXML 节点遍历提取 Word docx 中的原生批注 (w:commentReference / w:comment)"""
+    extracted_annotations = []
+    try:
+        comments_part = None
+        for rel in doc.part.rels.values():
+            if "comments" in str(rel.target_ref):
+                comments_part = rel.target_part
+                break
+
+        if not comments_part:
+            return extracted_annotations
+
+        comments_xml = comments_part.element
+        comments_dict = {}
+        for comment_elem in comments_xml.xpath(".//w:comment"):
+            c_id = comment_elem.get(qn("w:id")) or comment_elem.get("id")
+            c_text = "".join(t.text for t in comment_elem.xpath(".//w:t") if t.text)
+            if c_id and c_text:
+                comments_dict[c_id] = c_text
+
+        if not comments_dict:
+            return extracted_annotations
+
+        para_idx = 0
+        for para in doc.paragraphs:
+            style_name = para.style.name or ""
+            if style_name in EMPTY_SKIP_STYLES:
+                continue
+
+            elem = para._element
+            ref_elems = elem.xpath(".//w:commentReference")
+            for ref in ref_elems:
+                c_id = ref.get(qn("w:id")) or ref.get("id")
+                if c_id in comments_dict:
+                    nodes = elem.xpath(f".//w:commentRangeStart[@w:id='{c_id}']/following-sibling::w:r[following-sibling::w:commentRangeEnd[@w:id='{c_id}']]")
+                    selected_text = "".join("".join(r.xpath(".//w:t/text()")) for r in nodes).strip()
+                    if not selected_text:
+                        selected_text = (para.text or "")[:20]
+
+                    extracted_annotations.append({
+                        "paragraph_idx": para_idx,
+                        "selected_text": selected_text or "批注引用",
+                        "content": comments_dict[c_id],
+                    })
+            para_idx += 1
+    except Exception:
+        pass
+
+    return extracted_annotations
+
+
+def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict], bool, list[dict]]:
     """解析 docx，返回:
     1. 有序段落列表 [(idx, text, style_name, page_break_type), ...]（包含空段落）。
     2. 基于标题样式和正则初步提取的初始章节列表。
     3. 智能检测是否开启首行缩进 (has_first_line_indent)。
+    4. 从 Word 原生批注中提取的注释列表。
     """
     doc = DocxDocument(file_path)
+    extracted_annotations = extract_word_comments(doc)
+
     rows = []
     chapters = []
     idx = 0
@@ -127,11 +182,10 @@ def parse_paragraphs(file_path: str) -> tuple[list[tuple], list[dict], bool]:
         else:
             ch["end_idx"] = max(ch["start_idx"], total_paras - 1 if total_paras > 0 else 0)
 
-    # 工业界标准检测逻辑：正文段落中若超过 50%（或小文档中至少 2 段）具备首行缩进特征，自动开启项目缩进
     has_first_line_indent = False
     if body_para_count > 0:
         ratio = indented_para_count / body_para_count
         if ratio >= 0.5 or (body_para_count <= 5 and indented_para_count >= 2):
             has_first_line_indent = True
 
-    return rows, chapters, has_first_line_indent
+    return rows, chapters, has_first_line_indent, extracted_annotations

@@ -46,6 +46,9 @@ export function ReaderContentArea({
   handleToggleOriginal,
   handleDeletePara,
   handleAskAssistant,
+  annotations,
+  selectedAnnotationId,
+  onSelectAnnotation,
 }) {
   return (
     <div
@@ -157,6 +160,9 @@ export function ReaderContentArea({
                 onMergeToggle={handleToggleMergeSelect}
                 onStartEdit={handleStartEdit}
                 editingCaretPos={editingCaretPos}
+                annotations={annotations}
+                selectedAnnotationId={selectedAnnotationId}
+                onSelectAnnotation={onSelectAnnotation}
               />
             )
           })}

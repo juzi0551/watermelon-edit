@@ -233,8 +233,8 @@ export async function formatProjectIndent(projectId) {
 
 // ==================== Export ====================
 
-export async function exportDoc(projectId) {
-  const response = await api.post(`/projects/${projectId}/export`, {}, { responseType: 'blob' })
+export async function exportDoc(projectId, mode = 'print') {
+  const response = await api.post(`/projects/${projectId}/export?export_mode=${mode}`, {}, { responseType: 'blob' })
   const disposition = response.headers['content-disposition']
   let filename = ''
   if (disposition && disposition.includes('filename=')) {
@@ -418,5 +418,34 @@ export async function updateCardStatus(projectId, messageId, status) {
 
 export function getChatStreamUrl(projectId) {
   return `${API_BASE}/projects/${projectId}/chat/stream`
+}
+
+// ==================== Annotations (划线注释) ====================
+
+export async function getAnnotations(projectId) {
+  const { data } = await api.get(`/projects/${projectId}/annotations`)
+  return data
+}
+
+export async function createAnnotation(projectId, { paragraphIdx, paragraphUuid, selectedText, content, startOffset = 0, endOffset = 0 }) {
+  const { data } = await api.post(`/projects/${projectId}/annotations`, {
+    paragraph_idx: paragraphIdx,
+    paragraph_uuid: paragraphUuid,
+    selected_text: selectedText,
+    content,
+    start_offset: startOffset,
+    end_offset: endOffset,
+  })
+  return data
+}
+
+export async function updateAnnotation(projectId, annotationId, content) {
+  const { data } = await api.put(`/projects/${projectId}/annotations/${annotationId}`, { content })
+  return data
+}
+
+export async function deleteAnnotation(projectId, annotationId) {
+  const { data } = await api.delete(`/projects/${projectId}/annotations/${annotationId}`)
+  return data
 }
 

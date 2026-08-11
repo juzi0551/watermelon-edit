@@ -54,6 +54,9 @@ export const ParaRow = React.memo(function ParaRow({
   onMergeToggle,
   onStartEdit,
   editingCaretPos,
+  annotations,
+  selectedAnnotationId,
+  onSelectAnnotation,
 }) {
   const hasManualEdit = Boolean(para.revised_text && para.revised_text !== para.text)
   const showOriginal = (showAllOriginals || showOriginalThis) && hasManualEdit
@@ -379,6 +382,9 @@ export const ParaRow = React.memo(function ParaRow({
                   paraIdx={para.idx}
                   onSelectManualEdit={onSelectManualEdit}
                   mergeMode={mergeMode}
+                  annotations={annotations}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onSelectAnnotation={onSelectAnnotation}
                 />
               )}
             </div>

@@ -1,6 +1,7 @@
 import React from 'react'
 import { ErrorDetailCard } from './ErrorDetailCard'
 import { ManualEditDetailCard } from './ManualEditDetailCard'
+import { AnnotationDetailCard } from './AnnotationDetailCard'
 
 export function FloatCardLayer({
   mergeMode,
@@ -16,6 +17,12 @@ export function FloatCardLayer({
   handleDeleteNoteItem,
   handleRevertManualEdit,
   setSelectedManualEditIdx,
+  selectedAnnotation,
+  annotationCardElRef,
+  handleUpdateAnnotation,
+  handleDeleteAnnotation,
+  setSelectedAnnotationId,
+  annotationNumIndex = 1,
 }) {
   if (mergeMode) return null
 
@@ -41,6 +48,18 @@ export function FloatCardLayer({
           onDeleteNoteItem={handleDeleteNoteItem}
           onRevert={handleRevertManualEdit}
           onClose={() => setSelectedManualEditIdx(null)}
+        />
+      )}
+      {selectedAnnotation && (
+        <AnnotationDetailCard
+          key={selectedAnnotation.id}
+          ref={annotationCardElRef}
+          annotation={selectedAnnotation}
+          numIndex={annotationNumIndex}
+          currentBodyFontSize={currentBodyFontSize}
+          onUpdate={handleUpdateAnnotation}
+          onDelete={handleDeleteAnnotation}
+          onClose={() => setSelectedAnnotationId(null)}
         />
       )}
     </>

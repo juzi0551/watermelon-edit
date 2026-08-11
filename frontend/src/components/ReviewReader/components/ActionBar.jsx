@@ -1,8 +1,9 @@
 import React from 'react'
-import { Button, Tag, Space, Input, Popover, Progress, Tooltip, Select, InputNumber } from 'antd'
+import { Button, Tag, Space, Input, Popover, Progress, Tooltip, Select, InputNumber, Dropdown } from 'antd'
 import {
   CheckCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, LoadingOutlined,
-  MinusOutlined, PlusOutlined, DownloadOutlined, ToolOutlined, SettingOutlined
+  MinusOutlined, PlusOutlined, DownloadOutlined, ToolOutlined, SettingOutlined,
+  PrinterOutlined, CommentOutlined, DownOutlined
 } from '@ant-design/icons'
 import { color, radius, fontSize } from '../../../design-tokens'
 import { kbdStyle, TYPE_OPTIONS } from '../constants'
@@ -108,6 +109,8 @@ export function ControlsRow({
   )
 }
 
+import { ExportModal } from './ExportModal'
+
 export function ActionBar({
   mergeMode,
   handleConfirmMergeBatch,
@@ -146,6 +149,8 @@ export function ActionBar({
   onOpenTools,
   tbFontSize,
 }) {
+  const [exportModalOpen, setExportModalOpen] = React.useState(false)
+
   const barStyle = {
     position: 'relative',
     width: '100%',
@@ -409,26 +414,36 @@ export function ActionBar({
                 shape="round"
                 size="large"
                 className="bar-action-btn"
-                icon={<DownloadOutlined />}
+                icon={<DownloadOutlined style={{ fontSize: 18 }} />}
                 loading={exporting}
-                onClick={onExport}
                 disabled={inProgress}
+                onClick={() => setExportModalOpen(true)}
                 style={{
                   height: 52,
-                  paddingInline: 24,
-                  fontSize: 15,
+                  paddingInline: 28,
+                  fontSize: 16,
+                  fontWeight: 600,
                   backgroundColor: '#d4a359',
                   borderColor: '#d4a359',
                   color: '#ffffff',
+                  boxShadow: '0 4px 12px rgba(212, 163, 89, 0.3)',
                 }}
               >
                 导出校稿版
               </Button>
               <ShortcutHint />
             </div>
+
+            <ExportModal
+              open={exportModalOpen}
+              onCancel={() => setExportModalOpen(false)}
+              onExport={onExport}
+              exporting={exporting}
+            />
           </>
         )}
       </div>
     </div>
   )
 }
+

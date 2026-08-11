@@ -560,19 +560,20 @@ export default function ProjectDetail() {
     }
   }
 
-  const handleExport = async () => {
+  const handleExport = async (mode = 'print') => {
     setExporting(true)
     try {
-      const res = await exportDoc(projectId)
+      const res = await exportDoc(projectId, mode)
       const blob = res.blob || res
-      const filename = res.filename || `${project?.name || '校稿'}_校稿版_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15)}.docx`
+      const modeTag = mode === 'comment' ? '批注版' : '打印版'
+      const filename = res.filename || `${project?.name || '校稿'}_${modeTag}_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15)}.docx`
       const url = window.URL.createObjectURL(new Blob([blob]))
       const a = document.createElement('a')
       a.href = url
       a.download = filename
       a.click()
       window.URL.revokeObjectURL(url)
-      message.success('已导出校稿版 docx')
+      message.success(`已成功导出 ${modeTag} docx`)
     } catch (e) {
       message.error('导出失败：' + (e.response?.data?.detail || e.message))
     } finally {

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Button, Space, Tooltip } from 'antd'
-import { RocketOutlined, BulbOutlined, MessageOutlined } from '@ant-design/icons'
+import { RocketOutlined, BulbOutlined, MessageOutlined, HighlightOutlined } from '@ant-design/icons'
 
-export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelectionChange, tbFontSize = 14, mergeMode }) {
+export function SelectionToolbar({ containerRef, paras, onAskAssistant, onAddAnnotation, onSelectionChange, tbFontSize = 14, mergeMode }) {
   const [visible, setVisible] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const [selectionData, setSelectionData] = useState(null)
@@ -185,6 +185,14 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
     setSelectionData(null)
   }
 
+  const handleAddAnnotationClick = () => {
+    if (!onAddAnnotation || !selectionData) return
+    onAddAnnotation(selectionData)
+    window.getSelection()?.removeAllRanges()
+    setVisible(false)
+    setSelectionData(null)
+  }
+
   const btnHeight = Math.max(28, tbFontSize + 14)
   const iconFontSize = tbFontSize + 2
 
@@ -212,6 +220,18 @@ export function SelectionToolbar({ containerRef, paras, onAskAssistant, onSelect
       onMouseDown={(e) => e.preventDefault()}
     >
       <Space size={4}>
+        <Tooltip title="为选中的词句添加书籍划线注释">
+          <Button
+            type="text"
+            size="small"
+            icon={<HighlightOutlined style={{ color: '#059669', fontSize: iconFontSize }} />}
+            onClick={handleAddAnnotationClick}
+            style={{ fontSize: tbFontSize, fontWeight: 500, height: btnHeight }}
+          >
+            加注释
+          </Button>
+        </Tooltip>
+
         <Tooltip title="在侧栏问 AI 并附带此选区上下文">
           <Button
             type="text"

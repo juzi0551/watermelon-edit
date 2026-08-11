@@ -152,8 +152,18 @@ async def api_upload_to_project(project_id: str, file: UploadFile = File(...)):
 
     create_document(doc_id, project_id, file.filename, file_path, version)
 
-    rows, initial_chapters, has_first_line_indent = parse_paragraphs(file_path)
+    from app.core.database import add_annotation
+    rows, initial_chapters, has_first_line_indent, extracted_annotations = parse_paragraphs(file_path)
     insert_paragraphs(doc_id, rows)
+
+    if extracted_annotations:
+        for ann in extracted_annotations:
+            add_annotation(
+                document_id=doc_id,
+                paragraph_idx=ann["paragraph_idx"],
+                selected_text=ann["selected_text"],
+                content=ann["content"],
+            )
 
     if initial_chapters:
         batch_insert_chapters(doc_id, initial_chapters, sort_base=0)
@@ -439,12 +449,14 @@ async def api_format_indent(project_id: str):
 
 @router.delete("/projects/{project_id}")
 async def api_delete_project(project_id: str):
-    """删除项目及其所有数据。"""
-    project = get_project(project_id)
-    if project and project.get("is_locked") == 1:
-        return {"error": "项目已锁定，无法删除"}
-    delete_project(project_id)
-    return {"status": "ok"}
+    """逻辑删除项目（保留物理数据）。"""
+    try:
+        delete_project(project_id)
+        return {"status": "ok"}
+    except ValueError as ve:
+        return {"error": str(ve)}
+    except Exception as e:
+        return {"error": f"删除失败：{str(e)}"}
 
 
 @router.post("/projects/{project_id}/clean-empty-paragraphs")

@@ -11,7 +11,7 @@ from app.core.database import (
     get_project, get_current_document, get_errors, get_error,
     update_error_status, update_error_suggested, update_project_status,
     get_paragraph_by_idx, get_paragraph_by_uuid, update_paragraph_revised, get_revised_paragraphs,
-    get_chapters,
+    get_chapters, get_annotations,
 )
 
 router = APIRouter()
@@ -123,13 +123,59 @@ async def accept_all(project_id: str):
     return {"status": "ok", "count": len(errors)}
 
 
+from docx.opc.packuri import PackURI
+from docx.opc.part import XmlPart
+from docx.opc.constants import RELATIONSHIP_TYPE
+
+
+def _ensure_comments_part(docx):
+    """查找或初始化 word/comments.xml OpenXML Part，并注册 content type 与 relation"""
+    for rel in docx.part.rels.values():
+        if "comments" in str(rel.target_ref):
+            target = rel.target_part
+            if hasattr(target, "element"):
+                return target.element
+            elif hasattr(target, "_element"):
+                return target._element
+            else:
+                c_elm = parse_xml(target.blob)
+                xml_part = XmlPart(
+                    PackURI('/word/comments.xml'),
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+                    c_elm,
+                    docx.part.package
+                )
+                rel._target = xml_part
+                return c_elm
+
+    comments_elm = parse_xml(
+        r'<w:comments %s %s></w:comments>' % (
+            nsdecls('w'), nsdecls('r')
+        )
+    )
+    comments_part = XmlPart(
+        PackURI('/word/comments.xml'),
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+        comments_elm,
+        docx.part.package
+    )
+    docx.part.relate_to(
+        comments_part,
+        RELATIONSHIP_TYPE.COMMENTS
+    )
+    return comments_elm
+
+
+from docx.shared import Pt
+
+
 @router.post("/projects/{project_id}/export")
-async def export_document(project_id: str):
+async def export_document(project_id: str, export_mode: str = "print"):
     """导出校稿版 docx。
 
-    方式 A（有原文件）：以原 docx 为样式模板，清空正文后按 DB 段落数据重建，
-    彻底规避 1:1 映射脆弱性与 pPr 样式污染问题。
-    方式 B（原文件缺失）：降级为纯文本重建。
+    export_mode:
+      - "print": 打印/出版版，正文嵌入右上标 [注X] 角标，章末生成 【本章注释】 规范列表。
+      - "comment": 批注版，直接向 docx 写入 Word 原生 w:comment 侧栏气泡批注。
     """
     doc = get_current_document(project_id)
     if not doc:
@@ -148,15 +194,13 @@ async def export_document(project_id: str):
     raw_name = (proj.get("name") if proj else None) or "校稿文档"
     clean_name = "".join(c for c in raw_name if c not in r'/\:*?"<>|').strip() or "校稿文档"
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    fname = f"{clean_name}_校稿版_{ts}.docx"
+    mode_tag = "批注版" if export_mode == "comment" else "打印版"
+    fname = f"{clean_name}_{mode_tag}_{ts}.docx"
 
     if file_path and os.path.exists(file_path):
-        # ── 方式 A：原 docx 只用作样式模板，正文完全从 DB 重建 ──
-        # 不再依赖 1:1 节点映射，彻底解决删段/空行清洗导致的错位与 pPr 样式污染问题。
         docx = DocxDocument(file_path)
         body = docx._element.body
 
-        # 清空 body 中的所有段落与表格，只保留末尾 sectPr（页面边距/纸张设置）
         removable_tags = {qn("w:p"), qn("w:tbl"), qn("w:sdt")}
         for child in list(body):
             if child.tag in removable_tags:
@@ -174,7 +218,57 @@ async def export_document(project_id: str):
             if c.get("title_paragraph_idx") is not None:
                 ch_map[c["title_paragraph_idx"]] = c
 
-        # 按 DB idx 顺序逐段重建正文
+        all_annots = get_annotations(doc_id)
+        annots_by_para = {}
+        for a in all_annots:
+            p_uuid = a.get("paragraph_uuid")
+            p_idx = a.get("paragraph_idx")
+            if p_uuid:
+                annots_by_para.setdefault(str(p_uuid), []).append(a)
+            if p_idx is not None:
+                annots_by_para.setdefault(str(p_idx), []).append(a)
+
+        current_chapter_annots = []
+        annot_counter = 0
+        comment_id_counter = 0
+
+        def _flush_chapter_annotations():
+            nonlocal current_chapter_annots, annot_counter
+            if not current_chapter_annots or export_mode != "print":
+                return
+
+            note_heading = docx.add_paragraph()
+            pPr = note_heading._element.get_or_add_pPr()
+            pPr.append(parse_xml(r'<w:spacing %s w:before="240" w:after="120"/>' % nsdecls("w")))
+
+            r_h = note_heading.add_run("【本章注释】")
+            r_h.bold = True
+            r_h.font.size = Pt(10.5)
+
+            for item in current_chapter_annots:
+                num = item["num"]
+                annot = item["annot"]
+                p = docx.add_paragraph()
+                p_pPr = p._element.get_or_add_pPr()
+                p_pPr.append(parse_xml(r'<w:ind %s w:left="420" w:firstLine="-420"/>' % nsdecls("w")))
+                p_pPr.append(parse_xml(r'<w:spacing %s w:before="0" w:after="60" w:line="280" w:lineRule="auto"/>' % nsdecls("w")))
+
+                r_num = p.add_run(f"[{num}] ")
+                r_num.bold = True
+                r_num.font.size = Pt(9.0)
+
+                r_sel = p.add_run(f"「{annot.get('selected_text', '')}」")
+                r_sel.bold = True
+                r_sel.font.size = Pt(9.0)
+
+                r_cnt = p.add_run(f"：{annot.get('content', '')}")
+                r_cnt.font.size = Pt(9.0)
+
+            current_chapter_annots = []
+            annot_counter = 0
+
+        processed_annot_ids = set()
+
         for p_data in paras:
             text = p_data.get("text") or ""
             style_name = p_data.get("style_name") or "Normal"
@@ -182,16 +276,17 @@ async def export_document(project_id: str):
             idx = p_data.get("idx", 0)
             p_uuid = p_data.get("uuid")
 
-            # 新建段落（python-docx 自动插入到 sectPr 之前）
+            ch_info = (ch_map.get(p_uuid) if p_uuid else None) or ch_map.get(idx)
+
+            if ch_info and idx > 0 and export_mode == "print":
+                _flush_chapter_annotations()
+
             new_para = docx.add_paragraph()
 
-            ch_info = (ch_map.get(p_uuid) if p_uuid else None) or ch_map.get(idx)
             if ch_info:
-                # 章节/副节：自动赋予标准的 Heading 1 / Heading 2 标题样式，确保 Word 导航大纲及二次导入完整识别
                 level = ch_info.get("level", 1)
                 _apply_heading_style(docx, new_para, level)
             else:
-                # 按原始样式名应用样式，找不到则 fallback 到 Normal
                 try:
                     new_para.style = docx.styles[style_name]
                 except (KeyError, Exception):
@@ -200,20 +295,90 @@ async def export_document(project_id: str):
                     except Exception:
                         pass
 
-            # 写入文字
-            new_para.add_run(text)
+            para_annots = []
+            raw_annots = (annots_by_para.get(str(p_uuid)) if p_uuid else None) or annots_by_para.get(str(idx)) or []
+            for a in raw_annots:
+                if a["id"] not in processed_annot_ids:
+                    processed_annot_ids.add(a["id"])
+                    para_annots.append(a)
 
-            # 注入分页符（干净写入新建 pPr，不污染任何原有节点）
+            rendered_text = text
+            if para_annots and rendered_text and export_mode == "print":
+                curr_pos = 0
+                for a in para_annots:
+                    sel = a.get("selected_text", "")
+                    pos = rendered_text.find(sel, curr_pos) if sel else -1
+                    if pos >= 0:
+                        new_para.add_run(rendered_text[curr_pos:pos + len(sel)])
+                        annot_counter += 1
+                        num_str = f"注{annot_counter}"
+
+                        tag_run = new_para.add_run(f"[{num_str}]")
+                        tag_run.font.superscript = True
+                        tag_run.font.size = Pt(8.5)
+
+                        current_chapter_annots.append({
+                            "num": num_str,
+                            "annot": a
+                        })
+                        curr_pos = pos + len(sel)
+
+                if curr_pos < len(rendered_text):
+                    new_para.add_run(rendered_text[curr_pos:])
+            elif para_annots and rendered_text and export_mode == "comment":
+                comments_elm = _ensure_comments_part(docx)
+                curr_pos = 0
+                for a in para_annots:
+                    sel = a.get("selected_text", "")
+                    content = a.get("content", "")
+                    pos = rendered_text.find(sel, curr_pos) if sel else -1
+                    if pos >= 0:
+                        if pos > curr_pos:
+                            new_para.add_run(rendered_text[curr_pos:pos])
+
+                        comment_id_str = str(comment_id_counter)
+                        comment_id_counter += 1
+
+                        c_xml = parse_xml(
+                            r'<w:comment %s w:id="%s" w:author="校稿助手" w:date="%s"><w:p><w:r><w:t>%s</w:t></w:r></w:p></w:comment>' % (
+                                nsdecls('w'),
+                                comment_id_str,
+                                datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                            )
+                        )
+                        comments_elm.append(c_xml)
+
+                        start_node = parse_xml(r'<w:commentRangeStart %s w:id="%s"/>' % (nsdecls('w'), comment_id_str))
+                        new_para._element.append(start_node)
+
+                        new_para.add_run(sel)
+
+                        end_node = parse_xml(r'<w:commentRangeEnd %s w:id="%s"/>' % (nsdecls('w'), comment_id_str))
+                        new_para._element.append(end_node)
+
+                        ref_node = parse_xml(r'<w:r %s><w:commentReference %s w:id="%s"/></w:r>' % (nsdecls('w'), nsdecls('w'), comment_id_str))
+                        new_para._element.append(ref_node)
+
+                        curr_pos = pos + len(sel)
+
+                if curr_pos < len(rendered_text):
+                    new_para.add_run(rendered_text[curr_pos:])
+            else:
+                new_para.add_run(rendered_text)
+
             if pb_type in ("original", "manual", "auto_chapter") and idx > 0:
                 pPr = new_para._element.get_or_add_pPr()
                 if pPr.find(qn("w:pageBreakBefore")) is None:
                     pPr.append(parse_xml(r'<w:pageBreakBefore %s/>' % nsdecls("w")))
 
-            # 若项目 XML 配置激活了段首缩进，且该段落不是标题，为正文段落注入物理首行 2 字符缩进
             if indent_enabled and not ch_info and "heading" not in style_name.lower() and "标题" not in style_name:
                 pPr = new_para._element.get_or_add_pPr()
                 if pPr.find(qn("w:ind")) is None:
                     pPr.append(parse_xml(r'<w:ind %s w:firstLineChars="200" w:firstLine="420"/>' % nsdecls("w")))
+
+        if export_mode == "print":
+            _flush_chapter_annotations()
 
         fpath = os.path.join("backend/static/exports", fname)
         docx.save(fpath)

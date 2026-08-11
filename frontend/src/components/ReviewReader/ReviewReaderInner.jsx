@@ -11,6 +11,8 @@ import { ActionBar } from './components/ActionBar'
 import { FloatCardLayer } from './components/FloatCardLayer'
 import { SelectionToolbar } from './components/SelectionToolbar'
 import { ReaderHeader } from './components/ReaderHeader'
+import { AnnotationModal } from './components/AnnotationModal'
+import { AnnotationSidebar } from './components/AnnotationSidebar'
 
 export function ReviewReaderInner({
   results, project, inProgress, onSetStatus, onAcceptAll,
@@ -53,13 +55,16 @@ export function ReviewReaderInner({
     onBodyFontSizeChange?.(logic.currentBodyFontSize)
   }, [logic.currentBodyFontSize, onBodyFontSizeChange])
 
-  const { spanCacheRef, updatePos, updateManualEditPos } = useReaderCardPosition({
+  const { spanCacheRef, updatePos, updateManualEditPos, updateAnnotationPos } = useReaderCardPosition({
     flowRef: logic.flowRef,
     floatCardElRef: logic.floatCardElRef,
     manualCardElRef: logic.manualCardElRef,
+    annotationCardElRef: logic.annotationCardElRef,
     selectedId: logic.selectedId,
     selectedManualEditIdx: logic.selectedManualEditIdx,
+    selectedAnnotationId: logic.selectedAnnotationId,
     flatErrors: logic.flatErrors,
+    annotations: logic.annotations,
     results,
   })
 
@@ -73,6 +78,7 @@ export function ReviewReaderInner({
     selectedChapter,
     updatePos,
     updateManualEditPos,
+    updateAnnotationPos,
     updateToolbarPos: logic.updateToolbarPos,
   })
 
@@ -132,8 +138,50 @@ export function ReviewReaderInner({
     requestAnimationFrame(doJump)
   }, [logic.selectedId, logic.flatErrors, logic.flowRef, updatePos, jumpToParagraphExact])
 
+  // 切换 selectedAnnotationId 时自动精准滚动到目标段落并闪开定位
+  useEffect(() => {
+    if (!logic.selectedAnnotationId || !logic.flowRef.current) return
+    const ann = logic.annotations.find(a => String(a.id) === String(logic.selectedAnnotationId))
+    if (!ann) return
+
+    const container = logic.flowRef.current
+    const key = ann.paragraph_uuid || ann.paragraph_idx
+
+    const doJump = () => {
+      const paraEl = container.querySelector(`[data-para="${key}"]`) || container.querySelector(`[data-para="${ann.paragraph_idx}"]`)
+      if (paraEl) {
+        const cRect = container.getBoundingClientRect()
+        const pRect = paraEl.getBoundingClientRect()
+        const isVisible = pRect.top >= cRect.top + 20 && pRect.bottom <= cRect.bottom - 40
+        if (isVisible) {
+          updateAnnotationPos()
+          return
+        }
+      }
+      jumpToParagraphExact(key, 0, true)
+    }
+
+    requestAnimationFrame(doJump)
+  }, [logic.selectedAnnotationId, logic.annotations, logic.flowRef, updateAnnotationPos, jumpToParagraphExact])
+
+  // 问题边栏与注释边栏互斥切换
+  const handleToggleErrorPanel = () => {
+    if (!panelOpen && logic.annotationPanelOpen) {
+      logic.setAnnotationPanelOpen(false)
+    }
+    onTogglePanel?.()
+  }
+
+  const handleToggleAnnotationPanel = () => {
+    if (panelOpen) {
+      onTogglePanel?.()
+    }
+    logic.setAnnotationPanelOpen(prev => !prev)
+  }
+
   const hasResults = results && logic.paras.length > 0
   const showPanel = panelOpen && hasResults
+  const showAnnotationPanel = logic.annotationPanelOpen && hasResults
 
   if (!hasResults) {
     return (
@@ -152,7 +200,10 @@ export function ReviewReaderInner({
         onSelectChapter={onChapterChange}
         pendingCount={logic.pending.length}
         panelOpen={panelOpen}
-        onTogglePanel={onTogglePanel}
+        onTogglePanel={handleToggleErrorPanel}
+        annotationPanelOpen={logic.annotationPanelOpen}
+        onToggleAnnotationPanel={handleToggleAnnotationPanel}
+        annotationCount={logic.annotations.length}
         tbFontSize={logic.tbFontSize}
       />
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: 0, position: 'relative' }}>
@@ -199,12 +250,16 @@ export function ReviewReaderInner({
             handleToggleOriginal={logic.handleToggleOriginal}
             handleDeletePara={logic.handleDeletePara}
             handleAskAssistant={onAskAssistant}
+            annotations={logic.annotations}
+            selectedAnnotationId={logic.selectedAnnotationId}
+            onSelectAnnotation={logic.handleSelectAnnotation}
           />
 
           <SelectionToolbar
             containerRef={logic.contentRef}
             paras={logic.sortedParas}
             onAskAssistant={onAskAssistant}
+            onAddAnnotation={logic.handleOpenAnnotationModal}
             onSelectionChange={logic.handleSelectionChange}
             tbFontSize={logic.tbFontSize}
             mergeMode={logic.mergeMode}
@@ -258,7 +313,7 @@ export function ReviewReaderInner({
         <ErrorSidebar
           mergeMode={logic.mergeMode}
           showPanel={showPanel}
-          onTogglePanel={onTogglePanel}
+          onTogglePanel={handleToggleErrorPanel}
           panelTab={logic.panelTab}
           setPanelTab={logic.setPanelTab}
           pending={logic.pending}
@@ -270,6 +325,16 @@ export function ReviewReaderInner({
           handleSelectObsoleteError={logic.handleSelectObsoleteError}
           unmatchedIds={logic.unmatchedIds}
           onSetStatus={onSetStatus}
+          jumpToParagraphExact={jumpToParagraphExact}
+          tbFontSize={logic.tbFontSize}
+        />
+
+        <AnnotationSidebar
+          showPanel={showAnnotationPanel}
+          onTogglePanel={handleToggleAnnotationPanel}
+          annotations={logic.annotations}
+          selectedAnnotationId={logic.selectedAnnotationId}
+          onSelectAnnotation={logic.handleSelectAnnotation}
           jumpToParagraphExact={jumpToParagraphExact}
           tbFontSize={logic.tbFontSize}
         />
@@ -289,6 +354,19 @@ export function ReviewReaderInner({
         handleDeleteNoteItem={logic.handleDeleteNoteItem}
         handleRevertManualEdit={logic.handleRevertManualEdit}
         setSelectedManualEditIdx={logic.setSelectedManualEditIdx}
+        selectedAnnotation={logic.selectedAnnotation}
+        annotationCardElRef={logic.annotationCardElRef}
+        handleUpdateAnnotation={logic.handleUpdateAnnotationSubmit}
+        handleDeleteAnnotation={logic.handleDeleteAnnotationSubmit}
+        setSelectedAnnotationId={logic.setSelectedAnnotationId}
+        annotationNumIndex={logic.annotationNumIndex}
+      />
+
+      <AnnotationModal
+        open={logic.annotationModalOpen}
+        selectionData={logic.annotationSelectionData}
+        onOk={logic.handleCreateAnnotation}
+        onCancel={() => logic.setAnnotationModalOpen(false)}
       />
     </div>
   )

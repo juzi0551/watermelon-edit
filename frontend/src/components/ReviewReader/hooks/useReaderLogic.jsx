@@ -7,6 +7,7 @@ import { parseEditNotes } from '../utils/readerUtils'
 import {
   updateParagraph, updateParagraphNotes, deleteParagraph, togglePageBreak, setChapter,
   insertParagraph, mergeParagraphs, mergeMultipleParagraphs,
+  getAnnotations, createAnnotation, updateAnnotation, deleteAnnotation,
 } from '../../../services/api'
 
 export function useReaderLogic({
@@ -42,12 +43,18 @@ export function useReaderLogic({
   const [showAllOriginals, setShowAllOriginals] = useState(false)
   const [mergeMode, setMergeMode] = useState(false)
   const [selectedMergeParas, setSelectedMergeParas] = useState(() => new Set())
+  const [annotations, setAnnotations] = useState([])
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState(null)
+  const [annotationModalOpen, setAnnotationModalOpen] = useState(false)
+  const [annotationSelectionData, setAnnotationSelectionData] = useState(null)
+  const [annotationPanelOpen, setAnnotationPanelOpen] = useState(false)
 
   // 2. 全量 useRef 声明
   const flowRef = useRef(null)
   const contentRef = useRef(null)
   const floatCardElRef = useRef(null)
   const manualCardElRef = useRef(null)
+  const annotationCardElRef = useRef(null)
   const toolbarRef = useRef(null)
   const resultsRef = useRef(results)
   resultsRef.current = results
@@ -55,6 +62,8 @@ export function useReaderLogic({
   selectedIdRef.current = selectedId
   const selectedManualEditIdxRef = useRef(selectedManualEditIdx)
   selectedManualEditIdxRef.current = selectedManualEditIdx
+  const selectedAnnotationIdRef = useRef(selectedAnnotationId)
+  selectedAnnotationIdRef.current = selectedAnnotationId
   const activeIdxRef = useRef(activeIdx)
   activeIdxRef.current = activeIdx
   const autoSelectRef = useRef(false)
@@ -213,6 +222,68 @@ export function useReaderLogic({
     }
   }, [project?.id, sortedParas, onReloadProject])
 
+  const fetchAnnotations = useCallback(async () => {
+    if (!project?.id) return
+    try {
+      const data = await getAnnotations(project.id)
+      setAnnotations(data || [])
+    } catch { /* noop */ }
+  }, [project?.id])
+
+  useEffect(() => {
+    fetchAnnotations()
+  }, [fetchAnnotations])
+
+  const selectedAnnotation = useMemo(() => {
+    if (!selectedAnnotationId) return null
+    return annotations.find(a => String(a.id) === String(selectedAnnotationId)) || null
+  }, [annotations, selectedAnnotationId])
+
+  const annotationNumIndex = useMemo(() => {
+    if (!selectedAnnotation) return 1
+    const idx = annotations.findIndex(a => String(a.id) === String(selectedAnnotation.id))
+    return idx >= 0 ? idx + 1 : 1
+  }, [annotations, selectedAnnotation])
+
+  const handleOpenAnnotationModal = useCallback((selectionData) => {
+    setAnnotationSelectionData(selectionData)
+    setAnnotationModalOpen(true)
+  }, [])
+
+  const handleCreateAnnotation = useCallback(async ({ selectedText, paragraphIdx, paragraphUuid, content }) => {
+    if (!project?.id) return
+    await createAnnotation(project.id, {
+      paragraphIdx,
+      paragraphUuid,
+      selectedText,
+      content,
+    })
+    message.success('已添加划线注释')
+    setAnnotationModalOpen(false)
+    setAnnotationSelectionData(null)
+    await fetchAnnotations()
+  }, [project?.id, fetchAnnotations])
+
+  const handleSelectAnnotation = useCallback((id) => {
+    setActiveIdx(null)
+    setSelectedId(null)
+    setSelectedManualEditIdx(null)
+    setSelectedAnnotationId(prev => String(prev) === String(id) ? null : id)
+  }, [])
+
+  const handleUpdateAnnotationSubmit = useCallback(async (annotId, content) => {
+    if (!project?.id) return
+    await updateAnnotation(project.id, annotId, content)
+    await fetchAnnotations()
+  }, [project?.id, fetchAnnotations])
+
+  const handleDeleteAnnotationSubmit = useCallback(async (annotId) => {
+    if (!project?.id) return
+    await deleteAnnotation(project.id, annotId)
+    setSelectedAnnotationId(null)
+    await fetchAnnotations()
+  }, [project?.id, fetchAnnotations])
+
   const handleSelectionChange = useCallback((isSelected) => {
     if (isSelected) {
       // 互斥：划选文本时，自动取消段落选中与段落悬浮工具条
@@ -231,6 +302,7 @@ export function useReaderLogic({
     // 互斥：唤起段落工具条时，自动关闭任意浮动详情卡片
     setSelectedId(null)
     setSelectedManualEditIdx(null)
+    setSelectedAnnotationId(null)
     if (activeIdxRef.current === paraIdx) {
       dismissToolbar()
     } else {
@@ -243,6 +315,7 @@ export function useReaderLogic({
     setActiveIdx(null)
     setSelectedId(null)
     setSelectedManualEditIdx(null)
+    setSelectedAnnotationId(null)
     setEditingIdx(para.idx)
     setEditingText(para.revised_text ?? para.text ?? '')
     setEditingNote('')
@@ -250,16 +323,18 @@ export function useReaderLogic({
   }, [])
 
   const handleSelectError = useCallback((id) => {
-    // 互斥：唤起/切换错词卡片时，自动关闭段落工具条
+    // 互斥：唤起/切换错词卡片时，自动关闭段落工具条与注释卡片
     setActiveIdx(null)
     setSelectedManualEditIdx(null)
+    setSelectedAnnotationId(null)
     setSelectedId(prev => prev === id ? null : id)
   }, [])
 
   const handleSelectObsoleteError = useCallback((id, jumpFn) => {
-    // 互斥：唤起历史作废卡片时，自动关闭段落工具条
+    // 互斥：唤起历史作废卡片时，自动关闭段落工具条与注释卡片
     setActiveIdx(null)
     setSelectedManualEditIdx(null)
+    setSelectedAnnotationId(null)
     setSelectedId(id)
     const err = flatErrors.find(e => e.id === id)
     if (err) {
@@ -268,9 +343,10 @@ export function useReaderLogic({
   }, [flatErrors])
 
   const handleSelectManualEdit = useCallback((idx) => {
-    // 互斥：唤起手修履历卡片时，自动关闭段落工具条
+    // 互斥：唤起手修履历卡片时，自动关闭段落工具条与注释卡片
     setActiveIdx(null)
     setSelectedId(null)
+    setSelectedAnnotationId(null)
     setSelectedManualEditIdx(prev => prev === idx ? null : idx)
   }, [])
 
@@ -620,5 +696,18 @@ export function useReaderLogic({
     allDone,
     selIsPending,
     handleStatus,
+    annotations, setAnnotations,
+    selectedAnnotationId, setSelectedAnnotationId,
+    selectedAnnotation,
+    annotationNumIndex,
+    annotationModalOpen, setAnnotationModalOpen,
+    annotationSelectionData,
+    annotationPanelOpen, setAnnotationPanelOpen,
+    annotationCardElRef,
+    handleOpenAnnotationModal,
+    handleCreateAnnotation,
+    handleSelectAnnotation,
+    handleUpdateAnnotationSubmit,
+    handleDeleteAnnotationSubmit,
   }
 }

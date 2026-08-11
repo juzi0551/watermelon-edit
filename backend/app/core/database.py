@@ -270,6 +270,7 @@ def _migrate_schema(conn):
         "background_setting TEXT",
         "theme_mode TEXT DEFAULT 'system'",
         "style_config_xml TEXT",
+        "is_deleted INTEGER DEFAULT 0",
     ):
         try:
             conn.execute(f"ALTER TABLE projects ADD COLUMN {col}")
@@ -814,6 +815,21 @@ def init_db():
                 updated_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
+            -- 划线注释表
+            CREATE TABLE IF NOT EXISTS annotations (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                paragraph_uuid TEXT,
+                paragraph_idx INTEGER NOT NULL,
+                selected_text TEXT NOT NULL,
+                content TEXT NOT NULL,
+                start_offset INTEGER DEFAULT 0,
+                end_offset INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (document_id) REFERENCES documents(id)
+            );
+
         """)
         _migrate_schema(conn)
 
@@ -930,7 +946,10 @@ def set_project_first_line_indent(project_id: str, enabled: bool) -> str:
 
 def get_project(project_id: str) -> dict | None:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM projects WHERE id = ? AND (is_deleted IS NULL OR is_deleted = 0)",
+            (project_id,)
+        ).fetchone()
         if not row:
             return None
         res = dict(row)
@@ -940,7 +959,9 @@ def get_project(project_id: str) -> dict | None:
 
 def list_projects() -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM projects ORDER BY updated_at DESC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM projects WHERE is_deleted IS NULL OR is_deleted = 0 ORDER BY updated_at DESC"
+        ).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -971,23 +992,15 @@ def toggle_project_lock(project_id: str, is_locked: bool):
 
 
 def delete_project(project_id: str):
+    """项目逻辑删除（Soft Delete）：仅将 is_deleted 标记置为 1。物理数据保留。"""
     with get_conn() as conn:
-        # 项目级关联表（FK 未启用 PRAGMA foreign_keys，需显式清理）
-        conn.execute("DELETE FROM entity_dictionary WHERE project_id = ?", (project_id,))
-        conn.execute("DELETE FROM character_descriptions_history WHERE project_id = ?", (project_id,))
-        conn.execute("DELETE FROM character_relationships WHERE project_id = ?", (project_id,))
-        conn.execute("DELETE FROM plot_events WHERE project_id = ?", (project_id,))
-        conn.execute("DELETE FROM characters WHERE project_id = ?", (project_id,))
-
-        doc_rows = conn.execute("SELECT id FROM documents WHERE project_id = ?", (project_id,)).fetchall()
-        for doc in doc_rows:
-            doc_id = doc["id"]
-            conn.execute("DELETE FROM errors WHERE document_id = ?", (doc_id,))
-            conn.execute("DELETE FROM proofread_results WHERE document_id = ?", (doc_id,))
-            conn.execute("DELETE FROM chapters WHERE document_id = ?", (doc_id,))
-            conn.execute("DELETE FROM paragraphs WHERE document_id = ?", (doc_id,))
-        conn.execute("DELETE FROM documents WHERE project_id = ?", (project_id,))
-        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        row = conn.execute("SELECT is_locked FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if row and row["is_locked"] == 1:
+            raise ValueError("项目已锁定，无法删除")
+        conn.execute(
+            "UPDATE projects SET is_deleted = 1, updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (project_id,),
+        )
 
 
 # ==================== Documents (版本管理) ====================
@@ -3424,6 +3437,70 @@ def update_chat_message_card_status(message_id: str, status: str) -> dict | None
         ctx_str = json.dumps(ctx, ensure_ascii=False)
         conn.execute("UPDATE chat_messages SET context = ? WHERE id = ?", (ctx_str, message_id))
         return {"status": "ok", "message_id": message_id, "card_status": status}
+
+
+def get_annotations(document_id: str) -> list[dict]:
+    """获取指定文档的所有划线注释，按段落 idx 升序及创建时间升序排列。"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM annotations WHERE document_id = ? ORDER BY paragraph_idx ASC, created_at ASC",
+            (document_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_annotation(
+    document_id: str,
+    paragraph_idx: int,
+    selected_text: str,
+    content: str,
+    paragraph_uuid: str | None = None,
+    start_offset: int = 0,
+    end_offset: int = 0,
+) -> dict:
+    """创建新的划线注释。"""
+    annot_id = f"ann_{uuid.uuid4().hex[:12]}"
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO annotations 
+               (id, document_id, paragraph_uuid, paragraph_idx, selected_text, content, start_offset, end_offset, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (annot_id, document_id, paragraph_uuid, paragraph_idx, selected_text, content, start_offset, end_offset, now, now),
+        )
+    return {
+        "id": annot_id,
+        "document_id": document_id,
+        "paragraph_uuid": paragraph_uuid,
+        "paragraph_idx": paragraph_idx,
+        "selected_text": selected_text,
+        "content": content,
+        "start_offset": start_offset,
+        "end_offset": end_offset,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def update_annotation(annotation_id: str, content: str) -> dict | None:
+    """更新已有划线注释的内容。"""
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE annotations SET content = ?, updated_at = ? WHERE id = ?",
+            (content, now, annotation_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM annotations WHERE id = ?", (annotation_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_annotation(annotation_id: str) -> bool:
+    """删除指定划线注释。"""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
+        return cur.rowcount > 0
 
 
 # 启动时初始化表 + 设置缓存
