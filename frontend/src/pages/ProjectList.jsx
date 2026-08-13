@@ -82,7 +82,7 @@ export default function ProjectList() {
     const nextLocked = record.is_locked !== 1
     try {
       await toggleProjectLock(record.id, nextLocked)
-      message.success(nextLocked ? '项目已锁定（已开启防误删）' : '项目已解锁')
+      message.success(nextLocked ? '项目已锁定（已开启项目防误删）' : '项目已解锁')
       load()
     } catch (e) {
       message.error(e.message || '操作失败')

@@ -28,6 +28,7 @@ export function ReviewReaderInner({
   projectError = null, onRetry, onChapterChange,
   selectedParas, onSelectionChange, onStartSelectionProofread,
   onReloadProject,
+  onInsertLocal,
   onStartBatchProofread, batchInfo = null, batchPolling = false, onRetryWindow, retryingWindow = null,
   batchMaxConcurrent = 2, onBatchMaxConcurrentChange,
   proofreadWindowSize = 30, onWindowSizeChange,
@@ -43,6 +44,7 @@ export function ReviewReaderInner({
     project,
     onSetStatus,
     onReloadProject,
+    onInsertLocal,
     onSelectionChange,
     chapters,
     models,
@@ -241,6 +243,7 @@ export function ReviewReaderInner({
             handleToggleMergeSelect={logic.handleToggleMergeSelect}
             handleStartEdit={logic.handleStartEdit}
             editingCaretPos={logic.editingCaretPos}
+            onEditingValueChange={logic.handleEditingValueChange}
             activeIdx={logic.activeIdx}
             toolbarRef={logic.toolbarRef}
             tbFontSize={logic.tbFontSize}

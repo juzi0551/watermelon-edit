@@ -15,6 +15,7 @@ export function useReaderLogic({
   project,
   onSetStatus,
   onReloadProject,
+  onInsertLocal,
   onSelectionChange,
   chapters = [],
   models = [],
@@ -66,6 +67,7 @@ export function useReaderLogic({
   selectedAnnotationIdRef.current = selectedAnnotationId
   const activeIdxRef = useRef(activeIdx)
   activeIdxRef.current = activeIdx
+  const editingDataRef = useRef({ idx: null, text: '', note: '' })
   const autoSelectRef = useRef(false)
   const statusSubmittingRef = useRef(false)
 
@@ -148,6 +150,12 @@ export function useReaderLogic({
   const handleCancelEdit = useCallback(() => {
     setEditingIdx(null)
     setEditingCaretPos(null)
+    editingDataRef.current = { idx: null, text: '', note: '' }
+  }, [])
+
+  // 编辑过程中，段落编辑器实时上报当前文本/备注到 ref，供“点击其他处自动保存”读取
+  const handleEditingValueChange = useCallback((idx, text, note) => {
+    editingDataRef.current = { idx, text, note }
   }, [])
 
   const handleToggleOriginal = useCallback((paraIdx) => {
@@ -173,8 +181,19 @@ export function useReaderLogic({
     const h = el.offsetHeight || 36
     const paraStyle = getComputedStyle(paraEl)
     const padTop = parseFloat(paraStyle.paddingTop) || 0
+    const padBottom = parseFloat(paraStyle.paddingBottom) || 0
     const borderTop = parseFloat(paraStyle.borderTopWidth) || 0
-    el.style.top = `${paraEl.offsetTop + borderTop + padTop - h - 0.5}px`
+    const borderBottom = parseFloat(paraStyle.borderBottomWidth) || 0
+
+    const aboveTop = paraEl.offsetTop + borderTop + padTop - h - 0.5
+    // 若工具条放到段落上方会超出可视区顶部（如第一段被遮挡），则改放段落下方
+    const paraRect = paraEl.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    const roomAbove = paraRect.top - h - 0.5 >= containerRect.top + 4
+    el.style.top = roomAbove
+      ? `${aboveTop}px`
+      : `${paraEl.offsetTop + paraEl.offsetHeight - borderBottom - padBottom + 6}px`
+
     const textDiv = paraEl.querySelector('div:last-child')
     if (textDiv) {
       const indentPx = parseFloat(getComputedStyle(textDiv).textIndent) || 0
@@ -184,7 +203,7 @@ export function useReaderLogic({
 
   useLayoutEffect(() => {
     updateToolbarPos()
-  }, [activeIdx, updateToolbarPos])
+  }, [activeIdx, editingIdx, mergeMode, updateToolbarPos])
 
   useEffect(() => {
     if (propFontSizeOffset !== undefined) {
@@ -320,6 +339,7 @@ export function useReaderLogic({
     setEditingText(para.revised_text ?? para.text ?? '')
     setEditingNote('')
     setEditingCaretPos(caretPos)
+    editingDataRef.current = { idx: para.idx, text: para.revised_text ?? para.text ?? '', note: '' }
   }, [])
 
   const handleSelectError = useCallback((id) => {
@@ -374,6 +394,7 @@ export function useReaderLogic({
       setEditingText('')
       setEditingNote('')
       setEditingCaretPos(null)
+      editingDataRef.current = { idx: null, text: '', note: '' }
       onReloadProject?.()
     } catch (e) {
       message.error(e.message || '更新失败')
@@ -382,12 +403,49 @@ export function useReaderLogic({
     }
   }, [project?.id, sortedParas, onReloadProject])
 
-  const handleDeletePara = useCallback((para) => {
-    if (!project?.id) return
-    if (project?.is_locked === 1) {
-      message.warning('项目已锁定，无法删除段落')
+  // 点击其他段落或页面其它位置时，退出编辑态并自动保存当前段落
+  const handleAutoSave = useCallback((idx, textVal, noteVal) => {
+    const targetPara = sortedParas.find(p => p.idx === idx)
+    editingDataRef.current = { idx: null, text: '', note: '' }
+    if (!targetPara) {
+      setEditingIdx(null)
+      setEditingCaretPos(null)
       return
     }
+    const curText = targetPara.revised_text ?? targetPara.text ?? ''
+    const textChanged = textVal !== curText
+    const noteChanged = !!noteVal?.trim()
+    if (!textChanged && !noteChanged) {
+      setEditingIdx(null)
+      setEditingText('')
+      setEditingNote('')
+      setEditingCaretPos(null)
+      return
+    }
+    handleSaveEdit(idx, textVal, noteVal)
+  }, [sortedParas, handleSaveEdit])
+
+  useEffect(() => {
+    const onDocMouseDown = (e) => {
+      const cur = editingDataRef.current
+      if (cur.idx == null) return
+      let withinEditing = false
+      try {
+        const editingPara = sortedParas.find(p => p.idx === cur.idx)
+        if (editingPara && e.target && e.target.closest) {
+          const key = editingPara.uuid || editingPara.idx
+          withinEditing = !!e.target.closest(`[data-para="${key}"]`)
+        }
+      } catch { /* noop */ }
+      if (withinEditing) return
+      handleAutoSave(cur.idx, cur.text, cur.note)
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [sortedParas, handleAutoSave])
+
+  const handleDeletePara = useCallback((para) => {
+    if (!project?.id) return
     const isBlank = (!para.text || para.text.trim() === '') && (!para.revised_text || para.revised_text.trim() === '')
     if (isBlank) {
       deleteParagraph(project.id, para.idx, para.uuid).then(() => {
@@ -469,13 +527,40 @@ export function useReaderLogic({
     dismissToolbar()
     try {
       const res = await insertParagraph(project.id, targetPara.idx, position, '', targetPara.uuid)
+      if (res?.error) {
+        message.error(res.error)
+        return
+      }
+      if (res?.idx == null) {
+        message.error('插入段落失败，请稍后重试')
+        return
+      }
       message.success(position === 'above' ? '已在上方插入新段落' : '已在下方插入新段落')
-      await onReloadProject?.()
 
-      const targetIdx = res?.idx ?? (position === 'above' ? targetPara.idx : targetPara.idx + 1)
+      // 本地乐观更新：平移段落/错误/章节索引并插入新空段，立即进入编辑态，避免全量重载卡顿与"先显示原文再清空"闪屏
+      const targetIdx = res.idx
+      const newPara = {
+        id: `${targetPara.document_id || ''}:${targetIdx}`,
+        uuid: res.uuid,
+        document_id: targetPara.document_id,
+        idx: targetIdx,
+        text: '',
+        revised_text: null,
+        style_name: targetPara.style_name || 'Normal',
+        char_count: 0,
+        has_page_break_before: 0,
+        page_break_type: 'none',
+        edit_note: null,
+        is_deleted: 0,
+        merged_into_uuid: null,
+        source: 'original',
+      }
+      onInsertLocal?.(newPara, targetIdx)
+
       setEditingIdx(targetIdx)
       setEditingText('')
       setEditingNote('')
+      editingDataRef.current = { idx: targetIdx, text: '', note: '' }
 
       setTimeout(() => {
         const container = flowRef.current
@@ -493,7 +578,7 @@ export function useReaderLogic({
     } catch (e) {
       message.error(e.message || '插入段落失败')
     }
-  }, [project?.id, dismissToolbar, onReloadProject])
+  }, [project?.id, dismissToolbar, onInsertLocal])
 
   const handleEnterMergeMode = useCallback((startPara) => {
     setMergeMode(true)
@@ -684,6 +769,7 @@ export function useReaderLogic({
     handleSelectObsoleteError,
     handleSelectManualEdit,
     handleSaveEdit,
+    handleEditingValueChange,
     handleDeletePara,
     handleTogglePageBreak,
     handleSetChapter,

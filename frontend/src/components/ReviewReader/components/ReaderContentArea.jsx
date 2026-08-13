@@ -37,6 +37,7 @@ export function ReaderContentArea({
   handleToggleMergeSelect,
   handleStartEdit,
   editingCaretPos,
+  onEditingValueChange,
   activeIdx,
   toolbarRef,
   tbFontSize,
@@ -125,7 +126,7 @@ export function ReaderContentArea({
 
             return (
               <ParaRow
-                key={para.idx}
+                key={para.uuid || para.idx}
                 para={para}
                 paraErrs={paraErrs}
                 isCh={isCh}
@@ -160,6 +161,7 @@ export function ReaderContentArea({
                 onMergeToggle={handleToggleMergeSelect}
                 onStartEdit={handleStartEdit}
                 editingCaretPos={editingCaretPos}
+                onEditingValueChange={onEditingValueChange}
                 annotations={annotations}
                 selectedAnnotationId={selectedAnnotationId}
                 onSelectAnnotation={onSelectAnnotation}

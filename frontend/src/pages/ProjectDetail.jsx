@@ -282,6 +282,27 @@ export default function ProjectDetail() {
     } catch { }
   }
 
+  // 插入段落成功后的本地乐观更新：平移段落/错误/章节索引并插入新空段，避免全量重载造成卡顿与内容闪屏
+  const handleInsertLocal = useCallback((newPara, insertIdx) => {
+    setResults(prev => {
+      if (!prev || !Array.isArray(prev.paragraphs)) return prev
+      const paragraphs = prev.paragraphs.map(p => (p.idx >= insertIdx ? { ...p, idx: p.idx + 1 } : p))
+      paragraphs.push(newPara)
+      paragraphs.sort((a, b) => a.idx - b.idx)
+      const errors = (prev.errors || []).map(e =>
+        (e.paragraph_index != null && e.paragraph_index >= insertIdx) ? { ...e, paragraph_index: e.paragraph_index + 1 } : e,
+      )
+      const chapters = (prev.chapters || []).map(c => ({
+        ...c,
+        title_paragraph_idx: (c.title_paragraph_idx != null && c.title_paragraph_idx >= insertIdx) ? c.title_paragraph_idx + 1 : c.title_paragraph_idx,
+        start_idx: c.start_idx >= insertIdx ? c.start_idx + 1 : c.start_idx,
+        end_idx: c.end_idx >= insertIdx ? c.end_idx + 1 : c.end_idx,
+      }))
+      return { ...prev, paragraphs, errors, chapters }
+    })
+    setProject(prev => (prev ? { ...prev, paragraph_count: (prev.paragraph_count || 0) + 1 } : prev))
+  }, [])
+
   const loadModels = async () => {
     try {
       const data = await getModels()
@@ -679,7 +700,7 @@ export default function ProjectDetail() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', position: 'relative' }}>
             <Space wrap style={{ flexShrink: 0 }}>
               <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} />
-              <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目/段落防误删）' : '锁定项目（开启项目/段落防误删）'}>
+              <Tooltip title={project?.is_locked === 1 ? '解开锁定（解除项目防误删）' : '锁定项目（开启项目防误删）'}>
                 <Button
                   type={project?.is_locked === 1 ? 'primary' : 'text'}
                   danger={project?.is_locked === 1}
@@ -691,7 +712,7 @@ export default function ProjectDetail() {
                     const nextState = project.is_locked !== 1
                     try {
                       await toggleProjectLock(project.id, nextState)
-                      message.success(nextState ? '项目已锁定（已防误删）' : '项目已解锁')
+                      message.success(nextState ? '项目已锁定（已开启项目防误删）' : '项目已解锁')
                       loadProject()
                     } catch (e) {
                       message.error(e.message || '操作失败')
@@ -856,7 +877,7 @@ export default function ProjectDetail() {
                   hoverable
                   size="small"
                   onClick={() => {
-                    if (project?.is_locked === 1 || inProgress || cleaningEmpty) return
+                    if (inProgress || cleaningEmpty) return
                     setToolsOpen(false)
                     Modal.confirm({
                       title: '确定清理所有空白段落？',
@@ -870,8 +891,8 @@ export default function ProjectDetail() {
                     background: color.bgCard,
                     borderColor: color.borderBar,
                     borderRadius: 8,
-                    cursor: (project?.is_locked === 1 || inProgress) ? 'not-allowed' : 'pointer',
-                    opacity: (project?.is_locked === 1 || inProgress) ? 0.4 : 1,
+                    cursor: inProgress ? 'not-allowed' : 'pointer',
+                    opacity: inProgress ? 0.4 : 1,
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -1041,6 +1062,7 @@ export default function ProjectDetail() {
                   selectedParas={selectedParas}
                   onSelectionChange={setSelectedParas}
                   onReloadProject={loadProject}
+                  onInsertLocal={handleInsertLocal}
                   onStartSelectionProofread={handleSelectionProofread}
                   onStartBatchProofread={handleBatchProofread}
                   batchInfo={batchInfo}

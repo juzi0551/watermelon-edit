@@ -292,10 +292,6 @@ async def api_update_paragraph_notes(project_id: str, idx: str, body: ParagraphN
 @router.delete("/projects/{project_id}/paragraphs/{idx}")
 async def api_delete_paragraph(project_id: str, idx: str, paragraph_uuid: str | None = None):
     """删除段落，平移后续段落 idx。"""
-    project = get_project(project_id)
-    if project and project.get("is_locked") == 1:
-        return {"error": "项目已锁定，无法删除段落"}
-
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
@@ -317,10 +313,6 @@ async def api_delete_paragraph(project_id: str, idx: str, paragraph_uuid: str | 
 @router.post("/projects/{project_id}/paragraphs/{idx}/insert")
 async def api_insert_paragraph(project_id: str, idx: str, body: ParagraphInsertBody):
     """在该段落上方或下方插入新段落（支持 idx 或 uuid）。"""
-    project = get_project(project_id)
-    if project and project.get("is_locked") == 1:
-        return {"error": "项目已锁定，无法插入段落"}
-
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
@@ -333,10 +325,6 @@ async def api_insert_paragraph(project_id: str, idx: str, body: ParagraphInsertB
 @router.post("/projects/{project_id}/paragraphs/{idx}/merge")
 async def api_merge_paragraphs(project_id: str, idx: str, body: ParagraphMergeBody):
     """合并该段落与相邻段落（支持 idx 或 uuid）。"""
-    project = get_project(project_id)
-    if project and project.get("is_locked") == 1:
-        return {"error": "项目已锁定，无法合并段落"}
-
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}
@@ -350,10 +338,6 @@ async def api_merge_paragraphs(project_id: str, idx: str, body: ParagraphMergeBo
 @router.post("/projects/{project_id}/paragraphs/merge_batch")
 async def api_merge_multiple_paragraphs(project_id: str, body: ParagraphMergeBatchBody):
     """批量合并选定的多段连续段落。"""
-    project = get_project(project_id)
-    if project and project.get("is_locked") == 1:
-        return {"error": "项目已锁定，无法合并段落"}
-
     doc = get_current_document(project_id)
     if not doc:
         return {"error": "项目无文档"}

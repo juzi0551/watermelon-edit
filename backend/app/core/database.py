@@ -1432,8 +1432,6 @@ def insert_paragraph_and_reorder(
             "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
             (document_id,),
         ).fetchone()
-        if proj and proj["is_locked"] == 1:
-            raise ValueError("项目已锁定，禁止插入段落")
         project_id = proj["project_id"] if proj else None
 
         all_paras = conn.execute(
@@ -1454,34 +1452,19 @@ def insert_paragraph_and_reorder(
             insert_idx = target_idx if position == "above" else target_idx + 1
 
         # 1. 倒序平移所有 idx >= insert_idx 的段落 (idx -> idx + 1)
+        # 用 UPDATE 只改 id+idx 而非 DELETE+INSERT 整行，大幅减少大文档下的语句数与写入量；
+        # 倒序处理保证每次更新目标 id/idx 槽位为空，避免 UNIQUE(document_id, idx) 冲突。
         rows_to_shift = conn.execute(
-            "SELECT idx, uuid, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note FROM paragraphs WHERE document_id = ? AND idx >= ? ORDER BY idx DESC",
+            "SELECT idx FROM paragraphs WHERE document_id = ? AND idx >= ? ORDER BY idx DESC",
             (document_id, insert_idx),
         ).fetchall()
 
         for r in rows_to_shift:
             old_idx = r["idx"]
             new_idx = old_idx + 1
-            old_id = f"{document_id}:{old_idx}"
-            new_id = f"{document_id}:{new_idx}"
-            conn.execute("DELETE FROM paragraphs WHERE id = ?", (old_id,))
             conn.execute(
-                """INSERT INTO paragraphs
-                   (id, uuid, document_id, idx, text, revised_text, style_name, char_count, has_page_break_before, page_break_type, edit_note)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    new_id,
-                    r["uuid"],
-                    document_id,
-                    new_idx,
-                    r["text"],
-                    r["revised_text"],
-                    r["style_name"],
-                    r["char_count"],
-                    r["has_page_break_before"],
-                    r["page_break_type"],
-                    r["edit_note"],
-                ),
+                "UPDATE paragraphs SET idx = ?, id = ? WHERE document_id = ? AND idx = ?",
+                (new_idx, f"{document_id}:{new_idx}", document_id, old_idx),
             )
 
         # 2. 插入新段落 (继承目标段落 style_name)
@@ -1562,8 +1545,6 @@ def merge_paragraphs(
             "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
             (document_id,),
         ).fetchone()
-        if proj and proj["is_locked"] == 1:
-            raise ValueError("项目已锁定，禁止合并段落")
         project_id = proj["project_id"] if proj else None
 
         target_idx, target_uuid = _resolve_para_target(conn, document_id, target_idx_or_uuid)
@@ -1728,8 +1709,6 @@ def merge_multiple_paragraphs(
             "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
             (document_id,),
         ).fetchone()
-        if proj and proj["is_locked"] == 1:
-            raise ValueError("项目已锁定，禁止合并段落")
         project_id = proj["project_id"] if proj else None
 
         resolved_paras = []
@@ -1921,8 +1900,6 @@ def clean_empty_paragraphs(document_id: str) -> int:
             "SELECT p.is_locked, d.project_id FROM projects p JOIN documents d ON p.id = d.project_id WHERE d.id = ?",
             (document_id,)
         ).fetchone()
-        if proj and proj["is_locked"] == 1:
-            raise ValueError("项目已锁定，禁止清理段落")
         project_id = proj["project_id"] if proj else None
 
         all_paras = conn.execute(

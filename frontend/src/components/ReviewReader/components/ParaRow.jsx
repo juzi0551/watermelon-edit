@@ -54,6 +54,7 @@ export const ParaRow = React.memo(function ParaRow({
   onMergeToggle,
   onStartEdit,
   editingCaretPos,
+  onEditingValueChange,
   annotations,
   selectedAnnotationId,
   onSelectAnnotation,
@@ -88,6 +89,11 @@ export const ParaRow = React.memo(function ParaRow({
       setLocalNote(editingNote || '')
     }
   }, [isEditing, editingText, editingNote, para.revised_text, para.text])
+
+  // 编辑中实时上报当前输入值，供点击其他处时自动保存
+  useEffect(() => {
+    if (isEditing) onEditingValueChange?.(para.idx, localText, localNote)
+  }, [isEditing, localText, localNote, para.idx, onEditingValueChange])
 
   const isFlashing = Boolean(flashingParaIdx != null && (flashingParaIdx === para.idx || (para.uuid && flashingParaIdx === para.uuid)))
 
