@@ -3,6 +3,7 @@ import { Input, Button, Tag, Space, Popconfirm, Tooltip } from 'antd'
 import { color, radius, fontSize } from '../../../design-tokens'
 import { parseEditNotes } from '../utils/readerUtils'
 import { ParagraphView } from './ParagraphView'
+import { TipTapParaEditor } from './TipTapParaEditor'
 
 function getCaretOffsetFromPoint(x, y) {
   try {
@@ -57,37 +58,55 @@ export const ParaRow = React.memo(function ParaRow({
   annotations,
   selectedAnnotationId,
   onSelectAnnotation,
+  isWritingMode = false,
+  onSplitAndInsert,
+  onMergeWithPrev,
 }) {
   const hasManualEdit = Boolean(para.revised_text && para.revised_text !== para.text)
-  const showOriginal = (showAllOriginals || showOriginalThis) && hasManualEdit
+  const showOriginal = !isWritingMode && (showAllOriginals || showOriginalThis) && hasManualEdit
   const activeParaText = para.revised_text ?? para.text
+
   const isBlank = !activeParaText || activeParaText.trim() === ''
 
   const [localText, setLocalText] = useState('')
   const [localNote, setLocalNote] = useState('')
   const textareaRef = useRef(null)
   const caretSetRef = useRef(false)
+  const autoSaveTimerRef = useRef(null)
+
+  const effectiveEditing = isWritingMode || isEditing
 
   useEffect(() => {
-    if (!isEditing) caretSetRef.current = false
-  }, [isEditing])
+    if (!effectiveEditing) caretSetRef.current = false
+  }, [effectiveEditing])
 
   useLayoutEffect(() => {
-    if (!isEditing || editingCaretPos == null || caretSetRef.current || !textareaRef.current || !localText) return
+    if (!effectiveEditing || editingCaretPos == null || caretSetRef.current || !textareaRef.current || localText === undefined) return
     const native = textareaRef.current.resizableTextArea?.textArea ?? textareaRef.current
     try {
       native.setSelectionRange(editingCaretPos, editingCaretPos)
       native.focus()
       caretSetRef.current = true
     } catch { /* noop */ }
-  }, [isEditing, editingCaretPos, localText])
+  }, [effectiveEditing, editingCaretPos, localText])
 
   useEffect(() => {
-    if (isEditing) {
+    if (effectiveEditing) {
       setLocalText(editingText || para.revised_text || para.text || '')
       setLocalNote(editingNote || '')
     }
-  }, [isEditing, editingText, editingNote, para.revised_text, para.text])
+  }, [effectiveEditing, editingText, editingNote, para.revised_text, para.text])
+
+  // 撰写模式：打字 1.5 秒静默防抖自动保存 (Silent Auto-Save)
+  const handleLocalTextChangeWithDebounce = (val) => {
+    setLocalText(val)
+    if (isWritingMode) {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = setTimeout(() => {
+        onSaveEdit?.(para.idx, val, null, true)
+      }, 1500)
+    }
+  }
 
   const isFlashing = Boolean(flashingParaIdx != null && (flashingParaIdx === para.idx || (para.uuid && flashingParaIdx === para.uuid)))
 
@@ -168,22 +187,22 @@ export const ParaRow = React.memo(function ParaRow({
         }}
         style={{
           scrollMarginTop: 60,
-          marginBottom: 16,
+          marginBottom: isWritingMode ? 14 : 16,
           display: 'flex',
           gap: 6,
           position: 'relative',
-          padding: '6px 10px',
+          padding: isWritingMode ? '4px 8px' : '6px 10px',
           borderRadius: 6,
           transition: 'background 0.3s ease-out, box-shadow 0.3s ease-out, border-left 0.15s ease',
           contentVisibility: 'auto',
           containIntrinsicSize: '0 48px',
-          cursor: mergeMode ? 'pointer' : 'default',
+          cursor: mergeMode || isWritingMode ? 'text' : 'default',
           background: isMergeChecked
             ? 'rgba(19, 194, 194, 0.14)'
             : isFlashing
               ? 'rgba(250, 173, 20, 0.28)'
               : isActive
-                ? 'rgba(19, 194, 194, 0.09)'
+                ? (isWritingMode ? 'rgba(212, 163, 89, 0.08)' : 'rgba(19, 194, 194, 0.09)')
                 : isCh
                   ? 'rgba(212, 163, 89, 0.04)'
                   : 'transparent',
@@ -195,36 +214,28 @@ export const ParaRow = React.memo(function ParaRow({
             : isFlashing
               ? '4px solid #faad14'
               : isActive
-                ? '4px solid #13c2c2'
+                ? (isWritingMode ? '4px solid #d4a359' : '4px solid #13c2c2')
                 : isCh
                   ? '4px solid #ffe58f'
                   : '4px solid transparent',
         }}
       >
         <span
-          title="点击唤起该段落工具条"
-          onClick={(e) => {
-            if (!mergeMode) {
-              try { window.getSelection()?.removeAllRanges() } catch {}
-            }
-          }}
+          title="段落编号"
           style={{
             color: para?.revised_text ? color.success : color.textTertiary,
             fontWeight: para?.revised_text ? 600 : 400,
             fontVariantNumeric: 'tabular-nums',
-            display: 'inline-block',
+            display: isWritingMode ? 'none' : 'inline-block',
             fontSize: fontSize.bodyXs,
             flexShrink: 0,
             lineHeight: 1.9,
             minWidth: 24,
             textAlign: 'left',
             userSelect: 'none',
-            cursor: 'pointer',
             borderRadius: 3,
             transition: 'color 0.15s',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-primary, #13c2c2)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = para?.revised_text ? color.success : color.textTertiary }}
         >
           {para.idx + 1}
         </span>
@@ -236,78 +247,81 @@ export const ParaRow = React.memo(function ParaRow({
           color: color.textPrimary,
           textIndent: (firstLineIndentEnabled && !isCh) ? '2em' : '0',
         }}>
-          {isEditing ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0' }}>
-              <Input.TextArea
-                ref={textareaRef}
-                autoFocus
-                value={localText}
-                onChange={e => setLocalText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault()
-                    onCancelEdit()
-                  } else if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    onSaveEdit(para.idx, localText, localNote)
-                  }
-                }}
-                autoSize={{ minRows: 2, maxRows: 10 }}
-                style={{ fontSize: currentBodyFontSize, borderRadius: 6 }}
-                placeholder="编辑段落文本..."
+          {effectiveEditing ? (
+            isWritingMode ? (
+              <TipTapParaEditor
+                para={para}
+                initialContent={localText}
+                onContentChange={handleLocalTextChangeWithDebounce}
+                onSplitAndInsert={onSplitAndInsert}
+                onMergeWithPrev={onMergeWithPrev}
+                currentBodyFontSize={currentBodyFontSize}
+                isCh={isCh}
+                chapterObj={chapterObj}
+                isEditing={isEditing}
+                editingCaretPos={editingCaretPos}
               />
-              <Input
-                value={localNote}
-                onChange={e => setLocalNote(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault()
-                    onCancelEdit()
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault()
-                    onSaveEdit(para.idx, localText, localNote)
-                  }
-                }}
-                placeholder="可选：追加本次修改原因备注（例如：第2次修改：修正错词）"
-                size="middle"
-                style={{ borderRadius: 6 }}
-              />
-              {(() => {
-                const existingNotes = parseEditNotes(para.edit_note)
-                if (existingNotes.length === 0) return null
-                return (
-                  <div style={{ background: '#f5f7fa', padding: '8px 10px', borderRadius: 6, fontSize: 12, border: `1px solid ${color.border}` }}>
-                    <div style={{ color: color.textSecondary, fontWeight: 600, marginBottom: 4 }}>
-                      📜 历史修改原因履历 ({existingNotes.length}条)：
-                    </div>
-                    {existingNotes.map((item, idx) => (
-                      <div key={item.id || idx} style={{ color: color.textPrimary, marginBottom: 3, display: 'flex', justifyContent: 'space-between' }}>
-                        <span>• {item.note}</span>
-                        <span style={{ color: color.textTertiary, fontSize: 11 }}>📅 {item.created_at}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 2 }}>
-                <Button
+
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 0 }}>
+                <Input.TextArea
+                  ref={textareaRef}
+                  autoFocus
+                  value={localText}
+                  onChange={e => handleLocalTextChangeWithDebounce(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      onCancelEdit()
+                    } else if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      onSaveEdit(para.idx, localText, localNote)
+                    }
+                  }}
+                  autoSize={{ minRows: 1, maxRows: 16 }}
+                  style={{
+                    fontSize: currentBodyFontSize,
+                    borderRadius: 6,
+                    lineHeight: 1.9,
+                  }}
+                  placeholder="编辑段落文本..."
+                />
+                <Input
+                  value={localNote}
+                  onChange={e => setLocalNote(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      onCancelEdit()
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault()
+                      onSaveEdit(para.idx, localText, localNote)
+                    }
+                  }}
+                  placeholder="可选：追加本次修改原因备注（例如：第2次修改：修正错词）"
                   size="middle"
-                  onClick={onCancelEdit}
-                  style={{ paddingInline: 16 }}
-                >
-                  取消 (Esc)
-                </Button>
-                <Button
-                  type="primary"
-                  size="middle"
-                  loading={savingPara}
-                  onClick={() => onSaveEdit(para.idx, localText, localNote)}
-                  style={{ paddingInline: 20, fontWeight: 500 }}
-                >
-                  保存 (Enter)
-                </Button>
+                  style={{ borderRadius: 6 }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 2 }}>
+                  <Button
+                    size="middle"
+                    onClick={onCancelEdit}
+                    style={{ paddingInline: 16 }}
+                  >
+                    取消 (Esc)
+                  </Button>
+                  <Button
+                    type="primary"
+                    size="middle"
+                    loading={savingPara}
+                    onClick={() => onSaveEdit(para.idx, localText, localNote)}
+                    style={{ paddingInline: 20, fontWeight: 500 }}
+                  >
+                    保存 (Enter)
+                  </Button>
+                </div>
               </div>
-            </div>
+            )
           ) : (
             <div
               onDoubleClick={(e) => {

@@ -11,7 +11,7 @@ dotenv.load_dotenv(ENV_FILE_PATH)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from app.api import upload, proofread, results, apply, export, models, projects, settings, debug, chat, auth, annotations
+from app.api import upload, proofread, results, apply, export, models, projects, settings, debug, chat, auth, annotations, writing
 from app.utils.helpers import ensure_dirs
 import app.core.database as db_mod
 
@@ -79,6 +79,8 @@ app.include_router(models.router, prefix="/api", tags=["models"], dependencies=a
 app.include_router(debug.router, prefix="/api", tags=["debug"], dependencies=auth_dep)
 app.include_router(chat.router, prefix="/api", tags=["chat"], dependencies=auth_dep)
 app.include_router(annotations.router, prefix="/api", tags=["annotations"], dependencies=auth_dep)
+app.include_router(writing.router, prefix="/api", tags=["writing"], dependencies=auth_dep)
+
 
 
 @app.get("/api/health")

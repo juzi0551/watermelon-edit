@@ -239,9 +239,10 @@ class TestParagraphLifecycle(unittest.TestCase):
 
         with get_conn() as conn:
             ver = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()["value"]
-            self.assertEqual(ver, "15")
+            self.assertTrue(int(ver) >= 16)
 
             # 验证旧数据保留无损
+
             row = conn.execute("SELECT * FROM paragraphs WHERE id = 'doc_v12:0'").fetchone()
             self.assertIsNotNone(row)
             self.assertEqual(row["text"], "旧版段落内容0")

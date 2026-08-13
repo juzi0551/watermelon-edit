@@ -68,6 +68,12 @@ export async function createProject(name) {
   return data
 }
 
+export async function createBlankProject(payload) {
+  const { data } = await api.post('/projects/create-blank', payload)
+  return data
+}
+
+
 export async function getProject(projectId) {
   const { data } = await api.get(`/projects/${projectId}`)
   return data
@@ -448,4 +454,58 @@ export async function deleteAnnotation(projectId, annotationId) {
   const { data } = await api.delete(`/projects/${projectId}/annotations/${annotationId}`)
   return data
 }
+
+// ==================== Writing Mode AI Engine ====================
+
+export async function generateOpening(projectId, modelId = null) {
+  const params = modelId ? { model_id: modelId } : {}
+  const { data } = await api.post(`/projects/${projectId}/writing/generate-opening`, null, { params })
+  return data
+}
+
+export async function expandSceneBeats(projectId, { sceneBeats, chapterTitle = '第一章', modelId = null }) {
+  const { data } = await api.post(`/projects/${projectId}/writing/scene-beats/expand`, {
+    scene_beats: sceneBeats,
+    chapter_title: chapterTitle,
+    model_id: modelId,
+  })
+  return data
+}
+
+export async function expandSensoryDetails(projectId, { text, sensoryMode = 'all', modelId = null }) {
+  const { data } = await api.post(`/projects/${projectId}/writing/sensory-expand`, {
+    text,
+    sensory_mode: sensoryMode,
+    model_id: modelId,
+  })
+  return data
+}
+
+export async function tabAutocomplete(projectId, { precedingText, modelId = null }) {
+  const { data } = await api.post(`/projects/${projectId}/writing/tab-complete`, {
+    preceding_text: precedingText,
+    model_id: modelId,
+  })
+  return data
+}
+
+export async function runCharacterPipeline(projectId, { fromIdx = 0, toIdx = null, modelId = null } = {}) {
+  const { data } = await api.post(`/projects/${projectId}/writing/run-character-pipeline`, {
+    from_idx: fromIdx,
+    to_idx: toIdx,
+    model_id: modelId,
+  })
+  return data
+}
+
+export async function rewriteText(projectId, { text, modelId = null }) {
+  const { data } = await api.post(`/projects/${projectId}/writing/rewrite`, {
+    text,
+    model_id: modelId,
+  })
+  return data
+}
+
+
+
 

@@ -325,20 +325,33 @@ def list_providers_status() -> list[dict]:
 
 
 def list_models() -> list[dict]:
-    """返回所有可选模型（供校对时选择）。"""
+    """列出所有预设及配置了 Key 的可用模型，带有详细参数与分类标示。"""
+    res = []
     all_p = get_all_providers()
-    out = []
     for pid, p in all_p.items():
-        for m in p["models"]:
-            out.append({
-                "model_id": m["id"],
-                "name": m["name"],
-                "provider": pid,
-                "provider_name": p["name"],
-                "deprecated": m.get("deprecated", False),
-                "is_custom": m.get("is_custom", False),
-            })
-    return out
+        for m in p.get("models", []):
+            if m.get("enabled", True):
+                res.append({
+                    "model_id": m["id"],
+                    "name": m.get("name", m["id"]),
+                    "provider": pid,
+                    "provider_name": p.get("name", ""),
+                    "is_custom": p.get("is_custom", False) or m.get("is_custom", False),
+                })
+    return res
+
+
+
+def get_default_model_id() -> str:
+    """获取系统默认可用的 Model ID。优先选择已配置 API Key 的模型。"""
+    models = list_models()
+    if models:
+        for m in models:
+            if get_api_key(m["model_id"]):
+                return m["model_id"]
+        return models[0]["model_id"]
+    return "deepseek-chat"
+
 
 
 # ---------- 自定义服务商 & 模型管理 ----------

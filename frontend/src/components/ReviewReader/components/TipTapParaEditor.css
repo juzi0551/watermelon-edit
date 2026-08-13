@@ -1,0 +1,53 @@
+.tiptap-para-wrapper {
+  position: relative;
+  width: 100%;
+  border: none;
+  outline: none;
+}
+
+.tiptap-novel-editor {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent;
+  color: #262626;
+  min-height: 28px;
+  cursor: text;
+}
+
+.tiptap-novel-editor p {
+  margin: 0;
+  padding: 0;
+  line-height: 1.9;
+}
+
+.tiptap-novel-editor h1,
+.tiptap-novel-editor h2,
+.tiptap-novel-editor h3,
+.tiptap-novel-editor h4 {
+  margin: 12px 0 8px 0;
+  font-weight: 700;
+  color: #8c5813;
+  line-height: 1.5;
+}
+
+.tiptap-novel-editor h1 {
+  font-size: 1.6em;
+  border-bottom: 2px solid #ffe58f;
+  padding-bottom: 6px;
+}
+
+.tiptap-novel-editor h2 {
+  font-size: 1.4em;
+}
+
+.tiptap-novel-editor h3 {
+  font-size: 1.25em;
+}
+
+.is-chapter-para {
+  background: rgba(212, 163, 89, 0.06);
+  padding: 6px 12px;
+  border-radius: 8px;
+  border-left: 4px solid #d4a359;
+}

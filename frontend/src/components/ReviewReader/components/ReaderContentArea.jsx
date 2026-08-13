@@ -49,7 +49,12 @@ export function ReaderContentArea({
   annotations,
   selectedAnnotationId,
   onSelectAnnotation,
+  onSplitAndInsert,
+  onMergeWithPrev,
 }) {
+
+  const isWritingMode = project?.mode === 'writing'
+
   return (
     <div
       ref={contentRef}
@@ -89,7 +94,7 @@ export function ReaderContentArea({
           left: 0,
           right: 0,
           height: 12,
-          background: `linear-gradient(to top, ${color.bgPage} 0%, rgba(255, 255, 255, 0) 100%)`,
+          background: `linear-gradient(to top, ${isWritingMode ? '#fdfbf7' : color.bgPage} 0%, rgba(255, 255, 255, 0) 100%)`,
           pointerEvents: 'none',
           zIndex: 10,
           borderRadius: `0 0 ${radius.md}px ${radius.md}px`,
@@ -102,17 +107,20 @@ export function ReaderContentArea({
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
-          padding: '12px 24px 72px 24px',
-          background: color.bgReader,
+          padding: '16px 32px 72px 32px',
+          background: isWritingMode ? '#fdfbf7' : color.bgReader,
           borderLeft: '1px solid var(--color-borderStrong, #d9d9d9)',
           borderRight: '1px solid var(--color-borderStrong, #d9d9d9)',
           borderRadius: 0,
           position: 'relative',
+          transition: 'background 0.3s ease',
         }}
       >
         <div style={{ position: 'relative', width: '100%' }}>
           {sortedParas.map(para => {
-            const paraErrs = errorsByParaIdx.get(para.uuid) || errorsByParaIdx.get(para.idx) || EMPTY_ARRAY
+            const rawErrs = errorsByParaIdx.get(para.uuid) || errorsByParaIdx.get(para.idx) || EMPTY_ARRAY
+            const paraErrs = isWritingMode ? EMPTY_ARRAY : rawErrs
+
             const chapterObj = chaptersByParaIdx.get(para.uuid) || chaptersByParaIdx.get(para.idx)
             const isCh = Boolean(chapterObj)
             const isEditing = editingIdx === para.idx
@@ -163,9 +171,13 @@ export function ReaderContentArea({
                 annotations={annotations}
                 selectedAnnotationId={selectedAnnotationId}
                 onSelectAnnotation={onSelectAnnotation}
+                isWritingMode={isWritingMode}
+                onSplitAndInsert={onSplitAndInsert}
+                onMergeWithPrev={onMergeWithPrev}
               />
             )
           })}
+
 
           {activeIdx !== null && !mergeMode && editingIdx === null && (() => {
             const activePara = sortedParas.find(p => p.idx === activeIdx)

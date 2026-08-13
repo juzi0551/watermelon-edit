@@ -3,10 +3,11 @@ import { Button, Tag, Space, Input, Popover, Progress, Tooltip, Select, InputNum
 import {
   CheckCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, LoadingOutlined,
   MinusOutlined, PlusOutlined, DownloadOutlined, ToolOutlined, SettingOutlined,
-  PrinterOutlined, CommentOutlined, DownOutlined
+  PrinterOutlined, CommentOutlined, DownOutlined, CompassOutlined, EditOutlined
 } from '@ant-design/icons'
 import { color, radius, fontSize } from '../../../design-tokens'
 import { kbdStyle, TYPE_OPTIONS } from '../constants'
+import { ExportModal } from './ExportModal'
 
 export function ShortcutHint() {
   return (
@@ -109,7 +110,6 @@ export function ControlsRow({
   )
 }
 
-import { ExportModal } from './ExportModal'
 
 export function ActionBar({
   mergeMode,
@@ -147,6 +147,10 @@ export function ActionBar({
   onExport,
   exporting,
   onOpenTools,
+  onOpenStoryProfile,
+  onOpenSceneBeats,
+  onTabAutocomplete,
+  isWritingMode,
   tbFontSize,
 }) {
   const [exportModalOpen, setExportModalOpen] = React.useState(false)
@@ -172,6 +176,7 @@ export function ActionBar({
   return (
     <div style={barStyle}>
       <div style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '0 16px', gap: 12 }}>
+
         {mergeMode ? (
           <>
             <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -199,7 +204,105 @@ export function ActionBar({
               </Button>
             </div>
           </>
+        ) : isWritingMode ? (
+          /* ✍️ 撰写模式专属 Toolbar */
+          <>
+            <Tooltip title="作品设定与 AI 系统提示词 (文风指导)">
+              <Button
+                shape="round"
+                size="large"
+                className="bar-action-btn"
+                icon={<CompassOutlined style={{ color: '#d4a359' }} />}
+                onClick={onOpenStoryProfile}
+                style={{ height: 44, paddingInline: 18, fontSize: 14, fontWeight: 600, borderColor: '#d4a359', color: '#8c5813', background: '#fcf8f2' }}
+              >
+                设定/提示词
+              </Button>
+            </Tooltip>
+
+            <Tooltip title="本章场景节拍扩写与开篇 5 章大纲推演">
+              <Button
+                shape="round"
+                size="large"
+                className="bar-action-btn"
+                icon={<ThunderboltOutlined style={{ color: '#722ed1' }} />}
+                onClick={onOpenSceneBeats}
+                style={{ height: 44, paddingInline: 18, fontSize: 14, fontWeight: 600, borderColor: '#722ed1', color: '#722ed1', background: '#f9f0ff' }}
+              >
+                场景节拍
+              </Button>
+            </Tooltip>
+
+            <Tooltip title="根据上文自动快捷续写 (Tab 自动连写)">
+              <Button
+                type="primary"
+                shape="round"
+                size="large"
+                className="bar-action-btn"
+                icon={<EditOutlined />}
+                onClick={onTabAutocomplete}
+                style={{
+                  height: 48,
+                  paddingInline: 24,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #722ed1 0%, #1890ff 100%)',
+                  borderColor: 'transparent',
+                  boxShadow: '0 4px 14px rgba(114, 46, 209, 0.3)',
+                }}
+              >
+                快捷续写 ✍️
+              </Button>
+            </Tooltip>
+
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12 }}>
+              <Tag color="gold" style={{ fontSize: 13, padding: '4px 12px', borderRadius: 12, fontWeight: 600, margin: 0 }}>
+                ✍️ 专注沉浸撰写中
+              </Tag>
+            </div>
+
+            <Tooltip title="快速辅助工具">
+              <Button
+                shape="circle"
+                size="large"
+                className="bar-action-btn"
+                icon={<ToolOutlined />}
+                onClick={onOpenTools}
+                style={{ height: 44, width: 44, fontSize: 18 }}
+              />
+            </Tooltip>
+
+            <Button
+              type="primary"
+              shape="round"
+              size="large"
+              className="bar-action-btn"
+              icon={<DownloadOutlined style={{ fontSize: 18 }} />}
+              loading={exporting}
+              onClick={() => setExportModalOpen(true)}
+              style={{
+                height: 46,
+                paddingInline: 22,
+                fontSize: 15,
+                fontWeight: 600,
+                backgroundColor: '#d4a359',
+                borderColor: '#d4a359',
+                color: '#ffffff',
+                boxShadow: '0 4px 12px rgba(212, 163, 89, 0.3)',
+              }}
+            >
+              导出正文
+            </Button>
+
+            <ExportModal
+              open={exportModalOpen}
+              onCancel={() => setExportModalOpen(false)}
+              onExport={onExport}
+              exporting={exporting}
+            />
+          </>
         ) : (
+          /* 🔍 校对模式专属 Toolbar */
           <>
             {!(inProgress || proofreading) && (
               <Popover
@@ -240,7 +343,7 @@ export function ActionBar({
                 className="bar-action-btn"
                 icon={<ToolOutlined />}
                 onClick={onOpenTools}
-                style={{ height: 44, width: 44, fontSize: 18, marginLeft: 8 }}
+                style={{ height: 44, width: 44, fontSize: 18, marginLeft: 4 }}
               />
             </Tooltip>
 
@@ -446,4 +549,5 @@ export function ActionBar({
     </div>
   )
 }
+
 

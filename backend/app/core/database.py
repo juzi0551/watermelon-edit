@@ -559,6 +559,37 @@ def _migrate_schema(conn):
                 pass
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '15')")
 
+    if version < 16:
+        for col in (
+            "mode TEXT DEFAULT 'proofread'",
+            "system_prompt TEXT",
+            "system_prompt_preset TEXT",
+            "genre TEXT",
+            "characters_summary TEXT",
+            "conflict_summary TEXT",
+        ):
+            try:
+                conn.execute(f"ALTER TABLE projects ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
+
+        try:
+            conn.execute("ALTER TABLE chapters ADD COLUMN scene_beats TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS character_aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL,
+                canonical_name TEXT NOT NULL,
+                alias_name TEXT NOT NULL,
+                UNIQUE(project_id, alias_name)
+            );
+            CREATE INDEX IF NOT EXISTS idx_char_aliases_proj ON character_aliases(project_id);
+        """)
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '16')")
+
 
     # 物理列缺漏补查（容错自愈）
     for table_name, col_def in (
@@ -832,6 +863,16 @@ def init_db():
 
         """)
         _migrate_schema(conn)
+
+        # 一次性物理清洗历史测试或交互遗留的 HTML 源码标签
+        try:
+            rows = conn.execute("SELECT id, text, revised_text FROM paragraphs WHERE (text LIKE '%<%' AND text LIKE '%>%') OR (revised_text LIKE '%<%' AND revised_text LIKE '%>%')").fetchall()
+            for r in rows:
+                clean_t = strip_html_tags(r["text"])
+                clean_rt = strip_html_tags(r["revised_text"]) if r["revised_text"] else None
+                conn.execute("UPDATE paragraphs SET text = ?, revised_text = ? WHERE id = ?", (clean_t, clean_rt, r["id"]))
+        except Exception:
+            pass
 
 
 @contextmanager
@@ -1189,10 +1230,24 @@ def parse_notes_history(raw_note_str: str | None) -> list[dict]:
     return [{"id": "legacy_1", "note": raw_note_str, "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}]
 
 
+import html as html_lib
+
+def strip_html_tags(text: str | None) -> str:
+    """去除字符串中的 HTML 标签与转义符，转为干净的纯文本。"""
+    if not text:
+        return ""
+    if "<" in text and ">" in text:
+        clean = re.sub(r'<[^>]+>', '', text)
+        return html_lib.unescape(clean).strip()
+    return text
+
+
 def update_paragraph_text(document_id: str, idx: int, new_text: str, edit_note: str | None = None):
     """更新段落文本（写入 revised_text）及多轮编辑备注履历，重算字符数，并自动归档受影响废弃错字。"""
     if new_text is None:
         new_text = ""
+    new_text = strip_html_tags(new_text)
+
 
     with get_conn() as conn:
         row = conn.execute(
@@ -3024,8 +3079,20 @@ def merge_and_save_chapters(document_id: str, new_chapters: list[dict]) -> tuple
 
 # ==================== 项目作者/设定与人物图谱 CRUD ====================
 
-def update_project_profile(project_id: str, author_name: str | None = None, author_intro: str | None = None, background_setting: str | None = None, theme_mode: str | None = None):
-    """更新项目的作者设定与背景信息。"""
+def update_project_profile(
+    project_id: str,
+    author_name: str | None = None,
+    author_intro: str | None = None,
+    background_setting: str | None = None,
+    theme_mode: str | None = None,
+    mode: str | None = None,
+    system_prompt: str | None = None,
+    system_prompt_preset: str | None = None,
+    genre: str | None = None,
+    characters_summary: str | None = None,
+    conflict_summary: str | None = None,
+):
+    """更新项目的作者设定、世界观背景与系统提示词。"""
     with get_conn() as conn:
         conn.execute(
             """UPDATE projects
@@ -3033,10 +3100,81 @@ def update_project_profile(project_id: str, author_name: str | None = None, auth
                    author_intro = COALESCE(?, author_intro),
                    background_setting = COALESCE(?, background_setting),
                    theme_mode = COALESCE(?, theme_mode),
+                   mode = COALESCE(?, mode),
+                   system_prompt = COALESCE(?, system_prompt),
+                   system_prompt_preset = COALESCE(?, system_prompt_preset),
+                   genre = COALESCE(?, genre),
+                   characters_summary = COALESCE(?, characters_summary),
+                   conflict_summary = COALESCE(?, conflict_summary),
                    updated_at = datetime('now', 'localtime')
                WHERE id = ?""",
-            (author_name, author_intro, background_setting, theme_mode, project_id),
+            (
+                author_name, author_intro, background_setting, theme_mode,
+                mode, system_prompt, system_prompt_preset, genre,
+                characters_summary, conflict_summary, project_id,
+            ),
         )
+
+
+def create_blank_project_with_doc(
+    project_id: str,
+    name: str,
+    author_name: str | None = None,
+    background_setting: str | None = None,
+    genre: str | None = None,
+    characters_summary: str | None = None,
+    conflict_summary: str | None = None,
+    system_prompt: str | None = None,
+    system_prompt_preset: str | None = None,
+) -> dict:
+    """创建免上传空白创作项目（Writing Mode），包含初始主文档、首个默认章节与首个空白段落。"""
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO projects (
+                id, name, status, mode, author_name, background_setting,
+                genre, characters_summary, conflict_summary, system_prompt, system_prompt_preset
+            ) VALUES (?, ?, 'parsed', 'writing', ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id, name or "未命名创作项目", author_name, background_setting,
+                genre, characters_summary, conflict_summary, system_prompt, system_prompt_preset
+            ),
+        )
+
+        doc_id = generate_id()
+        filename = f"{name or '未命名作品'}.docx"
+        conn.execute(
+            """INSERT INTO documents (id, project_id, filename, file_path, version, is_current)
+               VALUES (?, ?, ?, '', 1, 1)""",
+            (doc_id, project_id, filename),
+        )
+
+        conn.execute("UPDATE projects SET current_document_id = ? WHERE id = ?", (doc_id, project_id))
+
+        ch_id = generate_id()
+        conn.execute(
+            """INSERT INTO chapters (
+                id, document_id, title, title_paragraph_idx, level, start_idx, end_idx, sort_order
+            ) VALUES (?, ?, '第一章', 0, 1, 0, 0, 0)""",
+            (ch_id, doc_id),
+        )
+
+        para_id = generate_id()
+        para_uuid = generate_id()
+        initial_text = "【请在此落笔创作第一段】"
+        conn.execute(
+            """INSERT INTO paragraphs (
+                id, uuid, document_id, idx, text, style_name, char_count
+            ) VALUES (?, ?, ?, 0, ?, 'Normal', ?)""",
+            (para_id, para_uuid, doc_id, initial_text, len(initial_text)),
+        )
+
+        conn.execute(
+            "UPDATE chapters SET title_paragraph_uuid = ?, start_paragraph_uuid = ?, end_paragraph_uuid = ? WHERE id = ?",
+            (para_uuid, para_uuid, para_uuid, ch_id)
+        )
+
+    return get_project(project_id)
+
 
 
 def upsert_character(

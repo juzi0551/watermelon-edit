@@ -86,12 +86,43 @@ async def api_list_projects():
     return {"projects": projects}
 
 
+class CreateBlankProjectBody(BaseModel):
+    name: str
+    author_name: str | None = None
+    background_setting: str | None = None
+    genre: str | None = None
+    characters_summary: str | None = None
+    conflict_summary: str | None = None
+    system_prompt: str | None = None
+    system_prompt_preset: str | None = None
+
+
 @router.post("/projects")
 async def api_create_project(name: str = ""):
     """新建项目。"""
     project_id = generate_id()
     project = create_project(project_id, name or "未命名项目")
     return project
+
+
+@router.post("/projects/create-blank")
+async def api_create_blank_project(body: CreateBlankProjectBody):
+    """新建免上传空白写作项目 (Writing Mode)。"""
+    from app.core.database import create_blank_project_with_doc
+    project_id = generate_id()
+    project = create_blank_project_with_doc(
+        project_id=project_id,
+        name=body.name,
+        author_name=body.author_name,
+        background_setting=body.background_setting,
+        genre=body.genre,
+        characters_summary=body.characters_summary,
+        conflict_summary=body.conflict_summary,
+        system_prompt=body.system_prompt,
+        system_prompt_preset=body.system_prompt_preset,
+    )
+    return project
+
 
 
 @router.get("/projects/{project_id}")
@@ -480,11 +511,17 @@ class ProjectProfileUpdateBody(BaseModel):
     author_intro: str | None = None
     background_setting: str | None = None
     theme_mode: str | None = None
+    mode: str | None = None
+    system_prompt: str | None = None
+    system_prompt_preset: str | None = None
+    genre: str | None = None
+    characters_summary: str | None = None
+    conflict_summary: str | None = None
 
 
 @router.put("/projects/{project_id}/profile")
 async def api_update_project_profile(project_id: str, body: ProjectProfileUpdateBody):
-    """更新作者基本设定、背景介绍与主题偏好。"""
+    """更新作者基本设定、背景介绍、系统提示词与主题偏好。"""
     project = get_project(project_id)
     if not project:
         return {"error": "项目不存在"}
@@ -494,8 +531,15 @@ async def api_update_project_profile(project_id: str, body: ProjectProfileUpdate
         author_intro=body.author_intro,
         background_setting=body.background_setting,
         theme_mode=body.theme_mode,
+        mode=body.mode,
+        system_prompt=body.system_prompt,
+        system_prompt_preset=body.system_prompt_preset,
+        genre=body.genre,
+        characters_summary=body.characters_summary,
+        conflict_summary=body.conflict_summary,
     )
     return {"status": "ok"}
+
 
 
 @router.get("/projects/{project_id}/character-graph")

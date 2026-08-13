@@ -350,7 +350,7 @@ export function useReaderLogic({
     setSelectedManualEditIdx(prev => prev === idx ? null : idx)
   }, [])
 
-  const handleSaveEdit = useCallback(async (paraIdx, textVal, noteVal) => {
+  const handleSaveEdit = useCallback(async (paraIdx, textVal, noteVal, isSilent = false) => {
     if (!project?.id) return
     setSavingPara(true)
     const finalNote = noteVal?.trim() || null
@@ -369,18 +369,21 @@ export function useReaderLogic({
           targetPara.revised_text = (targetPara.text === finalText) ? null : finalText
         }
       }
-      message.success('段落已更新')
-      setEditingIdx(null)
-      setEditingText('')
-      setEditingNote('')
-      setEditingCaretPos(null)
-      onReloadProject?.()
+      if (!isSilent) {
+        message.success('段落已更新')
+        setEditingIdx(null)
+        setEditingText('')
+        setEditingNote('')
+        setEditingCaretPos(null)
+        onReloadProject?.()
+      }
     } catch (e) {
-      message.error(e.message || '更新失败')
+      if (!isSilent) message.error(e.message || '更新失败')
     } finally {
       setSavingPara(false)
     }
   }, [project?.id, sortedParas, onReloadProject])
+
 
   const handleDeletePara = useCallback((para) => {
     if (!project?.id) return
@@ -455,7 +458,18 @@ export function useReaderLogic({
       } else {
         const titleText = (para.revised_text || para.text || '').trim()
         await setChapter(project.id, para.idx, true, level, titleText, para.uuid)
-        message.success(`已设定为 ${level}级 章节标题`)
+
+        // ✍️ 顶级章节标题（1级/2级章标题）自动硬分页
+        if (level <= 2) {
+          const curType = para.page_break_type || (para.has_page_break_before === 1 ? 'original' : 'none')
+          if (curType === 'none') {
+            try {
+              await togglePageBreak(project.id, para.idx, 'manual', para.uuid)
+            } catch { /* noop */ }
+          }
+        }
+
+        message.success(`已设定为 ${level}级 章节标题 (已自动分页)`)
       }
       dismissToolbar()
       onReloadProject?.()
@@ -463,6 +477,7 @@ export function useReaderLogic({
       message.error(e.message || '设定章节失败')
     }
   }, [project?.id, dismissToolbar, onReloadProject])
+
 
   const handleInsertPara = useCallback(async (targetPara, position = 'below') => {
     if (!project?.id) return

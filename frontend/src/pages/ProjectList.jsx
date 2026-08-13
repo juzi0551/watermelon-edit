@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Card, Button, Table, Tag, Space, Modal, Input, Popconfirm, Upload, message, Spin, Tooltip } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons'
+import { Card, Button, Table, Tag, Space, Modal, Input, Popconfirm, message, Spin, Tooltip } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, LockOutlined, UnlockOutlined, EditFilled } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { listProjects, createProject, deleteProject, renameProject, uploadToProject, toggleProjectLock, getProjectPrescanStatus } from '../services/api'
+import { listProjects, createProject, createBlankProject, deleteProject, renameProject, uploadToProject, toggleProjectLock, getProjectPrescanStatus } from '../services/api'
+import { CreateProjectModal } from '../components/CreateProjectModal'
 
 export default function ProjectList() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createLoading, setCreateLoading] = useState(false)
   const [renameModal, setRenameModal] = useState({ open: false, id: '', name: '' })
   const [processingId, setProcessingId] = useState(null)   // 正在构建实体词典的项目
   const [processingName, setProcessingName] = useState('')
@@ -97,23 +100,35 @@ export default function ProjectList() {
     load()
   }
 
-  const handleUploadDoc = async (file) => {
-    const name = file.name.replace(/\.docx$/i, '') || '未命名项目'
-    setLoading(true)
+  const handleCreateBlank = async (payload) => {
+    setCreateLoading(true)
+    try {
+      const proj = await createBlankProject(payload)
+      message.success('空白创作项目已成功创建！')
+      setCreateModalOpen(false)
+      setCreateLoading(false)
+      navigate(`/project/${proj.id}`)
+    } catch (e) {
+      message.error('创建失败：' + (e.response?.data?.detail || e.message))
+      setCreateLoading(false)
+    }
+  }
+
+  const handleUploadCreate = async ({ name, file }) => {
+    setCreateLoading(true)
     try {
       const proj = await createProject(name)
       await uploadToProject(proj.id, file)
       message.success('上传并解析成功，正在构建实体词典…')
-      setLoading(false)
-      // 不立即进入正文：停在列表页等待实体词典构建完成
+      setCreateModalOpen(false)
+      setCreateLoading(false)
       setProcessingId(proj.id)
       setProcessingName(proj.name)
       load()
     } catch (e) {
       message.error('上传失败：' + (e.response?.data?.detail || e.message))
-      setLoading(false)
+      setCreateLoading(false)
     }
-    return false
   }
 
   const statusMap = {
@@ -132,6 +147,7 @@ export default function ProjectList() {
       key: 'name',
       render: (text, record) => {
         const isProcessing = processingId === record.id
+        const isWriting = record.mode === 'writing'
         return (
           <Space>
             {isProcessing ? (
@@ -139,6 +155,7 @@ export default function ProjectList() {
             ) : (
               <a style={{ color: 'var(--color-primary)', fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate(`/project/${record.id}`)}>{text}</a>
             )}
+            {isWriting && <Tag color="gold" icon={<EditFilled />}>撰写模式</Tag>}
             {isProcessing && <Tag color="processing" icon={<Spin size="small" />}>文档处理中</Tag>}
             {record.is_locked === 1 && <Tag color="gold" icon={<LockOutlined />}>已锁定</Tag>}
           </Space>
@@ -218,16 +235,15 @@ export default function ProjectList() {
       <Card
         title="我的项目"
         extra={
-          <Upload
-            accept=".docx"
-            showUploadList={false}
-            beforeUpload={handleUploadDoc}
-            disabled={loading}
+          <Button
+            type="primary"
+            shape="round"
+            icon={<PlusOutlined />}
+            loading={loading}
+            onClick={() => setCreateModalOpen(true)}
           >
-            <Button type="primary" shape="round" icon={<PlusOutlined />} loading={loading}>
-              新建项目
-            </Button>
-          </Upload>
+            新建项目
+          </Button>
         }
       >
         <Table
@@ -239,6 +255,14 @@ export default function ProjectList() {
           size="large"
         />
       </Card>
+
+      <CreateProjectModal
+        open={createModalOpen}
+        onCancel={() => setCreateModalOpen(false)}
+        onCreateBlank={handleCreateBlank}
+        onUploadCreate={handleUploadCreate}
+        loading={createLoading}
+      />
 
       {/* 重命名弹窗 */}
       <Modal
@@ -276,3 +300,4 @@ export default function ProjectList() {
     </div>
   )
 }
+

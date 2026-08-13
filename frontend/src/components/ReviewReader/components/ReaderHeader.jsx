@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { Button, Popover, List, Typography, Badge, Space, Tag } from 'antd'
-import { UnorderedListOutlined, WarningOutlined, RightOutlined, BookOutlined } from '@ant-design/icons'
+import { Button, Popover, List, Typography, Badge, Space, Tag, Segmented } from 'antd'
+import { UnorderedListOutlined, WarningOutlined, RightOutlined, BookOutlined, EditOutlined, SearchOutlined } from '@ant-design/icons'
 import { color } from '../../../design-tokens'
 
 const { Text } = Typography
@@ -17,9 +17,11 @@ export function ReaderHeader({
   onToggleAnnotationPanel,
   annotationCount = 0,
   tbFontSize,
+  onToggleMode,
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const subFontSize = Math.max(12, (tbFontSize || 17) - 2)
+  const isWritingMode = project?.mode === 'writing'
 
   const chapterMenuContent = (
     <div style={{
@@ -107,7 +109,7 @@ export function ReaderHeader({
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 16px',
-      background: 'var(--color-bgCard, #fafafa)',
+      background: isWritingMode ? '#fdfbf7' : 'var(--color-bgCard, #fafafa)',
       borderTop: '1px solid var(--color-borderStrong, #d9d9d9)',
       borderLeft: '1px solid var(--color-borderStrong, #d9d9d9)',
       borderRight: '1px solid var(--color-borderStrong, #d9d9d9)',
@@ -145,15 +147,18 @@ export function ReaderHeader({
         </Popover>
       </div>
 
-      {/* 中间：绝对居中的书名 */}
+      {/* 中间：绝对居中的书名与模式无缝 Segmented Switcher */}
       <div style={{
         position: 'absolute',
         left: '50%',
         transform: 'translateX(-50%)',
-        maxWidth: '55%',
+        maxWidth: '65%',
         textAlign: 'center',
         zIndex: 1,
         pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
       }}>
         <Text
           ellipsis
@@ -167,9 +172,32 @@ export function ReaderHeader({
         >
           {project?.name || project?.title || project?.filename || '项目正文'}
         </Text>
+        <Segmented
+          style={{ pointerEvents: 'auto', borderRadius: 16, background: '#f0e6df', padding: 2 }}
+          value={project?.mode || 'writing'}
+          onChange={(val) => onToggleMode?.(val)}
+          options={[
+            {
+              label: (
+                <div style={{ padding: '0 8px', fontWeight: 600, fontSize: 12.5, color: isWritingMode ? '#8c5813' : '#595959' }}>
+                  ✍️ 撰写模式
+                </div>
+              ),
+              value: 'writing',
+            },
+            {
+              label: (
+                <div style={{ padding: '0 8px', fontWeight: 600, fontSize: 12.5, color: !isWritingMode ? '#722ed1' : '#595959' }}>
+                  🔍 校对模式
+                </div>
+              ),
+              value: 'proofread',
+            },
+          ]}
+        />
       </div>
 
-      {/* 右侧：书籍注释与问题诊断按钮（保持互斥） */}
+      {/* 右侧：书籍注释与模式关联控制 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, zIndex: 2, marginLeft: 'auto' }}>
         <Button
           type={annotationPanelOpen ? 'primary' : 'text'}
@@ -202,34 +230,38 @@ export function ReaderHeader({
           )}
         </Button>
 
-        <Button
-          type={panelOpen ? 'primary' : 'text'}
-          icon={<WarningOutlined style={{ fontSize: 15 }} />}
-          onClick={onTogglePanel}
-          style={{
-            height: 36,
-            paddingInline: 12,
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 500,
-          }}
-        >
-          问题诊断
-          {pendingCount > 0 && (
-            <Badge
-              count={pendingCount}
-              overflowCount={999}
-              style={{
-                marginLeft: 6,
-                backgroundColor: panelOpen ? '#fff' : '#ff4d4f',
-                color: panelOpen ? '#333' : '#fff',
-                fontWeight: 600,
-                boxShadow: 'none',
-              }}
-            />
-          )}
-        </Button>
+        {/* 仅在校对模式下显示问题诊断边栏触发按钮 */}
+        {!isWritingMode && (
+          <Button
+            type={panelOpen ? 'primary' : 'text'}
+            icon={<WarningOutlined style={{ fontSize: 15 }} />}
+            onClick={onTogglePanel}
+            style={{
+              height: 36,
+              paddingInline: 12,
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 500,
+            }}
+          >
+            问题诊断
+            {pendingCount > 0 && (
+              <Badge
+                count={pendingCount}
+                overflowCount={999}
+                style={{
+                  marginLeft: 6,
+                  backgroundColor: panelOpen ? '#fff' : '#ff4d4f',
+                  color: panelOpen ? '#333' : '#fff',
+                  fontWeight: 600,
+                  boxShadow: 'none',
+                }}
+              />
+            )}
+          </Button>
+        )}
       </div>
     </div>
   )
 }
+

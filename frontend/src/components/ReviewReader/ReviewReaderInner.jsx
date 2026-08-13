@@ -1,5 +1,5 @@
-import React, { forwardRef, useEffect } from 'react'
-import { Card, Empty } from 'antd'
+import React, { forwardRef, useEffect, useState } from 'react'
+import { Card, Empty, message } from 'antd'
 import { color } from '../../design-tokens'
 import { useReaderLogic } from './hooks/useReaderLogic'
 import { useReaderCardPosition } from './hooks/useReaderCardPosition'
@@ -13,6 +13,12 @@ import { SelectionToolbar } from './components/SelectionToolbar'
 import { ReaderHeader } from './components/ReaderHeader'
 import { AnnotationModal } from './components/AnnotationModal'
 import { AnnotationSidebar } from './components/AnnotationSidebar'
+import { StoryProfileDrawer } from './components/StoryProfileDrawer'
+import { SceneBeatsDrawer } from './components/SceneBeatsDrawer'
+import { SensoryDescribeModal } from './components/SensoryDescribeModal'
+import { TabAutocompleteModal } from './components/TabAutocompleteModal'
+import { RewriteModal } from './components/RewriteModal'
+import { tabAutocomplete, insertParagraph, updateParagraph, deleteParagraph, updateProjectProfile } from '../../services/api'
 
 export function ReviewReaderInner({
   results, project, inProgress, onSetStatus, onAcceptAll,
@@ -49,6 +55,58 @@ export function ReviewReaderInner({
     selectedModel,
     fontSizeOffset,
   })
+
+  // 创作模式弹窗与抽屉控制 state
+  const [storyProfileOpen, setStoryProfileOpen] = useState(false)
+  const [sceneBeatsOpen, setSceneBeatsOpen] = useState(false)
+  const [sensoryModalOpen, setSensoryModalOpen] = useState(false)
+  const [sensorySelectionData, setSensorySelectionData] = useState(null)
+  const [rewriteModalOpen, setRewriteModalOpen] = useState(false)
+  const [rewriteSelectionData, setRewriteSelectionData] = useState(null)
+  const [tabModalOpen, setTabModalOpen] = useState(false)
+  const [tabPrecedingText, setTabPrecedingText] = useState('')
+
+  // ✍️ 撰写模式 Enter 切断并新建下方段落连贯打字
+  const handleSplitAndInsert = async (currentPara, leftText, rightText) => {
+    if (!project?.id || !currentPara) return
+    try {
+      await updateParagraph(project.id, currentPara.idx, leftText, null, currentPara.uuid)
+      const inserted = await insertParagraph(project.id, currentPara.idx, 'below', rightText, currentPara.uuid)
+      await onReloadProject?.()
+      const newIdx = inserted?.idx ?? (currentPara.idx + 1)
+      logic.setEditingIdx(newIdx)
+      logic.setEditingText(rightText)
+      logic.setEditingCaretPos(0)
+    } catch (e) {
+      message.error('连贯切段失败：' + e.message)
+    }
+  }
+
+  // ✍️ 撰写模式 Backspace 退格：若空段落则删除；若非空段落段首退格，则拼接至上一段末尾
+  const handleMergeWithPrev = async (currentPara, currentText = '', isEmpty = false) => {
+    if (!project?.id || !currentPara || currentPara.idx === 0) return
+    const sortedParas = logic.sortedParas || []
+    const prevPara = sortedParas.find(p => p.idx === currentPara.idx - 1)
+    if (!prevPara) return
+    try {
+      const prevText = prevPara.revised_text || prevPara.text || ''
+      if (isEmpty || !currentText || currentText.trim() === '') {
+        await deleteParagraph(project.id, currentPara.idx, currentPara.uuid)
+      } else {
+        const mergedText = prevText + currentText
+        await updateParagraph(project.id, prevPara.idx, mergedText, null, prevPara.uuid)
+        await deleteParagraph(project.id, currentPara.idx, currentPara.uuid)
+      }
+      await onReloadProject?.()
+      logic.setEditingIdx(prevPara.idx)
+      logic.setEditingText(prevText + currentText)
+      logic.setEditingCaretPos(prevText.length)
+    } catch (e) {
+      message.error('退格合并失败：' + e.message)
+    }
+  }
+
+
 
   // 同步正文字号变化至外层容器（供 AI 助手等关联组件联动）
   useEffect(() => {
@@ -164,6 +222,84 @@ export function ReviewReaderInner({
     requestAnimationFrame(doJump)
   }, [logic.selectedAnnotationId, logic.annotations, logic.flowRef, updateAnnotationPos, jumpToParagraphExact])
 
+  // 快捷续写：唤起高颜值动画弹窗
+  const handleTabAutocomplete = () => {
+    if (!project?.id) return
+    const sortedParas = logic.sortedParas || []
+    if (sortedParas.length === 0) return
+
+    const lastParas = sortedParas.slice(-3)
+    const precedingText = lastParas.map(p => p.revised_text || p.text || '').join('\n')
+    setTabPrecedingText(precedingText)
+    setTabModalOpen(true)
+  }
+
+  // 采纳续写：插入段落并自动滚动平滑渐显
+  const handleAdoptContinuation = async (continuationText) => {
+    if (!project?.id || !continuationText) return
+    const sortedParas = logic.sortedParas || []
+    if (sortedParas.length === 0) return
+
+    const lastPara = sortedParas[sortedParas.length - 1]
+    const inserted = await insertParagraph(
+      project.id,
+      lastPara.uuid || lastPara.idx,
+      'below',
+      continuationText,
+      lastPara.uuid
+    )
+
+    message.success({ content: '已采纳填入正文！', key: 'tab_autocomplete' })
+    await onReloadProject?.()
+
+    // 渐显闪烁滚动
+    const newIdx = inserted?.idx ?? (lastPara.idx + 1)
+    setTimeout(() => {
+      jumpToParagraphExact(inserted?.uuid || newIdx, 0, true)
+    }, 150)
+  }
+
+
+  // 场景节拍草稿追加处理
+  const handleAppendDraftText = async (draftText) => {
+    if (!draftText || !project?.id) return
+    const sortedParas = logic.sortedParas || []
+
+    if (sortedParas.length > 0) {
+      const lastPara = sortedParas[sortedParas.length - 1]
+      const lines = draftText.split('\n').map(l => l.trim()).filter(Boolean)
+      let currTarget = lastPara.uuid || lastPara.idx
+      for (const line of lines) {
+        const inserted = await insertParagraph(project.id, currTarget, 'below', line, typeof currTarget === 'string' ? currTarget : null)
+        if (inserted?.uuid) currTarget = inserted.uuid
+      }
+    }
+    await onReloadProject?.()
+  }
+
+
+  // 模式双轨无缝切换
+  const handleToggleMode = async (newMode) => {
+    if (!project?.id) return
+    try {
+      await updateProjectProfile(project.id, { mode: newMode })
+      message.success(`已成功切换至${newMode === 'writing' ? '✍️ 撰写模式' : '🔍 审校模式'}`)
+      await onReloadProject?.()
+    } catch (e) {
+      message.error('模式切换失败：' + e.message)
+    }
+  }
+
+  // 五感扩写替换处理
+  const handleReplaceSensoryText = async ({ originalText, replacementText, paragraphIdx, paragraphUuid }) => {
+    const targetPara = (logic.sortedParas || []).find(p => p.idx === paragraphIdx || String(p.uuid) === String(paragraphUuid))
+    if (!targetPara) return
+    const fullText = targetPara.revised_text || targetPara.text || ''
+    const updatedText = fullText.replace(originalText, replacementText)
+    await updateParagraph(project.id, targetPara.idx, updatedText, '五感细节扩写替换', targetPara.uuid)
+    onReloadProject?.()
+  }
+
   // 问题边栏与注释边栏互斥切换
   const handleToggleErrorPanel = () => {
     if (!panelOpen && logic.annotationPanelOpen) {
@@ -179,8 +315,9 @@ export function ReviewReaderInner({
     logic.setAnnotationPanelOpen(prev => !prev)
   }
 
+  const isWritingMode = project?.mode === 'writing'
   const hasResults = results && logic.paras.length > 0
-  const showPanel = panelOpen && hasResults
+  const showPanel = !isWritingMode && panelOpen && hasResults
   const showAnnotationPanel = logic.annotationPanelOpen && hasResults
 
   if (!hasResults) {
@@ -205,7 +342,9 @@ export function ReviewReaderInner({
         onToggleAnnotationPanel={handleToggleAnnotationPanel}
         annotationCount={logic.annotations.length}
         tbFontSize={logic.tbFontSize}
+        onToggleMode={handleToggleMode}
       />
+
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: 0, position: 'relative' }}>
         <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
           <ReaderContentArea
@@ -253,6 +392,8 @@ export function ReviewReaderInner({
             annotations={logic.annotations}
             selectedAnnotationId={logic.selectedAnnotationId}
             onSelectAnnotation={logic.handleSelectAnnotation}
+            onSplitAndInsert={handleSplitAndInsert}
+            onMergeWithPrev={handleMergeWithPrev}
           />
 
           <SelectionToolbar
@@ -260,10 +401,23 @@ export function ReviewReaderInner({
             paras={logic.sortedParas}
             onAskAssistant={onAskAssistant}
             onAddAnnotation={logic.handleOpenAnnotationModal}
+            onOpenSensoryExpand={(data) => {
+              setSensorySelectionData(data)
+              setSensoryModalOpen(true)
+            }}
+            onOpenRewrite={(data) => {
+              setRewriteSelectionData(data)
+              setRewriteModalOpen(true)
+            }}
+            onStartSelectionProofread={onStartSelectionProofread}
+            onSetChapter={logic.handleSetChapter}
             onSelectionChange={logic.handleSelectionChange}
             tbFontSize={logic.tbFontSize}
             mergeMode={logic.mergeMode}
+            isWritingMode={isWritingMode}
           />
+
+
 
           <ActionBar
             mergeMode={logic.mergeMode}
@@ -306,6 +460,10 @@ export function ReviewReaderInner({
             onExport={onExport}
             exporting={exporting}
             onOpenTools={onOpenTools}
+            onOpenStoryProfile={() => setStoryProfileOpen(true)}
+            onOpenSceneBeats={() => setSceneBeatsOpen(true)}
+            onTabAutocomplete={handleTabAutocomplete}
+            isWritingMode={project?.mode === 'writing'}
             tbFontSize={logic.tbFontSize}
           />
         </div>
@@ -342,9 +500,10 @@ export function ReviewReaderInner({
 
       <FloatCardLayer
         mergeMode={logic.mergeMode}
-        selectedError={logic.selectedError}
+        selectedError={isWritingMode ? null : logic.selectedError}
         floatCardElRef={logic.floatCardElRef}
         currentBodyFontSize={logic.currentBodyFontSize}
+
         handleStatus={logic.handleStatus}
         setFlashSide={logic.setFlashSide}
         setSelectedId={logic.setSelectedId}
@@ -368,6 +527,57 @@ export function ReviewReaderInner({
         onOk={logic.handleCreateAnnotation}
         onCancel={() => logic.setAnnotationModalOpen(false)}
       />
+
+      <StoryProfileDrawer
+        open={storyProfileOpen}
+        onClose={() => setStoryProfileOpen(false)}
+        projectId={project?.id}
+        projectData={project}
+        onProfileUpdated={onReloadProject}
+      />
+
+      <SceneBeatsDrawer
+        open={sceneBeatsOpen}
+        onClose={() => setSceneBeatsOpen(false)}
+        projectId={project?.id}
+        chapterTitle={selectedChapter?.title || '第一章'}
+        onAppendDraftText={handleAppendDraftText}
+      />
+
+      <SensoryDescribeModal
+        open={sensoryModalOpen}
+        onCancel={() => setSensoryModalOpen(false)}
+        projectId={project?.id}
+        selectedText={sensorySelectionData?.selectedText}
+        paragraphIdx={sensorySelectionData?.paragraphIdx}
+        paragraphUuid={sensorySelectionData?.paragraphUuid}
+        onReplaceText={handleReplaceSensoryText}
+      />
+
+      <TabAutocompleteModal
+        open={tabModalOpen}
+        onCancel={() => setTabModalOpen(false)}
+        projectId={project?.id}
+        selectedModel={selectedModel}
+        precedingText={tabPrecedingText}
+        bodyFontSize={logic.currentBodyFontSize}
+        onAdoptContinuation={handleAdoptContinuation}
+      />
+
+      <RewriteModal
+        open={rewriteModalOpen}
+        onCancel={() => setRewriteModalOpen(false)}
+        projectId={project?.id}
+        selectedText={rewriteSelectionData?.selectedText}
+        paragraphIdx={rewriteSelectionData?.paragraphIdx}
+        paragraphUuid={rewriteSelectionData?.paragraphUuid}
+        onReplaceText={handleReplaceSensoryText}
+        selectedModel={selectedModel}
+      />
+
     </div>
   )
 }
+
+
+
