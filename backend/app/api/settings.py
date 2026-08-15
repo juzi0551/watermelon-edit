@@ -164,7 +164,7 @@ async def reset_prompts():
     }
 
 
-@router.post("/settings/test/{model_id:path}")
-async def test_key(model_id: str):
-    ok, msg = await test_llm(model_id)
+@router.post("/settings/test/{provider}/{model_id:path}")
+async def test_key(provider: str, model_id: str):
+    ok, msg = await test_llm(model_id, provider_id=provider)
     return {"ok": ok, "message": msg}

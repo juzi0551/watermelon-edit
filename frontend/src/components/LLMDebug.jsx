@@ -56,7 +56,7 @@ function renderDetailBlock(data) {
         <Tag color={data.mode === 'chat' || data.tag === 'chat' ? 'blue' : 'purple'}>
           {data.mode === 'chat' || data.tag === 'chat' ? '对话 (Chat)' : '校对 (Proofread)'}
         </Tag>
-        <Text strong>{data.model}</Text>
+        <Text strong>{String(data.model || '').split('::').pop()}</Text>
         {data.duration_ms ? <Text type="secondary">{data.duration_ms} ms</Text> : null}
         {data.created_at || data.ts ? <Text type="secondary">{data.created_at || data.ts}</Text> : null}
         {data.session_id ? <Text type="secondary">会话: {data.session_id}</Text> : null}
@@ -203,7 +203,7 @@ function RealTimeTab() {
               <Tag color={c.tag === 'chat' ? 'blue' : 'purple'}>
                 {c.tag === 'chat' ? '对话 (Chat)' : c.tag || '默认'}
               </Tag>
-              <Text strong>{c.model}</Text>
+              <Text strong>{String(c.model || '').split('::').pop()}</Text>
               <Text type="secondary">{c.duration_ms} ms</Text>
               <Text type="secondary">{c.ts}</Text>
             </Space>
@@ -310,7 +310,7 @@ function HistoryTab() {
                   {c.mode === 'chat' ? '对话' : '校对'}
                 </Tag>
                 <Text strong style={{ minWidth: 120, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.model}
+                  {String(c.model || '').split('::').pop()}
                 </Text>
                 <Text type="secondary" style={{ minWidth: 55, fontSize: 12, textAlign: 'right' }}>
                   {c.duration_ms ? `${c.duration_ms}ms` : '-'}

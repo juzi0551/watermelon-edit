@@ -41,19 +41,21 @@ async def stream_llm(
     tools: list[dict] | None = None,
     project_id: str | None = None,
     session_id: str | None = None,
+    provider_id: str | None = None,
 ) -> AsyncIterator[dict]:
     """逐 chunk yield {"type": "thinking"|"delta"|"tool_call"|"done"|"error", ...}。
 
     支持传入 messages 多轮列表，或传入 prompt (+ system_prompt) 自动构造单轮请求。
+    provider_id 用于在重复模型 ID 的场景下显式指定服务商路由。
     全量更新 LLM_CALL_LOG 供调试面板监控。
     """
-    api_key = get_api_key(model_id)
+    api_key = get_api_key(model_id, provider_id)
     if not api_key:
         err_msg = f"未配置 {model_id} 的 API Key，请到「设置」页面添加"
         yield {"type": "error", "error": err_msg, "thinking": ""}
         return
 
-    _pid = _provider_of(model_id)
+    _pid = _provider_of(model_id, provider_id)
     _old_acct = None
     if _pid == "cloudflare":
         _old_acct = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
@@ -109,7 +111,7 @@ async def stream_llm(
 
     try:
         kwargs = dict(
-            model=_litellm_model(model_id),
+            model=_litellm_model(model_id, provider_id),
             api_key=api_key,
             messages=req_messages,
             timeout=timeout,
@@ -118,10 +120,10 @@ async def stream_llm(
         )
         if tools:
             kwargs["tools"] = tools
-        api_base = _api_base(model_id)
+        api_base = _api_base(model_id, provider_id)
         if api_base:
             kwargs["api_base"] = api_base
-        extra = _model_extra_kwargs(model_id)
+        extra = _model_extra_kwargs(model_id, provider_id)
         if extra:
             kwargs.update(extra)
 
@@ -274,12 +276,12 @@ def _record_llm_call(entry: dict):
 _TEST_PROMPT = "只回复一个字：好"
 
 
-async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = "", system_prompt: str | None = None) -> tuple[str, dict]:
+async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = "", system_prompt: str | None = None, provider_id: str | None = None) -> tuple[str, dict]:
     """调用大模型，返回 (响应内容, token_info)。保持向后兼容，内部使用 stream_llm 生成器。"""
     content = ""
     thinking = ""
     token_info = {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None, "cost": None}
-    async for event in stream_llm(prompt=prompt, model_id=model_id, timeout=timeout, tag=tag, system_prompt=system_prompt):
+    async for event in stream_llm(prompt=prompt, model_id=model_id, timeout=timeout, tag=tag, system_prompt=system_prompt, provider_id=provider_id):
         if event["type"] == "thinking":
             if event.get("text"):
                 thinking += event["text"]
@@ -298,13 +300,13 @@ async def call_llm(prompt: str, model_id: str, timeout: int = 120, tag: str = ""
     return content, token_info
 
 
-async def test_llm(model_id: str) -> tuple[bool, str]:
-    """测试该模型的 API Key 是否可用，返回 (是否成功, 说明信息)。"""
-    api_key = get_api_key(model_id)
+async def test_llm(model_id: str, provider_id: str | None = None) -> tuple[bool, str]:
+    """测试该模型在指定服务商下的 API Key 是否可用，返回 (是否成功, 说明信息)。"""
+    api_key = get_api_key(model_id, provider_id)
     if not api_key:
         return False, "尚未配置 API Key"
 
-    _pid = _provider_of(model_id)
+    _pid = _provider_of(model_id, provider_id)
     _old_acct = None
     if _pid == "cloudflare":
         _old_acct = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
@@ -314,12 +316,12 @@ async def test_llm(model_id: str) -> tuple[bool, str]:
 
     try:
         kwargs = dict(
-            model=_litellm_model(model_id),
+            model=_litellm_model(model_id, provider_id),
             api_key=api_key,
             messages=[{"role": "user", "content": _TEST_PROMPT}],
             timeout=60,
         )
-        api_base = _api_base(model_id)
+        api_base = _api_base(model_id, provider_id)
         if api_base:
             kwargs["api_base"] = api_base
         response = await asyncio.wait_for(

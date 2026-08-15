@@ -189,8 +189,8 @@ export async function deleteModel(providerId, modelId) {
   return data
 }
 
-export async function testApiKey(modelId) {
-  const { data } = await api.post(`/settings/test/${modelId}`)
+export async function testApiKey(provider, modelId) {
+  const { data } = await api.post(`/settings/test/${provider}/${modelId}`)
   return data
 }
 

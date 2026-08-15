@@ -56,7 +56,7 @@ export function ControlsRow({
           value={selectedModel}
           disabled={inProgress}
           onChange={onModelChange}
-          options={models.map(m => ({ value: m.model_id, label: `${m.provider_name || m.provider} · ${m.name}` }))}
+          options={models.map(m => ({ value: m.value || m.model_id, label: `${m.provider_name || m.provider} · ${m.name}` }))}
           size="small"
         />
       </div>

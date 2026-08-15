@@ -250,6 +250,7 @@ export const ParaRow = React.memo(function ParaRow({
                 value={localText}
                 onChange={e => setLocalText(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.isComposing || e.nativeEvent?.isComposing || e.keyCode === 229) return
                   if (e.key === 'Escape') {
                     e.preventDefault()
                     onCancelEdit()
@@ -266,6 +267,7 @@ export const ParaRow = React.memo(function ParaRow({
                 value={localNote}
                 onChange={e => setLocalNote(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.isComposing || e.nativeEvent?.isComposing || e.keyCode === 229) return
                   if (e.key === 'Escape') {
                     e.preventDefault()
                     onCancelEdit()

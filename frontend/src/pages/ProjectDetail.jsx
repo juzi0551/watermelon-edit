@@ -308,8 +308,17 @@ export default function ProjectDetail() {
       const data = await getModels()
       const proofreadModels = data.filter(m => !m.agentic)
       setModels(proofreadModels)
-      if (proofreadModels.length && !proofreadModels.find(m => m.model_id === selectedModel)) {
-        setSelectedModel(proofreadModels[0].model_id)
+      if (proofreadModels.length) {
+        if (proofreadModels.find(m => m.value === selectedModel)) return
+        const matches = proofreadModels.filter(m => m.model_id === selectedModel)
+        if (matches.length === 1) {
+          setSelectedModel(matches[0].value)
+        } else if (matches.length > 1) {
+          const custom = matches.find(m => m.is_custom)
+          setSelectedModel((custom || matches[0]).value)
+        } else {
+          setSelectedModel(proofreadModels[0].value)
+        }
       }
     } catch { }
   }
@@ -318,6 +327,19 @@ export default function ProjectDetail() {
     loadProject()
     loadModels()
   }, [projectId])
+
+  // 将 selectedModel 解析为 provider::model_id 组合值（兼容旧版纯 model_id 存储）
+  const resolveModel = (value) => {
+    if (!value) return value
+    if (models.some(m => m.value === value)) return value
+    const matches = models.filter(m => m.model_id === value)
+    if (matches.length === 1) return matches[0].value
+    if (matches.length > 1) {
+      const custom = matches.find(m => m.is_custom)
+      return (custom || matches[0]).value
+    }
+    return value
+  }
 
   // 首次新建项目进入页面且作品设定仍为空时，自动弹出作品设定抽屉面板
   useEffect(() => {
@@ -397,7 +419,7 @@ export default function ProjectDetail() {
     try {
       const payload = {
         mode,
-        model: selectedModel,
+        model: resolveModel(selectedModel),
         types: selectedTypes,
         chapter_id: mode === 'chapter' ? selectedChapter : undefined,
         window_size: proofreadWindowSize,
@@ -469,7 +491,7 @@ export default function ProjectDetail() {
     try {
       const res = await startProofread(projectId, {
         mode: 'batch',
-        model: selectedModel,
+        model: resolveModel(selectedModel),
         types: selectedTypes,
         max_concurrent: batchMaxConcurrent,
         window_size: proofreadWindowSize,
@@ -517,7 +539,7 @@ export default function ProjectDetail() {
       const res = await retryWindow(projectId, {
         batch_id: batchId,
         window_index: windowIndex,
-        model: selectedModel,
+        model: resolveModel(selectedModel),
         types: selectedTypes,
       })
       if (res.status === 'ok') {
@@ -543,7 +565,7 @@ export default function ProjectDetail() {
     try {
       const payload = {
         mode: 'selection',
-        model: selectedModel,
+        model: resolveModel(selectedModel),
         types: selectedTypes,
         paragraph_indices: indices,
       }
@@ -1267,7 +1289,7 @@ function LLMCallCard({ call: c }) {
           fontSize: 13, fontWeight: 600, color: '#1e293b',
           background: '#f1f5f9', padding: '2px 8px', borderRadius: 6,
         }}>
-          {c.model}
+          {String(c.model || '').split('::').pop()}
         </span>
 
         {/* thinking 状态 */}

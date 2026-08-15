@@ -170,10 +170,10 @@ export default function Settings() {
     }
   }
 
-  const handleTest = async (modelId) => {
-    setTesting(modelId)
+  const handleTest = async (provider, modelId) => {
+    setTesting(`${provider}:${modelId}`)
     try {
-      const res = await testApiKey(modelId)
+      const res = await testApiKey(provider, modelId)
       if (res.ok) message.success(`${modelId}：${res.message}`)
       else message.error(`${modelId}：${res.message}`)
     } finally {
@@ -361,8 +361,8 @@ export default function Settings() {
                                   type="link"
                                   size="small"
                                   icon={<ApiOutlined />}
-                                  loading={testing === m.id}
-                                  onClick={() => handleTest(m.id)}
+                                  loading={testing === `${p.provider}:${m.id}`}
+                                  onClick={() => handleTest(p.provider, m.id)}
                                   style={{ padding: '0 2px' }}
                                 >
                                   测试

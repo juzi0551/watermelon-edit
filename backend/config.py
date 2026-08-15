@@ -6,6 +6,9 @@ KEYS_DIR = os.path.join(os.path.dirname(__file__), "app", "data")
 KEYS_PATH = os.path.join(KEYS_DIR, "api_keys.json")
 CUSTOM_PROVIDERS_PATH = os.path.join(KEYS_DIR, "custom_providers.json")
 
+# 模型引用分隔符：provider::model_id 组合标识，用于在重复模型 ID 场景下显式路由
+MODEL_REF_SEP = "::"
+
 # 服务商注册表：一个服务商 = 一个 API Key（覆盖其下所有模型）
 # litellm 通过 "前缀/模型名" 路由到对应服务商的 OpenAI 兼容端点
 #   deepseek -> https://api.deepseek.com
@@ -183,8 +186,31 @@ def get_all_providers() -> dict:
     return merged
 
 
-def _provider_of(model_id: str) -> str | None:
+def _split_model_ref(ref: str) -> tuple[str | None, str]:
+    """将 'provider::model_id' 拆分为 (provider, model_id)；无分隔符时返回 (None, 原值)。"""
+    if isinstance(ref, str) and MODEL_REF_SEP in ref:
+        pid, _, mid = ref.partition(MODEL_REF_SEP)
+        if pid and mid:
+            return pid, mid
+    return None, ref
+
+
+def _provider_of(model_ref: str, provider_id: str | None = None) -> str | None:
+    """返回 model_ref 所属的服务商。
+
+    provider_id 明确指定时只在该服务商内匹配（解决重复模型 ID 串线问题）；
+    模型引用内嵌 provider（provider::model_id）时以嵌入值为准；
+    否则按合并顺序返回第一个匹配的服务商。
+    """
+    emb_pid, model_id = _split_model_ref(model_ref)
+    if emb_pid:
+        provider_id = provider_id or emb_pid
     all_p = get_all_providers()
+    if provider_id:
+        p = all_p.get(provider_id)
+        if p and any(m["id"] == model_id for m in p["models"]):
+            return provider_id
+        return None
     for pid, p in all_p.items():
         if any(m["id"] == model_id for m in p["models"]):
             return pid
@@ -195,30 +221,39 @@ def _mask(key: str) -> str:
     return (key[:4] + "****" + key[-4:]) if len(key) > 8 else ("****" if key else "")
 
 
-def _litellm_model(model_id: str) -> str:
+def _litellm_model(model_ref: str, provider_id: str | None = None) -> str:
     """转换为 LiteLLM 模型标识，如 deepseek/deepseek-v4-flash。
     无内置前缀的服务商返回原始模型名，由 api_base 决定路由。"""
+    emb_pid, model_id = _split_model_ref(model_ref)
+    if emb_pid:
+        provider_id = provider_id or emb_pid
     all_p = get_all_providers()
-    pid = _provider_of(model_id)
+    pid = _provider_of(model_id, provider_id)
     if not pid or pid not in all_p:
         return model_id
     prefix = all_p[pid].get("litellm_prefix")
     return f"{prefix}/{model_id}" if prefix else model_id
 
 
-def _api_base(model_id: str) -> str | None:
+def _api_base(model_ref: str, provider_id: str | None = None) -> str | None:
     """返回服务商的自定义 OpenAI 兼容端点（如有）。"""
+    emb_pid, model_id = _split_model_ref(model_ref)
+    if emb_pid:
+        provider_id = provider_id or emb_pid
     all_p = get_all_providers()
-    pid = _provider_of(model_id)
+    pid = _provider_of(model_id, provider_id)
     if not pid or pid not in all_p:
         return None
     return all_p[pid].get("api_base")
 
 
-def _model_temperature(model_id: str) -> float | None:
+def _model_temperature(model_ref: str, provider_id: str | None = None) -> float | None:
     """返回模型自定义 temperature（如有）。"""
+    emb_pid, model_id = _split_model_ref(model_ref)
+    if emb_pid:
+        provider_id = provider_id or emb_pid
     all_p = get_all_providers()
-    pid = _provider_of(model_id)
+    pid = _provider_of(model_id, provider_id)
     if not pid or pid not in all_p:
         return None
     for m in all_p[pid]["models"]:
@@ -227,8 +262,11 @@ def _model_temperature(model_id: str) -> float | None:
     return None
 
 
-def _model_extra_kwargs(model_id: str) -> dict:
-    pid = _provider_of(model_id)
+def _model_extra_kwargs(model_ref: str, provider_id: str | None = None) -> dict:
+    emb_pid, model_id = _split_model_ref(model_ref)
+    if emb_pid:
+        provider_id = provider_id or emb_pid
+    pid = _provider_of(model_id, provider_id)
     if pid == "moonshot":
         k2_6_ids = {"kimi-k2.6", "kimi-k2.5", "kimi-k2.7-code"}
         if model_id in k2_6_ids:
@@ -247,10 +285,13 @@ def _resolve_key_value(value: str | dict | None) -> str | None:
     return None
 
 
-def get_api_key(model_id: str) -> str | None:
+def get_api_key(model_ref: str, provider_id: str | None = None) -> str | None:
     """根据模型找到所属服务商，返回该服务商的 API Key（JSON 文件优先，回退环境变量）。"""
+    emb_pid, model_id = _split_model_ref(model_ref)
+    if emb_pid:
+        provider_id = provider_id or emb_pid
     all_p = get_all_providers()
-    pid = _provider_of(model_id)
+    pid = _provider_of(model_id, provider_id)
     if not pid or pid not in all_p:
         return None
     keys = _load_keys()
@@ -325,7 +366,7 @@ def list_providers_status() -> list[dict]:
 
 
 def list_models() -> list[dict]:
-    """返回所有可选模型（供校对时选择）。"""
+    """返回所有可选模型（供校对时选择）。value 为 provider::model_id 组合标识，用于重复 ID 场景下精确路由。"""
     all_p = get_all_providers()
     out = []
     for pid, p in all_p.items():
@@ -335,6 +376,7 @@ def list_models() -> list[dict]:
                 "name": m["name"],
                 "provider": pid,
                 "provider_name": p["name"],
+                "value": f"{pid}{MODEL_REF_SEP}{m['id']}",
                 "deprecated": m.get("deprecated", False),
                 "is_custom": m.get("is_custom", False),
             })
@@ -356,6 +398,9 @@ def add_custom_provider(provider_id: str, name: str, api_base: str = "", litellm
     if initial_model_id.strip():
         m_id = initial_model_id.strip()
         m_name = initial_model_name.strip() or m_id
+        for p in all_p.values():
+            if any(m["id"] == m_id for m in p["models"]):
+                raise ValueError(f"模型 ID '{m_id}' 已在服务商 '{p['name']}' 中存在")
         models.append({"id": m_id, "name": m_name, "is_custom": True})
 
     custom[pid] = {

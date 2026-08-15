@@ -47,6 +47,21 @@ const parseReplacementCard = (rawContent, selectionCtx) => {
   }
 }
 
+// 将已保存的模型标识解析为可用的 provider::model_id 组合值。
+// 兼容旧版纯 model_id 存储（可能对应多个服务商时优先选择自定义服务商）。
+const resolveModelValue = (saved, mList) => {
+  if (!mList || mList.length === 0) return saved || null
+  if (!saved) return mList[0].value || mList[0].model_id
+  if (mList.some((m) => m.value === saved)) return saved
+  const matches = mList.filter((m) => m.model_id === saved)
+  if (matches.length === 1) return matches[0].value || matches[0].model_id
+  if (matches.length > 1) {
+    const custom = matches.find((m) => m.is_custom)
+    return (custom || matches[0]).value || (custom || matches[0]).model_id
+  }
+  return mList[0].value || mList[0].model_id
+}
+
 export default function ChatPanel({
   projectId,
   visible,
@@ -107,11 +122,7 @@ export default function ChatPanel({
         if (Array.isArray(mList)) {
           setModels(mList)
           const savedModel = localStorage.getItem('chat_selected_model')
-          if (savedModel && mList.some((m) => m.model_id === savedModel)) {
-            setInternalSelectedModel(savedModel)
-          } else if (mList.length > 0) {
-            setInternalSelectedModel(mList[0].model_id)
-          }
+          setInternalSelectedModel(resolveModelValue(savedModel, mList))
         }
       })
       .catch((err) => console.error('加载模型列表失败:', err))
@@ -127,7 +138,7 @@ export default function ChatPanel({
   // 转换模型列表 Options
   const modelOptions = useMemo(() => {
     return models.map((m) => ({
-      value: m.model_id,
+      value: m.value || m.model_id,
       label: `${m.provider_name || m.provider} · ${m.name}`,
     }))
   }, [models])
@@ -204,7 +215,7 @@ export default function ChatPanel({
       await streamChatAdapter({
         projectId,
         sessionId: activeSessionId,
-        model: selectedModel,
+        model: resolveModelValue(selectedModel, models),
         message: userText,
         context: contextPayload,
         signal: abortControllerRef.current.signal,
