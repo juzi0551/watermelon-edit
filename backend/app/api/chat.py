@@ -18,6 +18,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _unwrap_tool_args(parsed_args: dict) -> dict:
+    """兼容部分模型/代理把工具参数整体包进 'arguments' 字符串字段的双重编码。
+
+    典型形态：{"arguments": "{\"paragraph_uuid\": \"...\", ...}"}
+    递归解包后返回真正的工具参数对象。
+    """
+    cur = parsed_args
+    for _ in range(3):
+        if isinstance(cur, dict) and isinstance(cur.get("arguments"), str):
+            try:
+                inner = json.loads(cur["arguments"])
+            except (TypeError, ValueError):
+                break
+            if isinstance(inner, dict):
+                cur = inner
+                continue
+        break
+    return cur
+
+
 def _build_replacement_card(
     parsed_args: dict,
     context_info: dict | None,
@@ -27,6 +47,8 @@ def _build_replacement_card(
 ) -> dict | None:
     if not isinstance(parsed_args, dict):
         return None
+
+    parsed_args = _unwrap_tool_args(parsed_args)
 
     target_para_uuid = (context_info and context_info.get("paragraph_uuid")) or parsed_args.get("paragraph_uuid")
     if not target_para_uuid and current_para_idx is not None and doc_id:

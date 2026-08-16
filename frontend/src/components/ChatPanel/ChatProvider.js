@@ -1,5 +1,23 @@
 import { getChatStreamUrl } from '../../services/api'
 
+// 兼容部分模型/代理把工具参数整体包进 'arguments' 字符串字段的双重编码
+const unwrapToolArgs = (parsed) => {
+  let cur = parsed
+  for (let i = 0; i < 3; i++) {
+    if (cur && typeof cur === 'object' && typeof cur.arguments === 'string') {
+      try {
+        const inner = JSON.parse(cur.arguments)
+        if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+          cur = inner
+          continue
+        }
+      } catch (e) {}
+    }
+    break
+  }
+  return cur
+}
+
 /**
  * 适配 @ant-design/x useXChat 的自定义 SSE 流式请求转换器。
  * 支持 thinking 思考节点、delta 增量文本、done 结束标记以及中断控流。
@@ -76,7 +94,7 @@ export async function streamChatAdapter({
               if (event.arguments) {
                 toolCallArgs += event.arguments
                 try {
-                  const cardData = JSON.parse(toolCallArgs)
+                  const cardData = unwrapToolArgs(JSON.parse(toolCallArgs))
                   onUpdate?.({
                     content,
                     thinking,
